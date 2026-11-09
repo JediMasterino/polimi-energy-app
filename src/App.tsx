@@ -47,7 +47,6 @@ import {
 import { parseEpwText, extractEpwFromZipBuffer, exportDatasetToEpw } from './utils/epwEngine';
 import { AdvancedHvacRenewableModal } from './components/AdvancedHvacRenewableModal';
 import { ParetoExplorerModal } from './components/ParetoExplorerModal';
-import { Analytics } from '@vercel/analytics/react';
 
 const SCALE_STAGES: Array<{
   id: ScaleStageId;
