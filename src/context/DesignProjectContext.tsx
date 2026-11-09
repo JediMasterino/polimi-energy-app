@@ -51,7 +51,7 @@ export interface SavedScenario {
   discomfortHours: number;
 }
 
-interface DesignProjectContextValue {
+export interface DesignProjectContextValue {
   // Navigation
   activeStage: ScaleStageId;
   setActiveStage: (stage: ScaleStageId) => void;
@@ -304,6 +304,8 @@ interface DesignProjectContextValue {
     };
   };
 }
+
+export type SimulationKPIs = DesignProjectContextValue['sim'];
 
 const DesignProjectContext = createContext<DesignProjectContextValue | null>(null);
 

@@ -15,6 +15,7 @@ import {
   ThermalZoneName
 } from '../context/DesignProjectContext';
 import { ENVELOPE_MATERIALS } from '../data/climateAndStrategies';
+import { GLAZING_LIBRARY, SHADING_LIBRARY } from '../data/componentLibraries';
 
 export const Stage4FacadeFabric: React.FC = () => {
   const {
@@ -339,6 +340,38 @@ export const Stage4FacadeFabric: React.FC = () => {
                 />
               </label>
             ))}
+          </div>
+
+          {/* Glazing Specification Library Selector */}
+          <div className="bg-slate-50 p-3 rounded-xl border border-slate-200 text-xs space-y-2">
+            <div className="flex items-center justify-between">
+              <span className="font-bold text-slate-800 flex items-center gap-1.5">
+                <Layers className="w-3.5 h-3.5 text-teal-600" />
+                Glazing System Specification
+              </span>
+              <span className="text-[10px] text-slate-500">
+                Pick a certified spec or adjust sliders below
+              </span>
+            </div>
+
+            <select
+              onChange={(e) => {
+                const found = GLAZING_LIBRARY.find((g) => g.id === e.target.value);
+                if (found) {
+                  setUWin(found.uValue);
+                  setShgc(found.shgc);
+                  setVisTrans(found.visTrans);
+                }
+              }}
+              defaultValue="low_e_double_argon"
+              className="w-full text-xs font-semibold bg-white border border-slate-300 rounded-lg p-2 focus:ring-2 focus:ring-teal-500"
+            >
+              {GLAZING_LIBRARY.map((gz) => (
+                <option key={gz.id} value={gz.id}>
+                  {gz.name} — U={gz.uValue} | g={gz.shgc} | VT={gz.visTrans} ({gz.bestFor})
+                </option>
+              ))}
+            </select>
           </div>
 
           <div className="grid grid-cols-2 gap-3 bg-slate-50 p-3 rounded-xl border border-slate-200 text-xs">

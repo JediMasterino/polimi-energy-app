@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import {
   Zap,
   Thermometer,
@@ -6,12 +6,14 @@ import {
   BookmarkCheck,
   ArrowRight,
   Sparkles,
-  Activity
+  Activity,
+  Sliders
 } from 'lucide-react';
 import {
   useDesignProject,
   HvacSystemType
 } from '../context/DesignProjectContext';
+import { AdvancedHvacRenewableModal } from './AdvancedHvacRenewableModal';
 
 export const Stage5EnergyComfort: React.FC = () => {
   const {
@@ -40,6 +42,8 @@ export const Stage5EnergyComfort: React.FC = () => {
     setActiveStage
   } = useDesignProject();
 
+  const [showHvacModal, setShowHvacModal] = useState(false);
+
   return (
     <div className="space-y-5">
       {/* Top Banner */}
@@ -62,14 +66,24 @@ export const Stage5EnergyComfort: React.FC = () => {
           </p>
         </div>
 
-        <button
-          type="button"
-          onClick={() => setActiveStage(6)}
-          className="px-4 py-2.5 rounded-xl bg-teal-500 hover:bg-teal-400 text-slate-950 font-bold text-xs flex items-center gap-1.5 shadow transition"
-        >
-          Proceed to Stage 6 Whole-Life Carbon LCA
-          <ArrowRight className="w-4 h-4" />
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setShowHvacModal(true)}
+            className="px-3.5 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-teal-300 border border-teal-500/40 font-bold text-xs flex items-center gap-1.5 shadow transition"
+          >
+            <Sliders className="w-4 h-4 text-teal-400" />
+            HVAC & Renewables Sizing Studio
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveStage(6)}
+            className="px-4 py-2.5 rounded-xl bg-teal-500 hover:bg-teal-400 text-slate-950 font-bold text-xs flex items-center gap-1.5 shadow transition"
+          >
+            Stage 6 LCA
+            <ArrowRight className="w-4 h-4" />
+          </button>
+        </div>
       </div>
 
       {/* Row 1: ISO 52000-1 Sankey / Energy Boundary Flow Diagram + HVAC & Ventilation Controls */}
@@ -639,6 +653,12 @@ export const Stage5EnergyComfort: React.FC = () => {
           ))}
         </div>
       </div>
+
+      {/* Advanced HVAC & Renewables Sizing Modal */}
+      <AdvancedHvacRenewableModal
+        isOpen={showHvacModal}
+        onClose={() => setShowHvacModal(false)}
+      />
     </div>
   );
 };

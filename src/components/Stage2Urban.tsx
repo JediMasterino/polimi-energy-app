@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import {
   Building2,
   Sun,
@@ -7,9 +7,11 @@ import {
   Zap,
   ArrowRight,
   Eye,
-  Layers
+  Layers,
+  Box
 } from 'lucide-react';
 import { useDesignProject, UrbanMorphologyType } from '../context/DesignProjectContext';
+import { Urban3DViewer } from './Urban3DViewer';
 
 export const Stage2Urban: React.FC = () => {
   const {
@@ -42,9 +44,14 @@ export const Stage2Urban: React.FC = () => {
     setDistrictSharedRenewableKw,
     lengthX,
     widthY,
+    floors,
+    floorHeight,
+    perimeterDepth,
     sim,
     setActiveStage
   } = useDesignProject();
+
+  const [urbanViewMode, setUrbanViewMode] = useState<'2.5d_svg' | '3d_webgl'>('3d_webgl');
 
   // Isometric projection helper for 2.5D Urban Block Canvas
   const isoProject = (x: number, y: number, z: number, cx = 310, cy = 205) => {
@@ -183,23 +190,75 @@ export const Stage2Urban: React.FC = () => {
       <div className="grid grid-cols-1 xl:grid-cols-12 gap-5">
         {/* Left/Center: Interactive 2.5D Isometric Urban Block SVG (7 cols) */}
         <div className="xl:col-span-7 bg-white rounded-2xl border border-slate-200 shadow-sm p-4 space-y-3">
-          <div className="flex items-center justify-between">
+          <div className="flex flex-wrap items-center justify-between gap-2">
             <div>
               <h3 className="text-sm font-bold text-slate-800 flex items-center gap-1.5">
                 <Building2 className="w-4 h-4 text-indigo-600" />
-                2.5D Isometric District Block & Target Plot Extrusion
+                Urban District & Target Plot Canvas
               </h3>
               <p className="text-[11px] text-slate-500">
                 Central Target Building ({sim.buildingHeight}m tall) surrounded by North, South, East, West neighbor blocks & vegetative canyon
               </p>
             </div>
-            <span className="text-[10px] font-mono px-2 py-1 rounded bg-slate-100 text-slate-700 border border-slate-200">
-              Grid Azimuth: {urbanAzimuth > 0 ? `+${urbanAzimuth}°` : `${urbanAzimuth}°`}
-            </span>
+            <div className="flex items-center gap-2">
+              <div className="flex items-center bg-slate-100 p-1 rounded-xl border border-slate-200 text-xs font-semibold">
+                <button
+                  type="button"
+                  onClick={() => setUrbanViewMode('3d_webgl')}
+                  className={`px-2.5 py-1 rounded-lg transition flex items-center gap-1 ${
+                    urbanViewMode === '3d_webgl'
+                      ? 'bg-teal-700 text-white shadow'
+                      : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                >
+                  <Sun className="w-3.5 h-3.5" />
+                  3D WebGL (Sun Shadows)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setUrbanViewMode('2.5d_svg')}
+                  className={`px-2.5 py-1 rounded-lg transition flex items-center gap-1 ${
+                    urbanViewMode === '2.5d_svg'
+                      ? 'bg-teal-700 text-white shadow'
+                      : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                >
+                  <Layers className="w-3.5 h-3.5" />
+                  2.5D SVG Axon
+                </button>
+              </div>
+              <span className="text-[10px] font-mono px-2 py-1 rounded bg-slate-100 text-slate-700 border border-slate-200">
+                Azimuth: {urbanAzimuth > 0 ? `+${urbanAzimuth}°` : `${urbanAzimuth}°`}
+              </span>
+            </div>
           </div>
 
-          <div className="w-full bg-gradient-to-b from-sky-50/70 via-slate-50 to-emerald-50/30 rounded-xl border border-slate-200 overflow-hidden">
-            {(() => {
+          {urbanViewMode === '3d_webgl' ? (
+            <Urban3DViewer
+              footprintLength={lengthX}
+              footprintWidth={widthY}
+              floorsCount={floors}
+              floorHeight={floorHeight}
+              urbanAzimuth={urbanAzimuth}
+              streetWidth={(streetWidthN + streetWidthS + streetWidthE + streetWidthW) / 4}
+              neighborNorthH={neighborHeightN}
+              neighborSouthH={neighborHeightS}
+              neighborEastH={neighborHeightE}
+              neighborWestH={neighborHeightW}
+              latitude={climate.lat}
+              wwrSouth={sim.zones.South?.wwrPct / 100 || 0.4}
+              wwrNorth={sim.zones.North?.wwrPct / 100 || 0.25}
+              wwrEast={sim.zones.East?.wwrPct / 100 || 0.3}
+              wwrWest={sim.zones.West?.wwrPct / 100 || 0.3}
+              perimeterDepth={perimeterDepth}
+              urbanShadingSouth={sim.urbanShading.S}
+              urbanShadingNorth={sim.urbanShading.N}
+              urbanShadingEast={sim.urbanShading.E}
+              urbanShadingWest={sim.urbanShading.W}
+            />
+          ) : (
+            <div className="w-full bg-gradient-to-b from-sky-50/70 via-slate-50 to-emerald-50/30 rounded-xl border border-slate-200 overflow-hidden">
+              {(() => {
               const tw = Math.min(56, Math.max(24, lengthX * 0.9));
               const td = Math.min(44, Math.max(18, widthY * 0.9));
               const th = sim.buildingHeight * 1.6;
@@ -316,6 +375,7 @@ export const Stage2Urban: React.FC = () => {
               );
             })()}
           </div>
+          )}
         </div>
 
         {/* Right: Urban Shading Mask & Facade Multipliers + Zero Energy District Card (5 cols) */}

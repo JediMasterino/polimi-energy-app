@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import {
   Box,
   Layers,
@@ -13,6 +13,7 @@ import {
   BuildingTypologyType,
   ThermalZoneName
 } from '../context/DesignProjectContext';
+import { Urban3DViewer } from './Urban3DViewer';
 
 export const Stage3FormZoning: React.FC = () => {
   const {
@@ -31,8 +32,20 @@ export const Stage3FormZoning: React.FC = () => {
     selectedZone,
     setSelectedZone,
     sim,
-    setActiveStage
+    setActiveStage,
+    climate,
+    neighborHeightN,
+    neighborHeightS,
+    neighborHeightE,
+    neighborHeightW,
+    streetWidthN,
+    streetWidthS,
+    streetWidthE,
+    streetWidthW,
+    urbanAzimuth
   } = useDesignProject();
+
+  const [massingViewMode, setMassingViewMode] = useState<'2d_plan' | '3d_webgl'>('2d_plan');
 
   const zoneOrder: ThermalZoneName[] = ['South', 'North', 'East', 'West', 'Core'];
 
@@ -157,29 +170,82 @@ export const Stage3FormZoning: React.FC = () => {
             <div>
               <h3 className="text-sm font-bold text-slate-800 flex items-center gap-1.5">
                 <Layers className="w-4 h-4 text-teal-600" />
-                Interactive 2D Floorplate 5-Zone Thermal Subdivision
+                Floorplate Thermal Subdivision & 3D Massing
               </h3>
               <p className="text-[11px] text-slate-500">
-                Click any zone (N, S, E, W Perimeter or Core) to inspect its load profile and downscale to Stage 4 Shoebox
+                Inspect 2D thermal zones (N, S, E, W Perimeter & Core) or switch to 3D WebGL with live solar shadows
               </p>
             </div>
-            <label className="flex items-center gap-2 text-xs font-semibold bg-slate-50 px-3 py-1 rounded-xl border border-slate-200">
-              <span>Daylight Perimeter Depth:</span>
-              <strong className="text-teal-700">{perimeterDepth.toFixed(1)} m</strong>
-              <input
-                type="range"
-                min={3.0}
-                max={5.0}
-                step={0.5}
-                value={perimeterDepth}
-                onChange={(e) => setPerimeterDepth(Number(e.target.value))}
-                className="w-20 accent-teal-600"
-              />
-            </label>
+            <div className="flex items-center gap-2">
+              <div className="flex items-center bg-slate-100 p-1 rounded-xl border border-slate-200 text-xs font-semibold">
+                <button
+                  type="button"
+                  onClick={() => setMassingViewMode('2d_plan')}
+                  className={`px-2.5 py-1 rounded-lg transition flex items-center gap-1 ${
+                    massingViewMode === '2d_plan'
+                      ? 'bg-teal-700 text-white shadow'
+                      : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                >
+                  <Layers className="w-3.5 h-3.5" />
+                  2D Thermal Plan
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setMassingViewMode('3d_webgl')}
+                  className={`px-2.5 py-1 rounded-lg transition flex items-center gap-1 ${
+                    massingViewMode === '3d_webgl'
+                      ? 'bg-teal-700 text-white shadow'
+                      : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                >
+                  <Sun className="w-3.5 h-3.5" />
+                  3D Massing & Shadows
+                </button>
+              </div>
+
+              <label className="flex items-center gap-1.5 text-xs font-semibold bg-slate-50 px-2.5 py-1 rounded-xl border border-slate-200">
+                <span>Perimeter:</span>
+                <strong className="text-teal-700">{perimeterDepth.toFixed(1)}m</strong>
+                <input
+                  type="range"
+                  min={3.0}
+                  max={5.0}
+                  step={0.5}
+                  value={perimeterDepth}
+                  onChange={(e) => setPerimeterDepth(Number(e.target.value))}
+                  className="w-16 accent-teal-600"
+                />
+              </label>
+            </div>
           </div>
 
-          <div className="w-full bg-slate-50 rounded-xl border border-slate-200 p-3">
-            {(() => {
+          {massingViewMode === '3d_webgl' ? (
+            <Urban3DViewer
+              footprintLength={lengthX}
+              footprintWidth={widthY}
+              floorsCount={floors}
+              floorHeight={floorHeight}
+              urbanAzimuth={urbanAzimuth}
+              streetWidth={(streetWidthN + streetWidthS + streetWidthE + streetWidthW) / 4}
+              neighborNorthH={neighborHeightN}
+              neighborSouthH={neighborHeightS}
+              neighborEastH={neighborHeightE}
+              neighborWestH={neighborHeightW}
+              latitude={climate.lat}
+              wwrSouth={sim.zones.South?.wwrPct / 100 || 0.4}
+              wwrNorth={sim.zones.North?.wwrPct / 100 || 0.25}
+              wwrEast={sim.zones.East?.wwrPct / 100 || 0.3}
+              wwrWest={sim.zones.West?.wwrPct / 100 || 0.3}
+              perimeterDepth={perimeterDepth}
+              urbanShadingSouth={sim.urbanShading.S}
+              urbanShadingNorth={sim.urbanShading.N}
+              urbanShadingEast={sim.urbanShading.E}
+              urbanShadingWest={sim.urbanShading.W}
+            />
+          ) : (
+            <div className="w-full bg-slate-50 rounded-xl border border-slate-200 p-3">
+              {(() => {
               const svgW = 560;
               const svgH = 320;
               const cx = svgW / 2;
@@ -338,6 +404,7 @@ export const Stage3FormZoning: React.FC = () => {
               );
             })()}
           </div>
+          )}
 
           {/* Footprint Dimension Sliders */}
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs bg-slate-50 p-3 rounded-xl border border-slate-200">

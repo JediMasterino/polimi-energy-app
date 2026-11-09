@@ -12,7 +12,14 @@ import {
   Sparkles,
   Sliders,
   PanelLeftClose,
-  PanelLeftOpen
+  PanelLeftOpen,
+  Download,
+  FileText,
+  Upload,
+  FileCheck,
+  CheckCircle2,
+  X,
+  Printer
 } from 'lucide-react';
 import {
   DesignProjectProvider,
@@ -29,6 +36,16 @@ import { Stage3FormZoning } from './components/Stage3FormZoning';
 import { Stage4FacadeFabric } from './components/Stage4FacadeFabric';
 import { Stage5EnergyComfort } from './components/Stage5EnergyComfort';
 import { Stage6LCA } from './components/Stage6LCA';
+import {
+  generateEnergyPlusIdf,
+  generateGbXml,
+  generateProjectReportHtml,
+  generateSimulationCsv,
+  downloadTextFile
+} from './utils/bldExportEngine';
+import { parseEpwText, extractEpwFromZipBuffer, exportDatasetToEpw } from './utils/epwEngine';
+import { AdvancedHvacRenewableModal } from './components/AdvancedHvacRenewableModal';
+import { ParetoExplorerModal } from './components/ParetoExplorerModal';
 
 const SCALE_STAGES: Array<{
   id: ScaleStageId;
@@ -63,10 +80,89 @@ const StudioWorkspace: React.FC = () => {
     setLegislativeTarget,
     activeStrategies,
     applyOptimizationPreset,
-    sim
+    sim,
+    lengthX,
+    widthY,
+    floors,
+    floorHeight,
+    urbanAzimuth,
+    perimeterDepth,
+    uWin,
+    shgc,
+    visTrans,
+    overhangDepth,
+    shadingMode,
+    natVentOpeningRatio,
+    heatingCop,
+    coolingEer,
+    roofPvRatio
   } = useDesignProject();
 
   const [leftDrawerOpen, setLeftDrawerOpen] = useState(true);
+  const [showExportModal, setShowExportModal] = useState(false);
+  const [showHvacModal, setShowHvacModal] = useState(false);
+  const [showParetoModal, setShowParetoModal] = useState(false);
+  const [isDraggingFile, setIsDraggingFile] = useState(false);
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
+
+  const handleFileDrop = async (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDraggingFile(false);
+    const files = e.dataTransfer.files;
+    if (!files || files.length === 0) return;
+
+    const file = files[0];
+    try {
+      if (file.name.toLowerCase().endsWith('.zip')) {
+        const buffer = await file.arrayBuffer();
+        const epwText = await extractEpwFromZipBuffer(buffer);
+        if (epwText) {
+          const parsed = parseEpwText(epwText, file.name.replace(/\.zip$/i, ''));
+          addAndSelectClimate(parsed);
+          setToastMessage(`Imported ${parsed.name} (${parsed.koppen}) from ZIP archive!`);
+          setTimeout(() => setToastMessage(null), 5000);
+        } else {
+          setToastMessage('Could not find .epw file inside the dropped ZIP.');
+          setTimeout(() => setToastMessage(null), 5000);
+        }
+      } else if (file.name.toLowerCase().endsWith('.epw') || file.type.includes('text')) {
+        const text = await file.text();
+        const parsed = parseEpwText(text, file.name.replace(/\.epw$/i, ''));
+        addAndSelectClimate(parsed);
+        setToastMessage(`Imported ${parsed.name} (${parsed.koppen}) with 8,760 hours of data!`);
+        setTimeout(() => setToastMessage(null), 5000);
+      } else {
+        setToastMessage('Please drop a valid EnergyPlus .epw or OneBuilding .zip archive.');
+        setTimeout(() => setToastMessage(null), 5000);
+      }
+    } catch (err) {
+      setToastMessage('Error parsing weather file: ' + String(err));
+      setTimeout(() => setToastMessage(null), 5000);
+    }
+  };
+
+  const exportPayload = {
+    projectName: `PoliMi_${buildingProgram}_${climate.name.replace(/[^a-zA-Z0-9]/g, '_')}`,
+    climate,
+    buildingProgram,
+    legislativeTarget,
+    footprintLength: lengthX,
+    footprintWidth: widthY,
+    floorsCount: floors,
+    floorHeight,
+    urbanAzimuth,
+    perimeterDepth,
+    uWin,
+    shgc,
+    visTrans,
+    overhangDepth,
+    louverShadingFactor: shadingMode === 'dynamic_louvers' ? 0.6 : 1.0,
+    natVentRatio: natVentOpeningRatio,
+    heatingCop,
+    coolingEer,
+    roofPvRatio,
+    sim
+  };
 
   const handleProgramChange = (p: BuildingProgramType) => {
     setBuildingProgram(p);
@@ -86,7 +182,19 @@ const StudioWorkspace: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen bg-slate-100 text-slate-900 flex flex-col">
+    <div
+      className="min-h-screen bg-slate-100 text-slate-900 flex flex-col relative"
+      onDragOver={(e) => {
+        e.preventDefault();
+        setIsDraggingFile(true);
+      }}
+      onDragLeave={(e) => {
+        if (!e.currentTarget.contains(e.relatedTarget as Node)) {
+          setIsDraggingFile(false);
+        }
+      }}
+      onDrop={handleFileDrop}
+    >
       {/* Top Academic Header */}
       <header className="bg-slate-950 text-white border-b border-slate-800 px-4 py-3 shadow-md">
         <div className="max-w-[1800px] mx-auto flex flex-wrap items-center justify-between gap-3">
@@ -114,22 +222,54 @@ const StudioWorkspace: React.FC = () => {
             </div>
           </div>
 
-          {/* Quick Benchmark Optimization Archetypes */}
+          {/* Header Action Tools & Benchmark Optimization Archetypes */}
           <div className="flex flex-wrap items-center gap-2 text-xs">
-            <span className="text-[11px] text-slate-400 hidden md:inline">Design Benchmark:</span>
+            <button
+              type="button"
+              onClick={() => setShowParetoModal(true)}
+              className="px-3 py-1.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold flex items-center gap-1.5 shadow transition"
+              title="Multi-Objective Parametric Explorer & Pareto Optimal Frontier"
+            >
+              <Sparkles className="w-3.5 h-3.5" />
+              Pareto Explorer
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setShowHvacModal(true)}
+              className="px-3 py-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-teal-300 border border-teal-500/40 font-bold flex items-center gap-1.5 shadow transition"
+              title="Open Advanced Heat Pump, GSHP Boreholes & BESS Sizing"
+            >
+              <Sliders className="w-3.5 h-3.5 text-teal-400" />
+              HVAC & Sizing
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setShowExportModal(true)}
+              className="px-3 py-1.5 rounded-xl bg-teal-600 hover:bg-teal-500 text-white font-bold flex items-center gap-1.5 shadow transition"
+              title="Export EnergyPlus IDF, gbXML, PDF Report & CSV"
+            >
+              <Download className="w-3.5 h-3.5" />
+              Export & Reports ▾
+            </button>
+
+            <span className="w-px h-5 bg-slate-800 mx-1 hidden md:inline" />
+
+            <span className="text-[11px] text-slate-400 hidden xl:inline">Archetypes:</span>
             <button
               type="button"
               onClick={() => applyOptimizationPreset('baseline')}
-              className="px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 font-semibold transition"
+              className="px-2.5 py-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 text-slate-200 border border-slate-700 font-semibold transition"
             >
               Baseline
             </button>
             <button
               type="button"
               onClick={() => applyOptimizationPreset('passive')}
-              className="px-2.5 py-1.5 rounded-lg bg-teal-900/60 hover:bg-teal-800/80 text-teal-200 border border-teal-700 font-semibold transition"
+              className="px-2.5 py-1.5 rounded-lg bg-teal-950/80 hover:bg-teal-900 text-teal-200 border border-teal-700 font-semibold transition"
             >
-              Passive Optimized
+              Passive
             </button>
             <button
               type="button"
@@ -137,7 +277,7 @@ const StudioWorkspace: React.FC = () => {
               className="px-2.5 py-1.5 rounded-lg bg-gradient-to-r from-teal-500 to-emerald-500 hover:from-teal-400 hover:to-emerald-400 text-slate-950 font-bold flex items-center gap-1 shadow transition"
             >
               <Sparkles className="w-3.5 h-3.5" />
-              Net-Zero District Ready
+              Net-Zero
             </button>
           </div>
         </div>
@@ -574,6 +714,211 @@ const StudioWorkspace: React.FC = () => {
           </div>
         </aside>
       </main>
+
+      {/* Global Drag-and-Drop Floating Overlay */}
+      {isDraggingFile && (
+        <div className="fixed inset-0 z-50 bg-teal-950/85 backdrop-blur-md flex flex-col items-center justify-center p-6 border-4 border-dashed border-teal-400 pointer-events-none animate-in fade-in duration-150">
+          <div className="w-20 h-20 rounded-3xl bg-teal-500/20 text-teal-300 flex items-center justify-center mb-4 border border-teal-400 shadow-2xl animate-bounce">
+            <Upload className="w-10 h-10" />
+          </div>
+          <h2 className="text-2xl font-black text-white tracking-tight mb-2">
+            Drop Custom Weather File Here
+          </h2>
+          <p className="text-sm text-teal-200 max-w-md text-center">
+            Supports EnergyPlus <strong>.EPW</strong> or OneBuilding / Ladybug <strong>.ZIP</strong> archives.
+            Automatically decompressed in browser memory and simulated instantly!
+          </p>
+        </div>
+      )}
+
+      {/* Floating Notification Toast */}
+      {toastMessage && (
+        <div className="fixed bottom-6 right-6 z-50 bg-slate-900 text-white px-4 py-3 rounded-2xl shadow-2xl border border-teal-500/50 flex items-center gap-3 animate-in slide-in-from-bottom duration-200">
+          <CheckCircle2 className="w-5 h-5 text-teal-400 shrink-0" />
+          <span className="text-xs font-semibold">{toastMessage}</span>
+          <button
+            type="button"
+            onClick={() => setToastMessage(null)}
+            className="p-1 hover:bg-slate-800 rounded-lg text-slate-400 hover:text-white"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+      )}
+
+      {/* Advanced HVAC & Renewables Studio Modal */}
+      <AdvancedHvacRenewableModal
+        isOpen={showHvacModal}
+        onClose={() => setShowHvacModal(false)}
+      />
+
+      {/* Multi-Objective Parametric Explorer & Pareto Front Modal */}
+      <ParetoExplorerModal
+        isOpen={showParetoModal}
+        onClose={() => setShowParetoModal(false)}
+      />
+
+      {/* Export & Reports Modal */}
+      {showExportModal && (
+        <div className="fixed inset-0 z-50 bg-slate-950/70 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl max-w-2xl w-full border border-slate-200 shadow-2xl overflow-hidden animate-in zoom-in-95 duration-150">
+            <div className="bg-slate-900 text-white px-6 py-4 flex items-center justify-between border-b border-slate-800">
+              <div className="flex items-center gap-3">
+                <div className="w-9 h-9 rounded-xl bg-teal-500/20 text-teal-400 flex items-center justify-center border border-teal-500/30">
+                  <Download className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-white">Project Export & Academic Reports</h3>
+                  <p className="text-xs text-slate-400">EnergyPlus .IDF, Green Building XML (.gbXML), PDF Report & CSV</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowExportModal(false)}
+                className="p-1.5 text-slate-400 hover:text-white rounded-lg hover:bg-slate-800 transition"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="p-6 space-y-4 max-h-[70vh] overflow-y-auto">
+              {/* Option 1: EnergyPlus .IDF */}
+              <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 flex items-center justify-between gap-4 hover:border-teal-500 transition">
+                <div className="space-y-0.5">
+                  <div className="flex items-center gap-2">
+                    <span className="font-bold text-slate-900 text-sm">EnergyPlus Input File (.idf)</span>
+                    <span className="text-[10px] bg-sky-100 text-sky-800 font-bold px-2 py-0.5 rounded">v24.1 Ready</span>
+                  </div>
+                  <p className="text-xs text-slate-500">
+                    Full building deck with 5 thermal zones, opaque assemblies, glazing materials, and ideal loads HVAC.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const idf = generateEnergyPlusIdf(exportPayload);
+                    downloadTextFile(`${exportPayload.projectName}.idf`, idf, 'text/plain');
+                  }}
+                  className="px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold rounded-xl flex items-center gap-1.5 shrink-0 shadow transition"
+                >
+                  <Download className="w-4 h-4" />
+                  Download .IDF
+                </button>
+              </div>
+
+              {/* Option 2: Green Building XML (.gbxml) */}
+              <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 flex items-center justify-between gap-4 hover:border-teal-500 transition">
+                <div className="space-y-0.5">
+                  <div className="flex items-center gap-2">
+                    <span className="font-bold text-slate-900 text-sm">Green Building XML (.gbxml)</span>
+                    <span className="text-[10px] bg-emerald-100 text-emerald-800 font-bold px-2 py-0.5 rounded">BIM / Revit</span>
+                  </div>
+                  <p className="text-xs text-slate-500">
+                    Open gbXML schema for Autodesk Revit, Autodesk Insight 360, IES-VE, and Rhino/Grasshopper.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const xml = generateGbXml(exportPayload);
+                    downloadTextFile(`${exportPayload.projectName}.xml`, xml, 'application/xml');
+                  }}
+                  className="px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold rounded-xl flex items-center gap-1.5 shrink-0 shadow transition"
+                >
+                  <Download className="w-4 h-4" />
+                  Download .gbXML
+                </button>
+              </div>
+
+              {/* Option 3: Printable Executive Report */}
+              <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 flex items-center justify-between gap-4 hover:border-teal-500 transition">
+                <div className="space-y-0.5">
+                  <div className="flex items-center gap-2">
+                    <span className="font-bold text-slate-900 text-sm">Academic Project Report (PDF / Print)</span>
+                    <span className="text-[10px] bg-teal-100 text-teal-800 font-bold px-2 py-0.5 rounded">PoliMi Official</span>
+                  </div>
+                  <p className="text-xs text-slate-500">
+                    Comprehensive formatted summary report with geometry, envelope compliance, energy balance, and LCA.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const html = generateProjectReportHtml(exportPayload);
+                    const win = window.open('', '_blank');
+                    if (win) {
+                      win.document.write(html);
+                      win.document.close();
+                    }
+                  }}
+                  className="px-4 py-2 bg-teal-600 hover:bg-teal-500 text-white text-xs font-bold rounded-xl flex items-center gap-1.5 shrink-0 shadow transition"
+                >
+                  <Printer className="w-4 h-4" />
+                  Print / Save PDF
+                </button>
+              </div>
+
+              {/* Option 4: Simulation CSV */}
+              <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 flex items-center justify-between gap-4 hover:border-teal-500 transition">
+                <div className="space-y-0.5">
+                  <div className="flex items-center gap-2">
+                    <span className="font-bold text-slate-900 text-sm">Simulation Results Dataset (.csv)</span>
+                    <span className="text-[10px] bg-amber-100 text-amber-800 font-bold px-2 py-0.5 rounded">Spreadsheet</span>
+                  </div>
+                  <p className="text-xs text-slate-500">
+                    Tabular CSV file of monthly energy balance, 5-zone breakdown, and whole-life carbon.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const csv = generateSimulationCsv(exportPayload);
+                    downloadTextFile(`${exportPayload.projectName}_simulation.csv`, csv, 'text/csv');
+                  }}
+                  className="px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold rounded-xl flex items-center gap-1.5 shrink-0 shadow transition"
+                >
+                  <Download className="w-4 h-4" />
+                  Download .CSV
+                </button>
+              </div>
+
+              {/* Option 5: EnergyPlus Weather File (.epw) */}
+              <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 flex items-center justify-between gap-4 hover:border-teal-500 transition">
+                <div className="space-y-0.5">
+                  <div className="flex items-center gap-2">
+                    <span className="font-bold text-slate-900 text-sm">Active Weather Dataset (.epw)</span>
+                    <span className="text-[10px] bg-purple-100 text-purple-800 font-bold px-2 py-0.5 rounded">Weather</span>
+                  </div>
+                  <p className="text-xs text-slate-500">
+                    Export the currently active station ({climate.name}) into a standard 8,760-hour .epw weather file.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const epw = exportDatasetToEpw(climate);
+                    downloadTextFile(`${climate.name.replace(/[^a-zA-Z0-9]/g, '_')}.epw`, epw, 'text/plain');
+                  }}
+                  className="px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold rounded-xl flex items-center gap-1.5 shrink-0 shadow transition"
+                >
+                  <Download className="w-4 h-4" />
+                  Download .EPW
+                </button>
+              </div>
+            </div>
+
+            <div className="bg-slate-100 px-6 py-3 border-t border-slate-200 flex justify-end">
+              <button
+                type="button"
+                onClick={() => setShowExportModal(false)}
+                className="px-4 py-1.5 bg-slate-300 hover:bg-slate-400 text-slate-800 text-xs font-semibold rounded-lg transition"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
