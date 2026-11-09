@@ -1,4 +1,7 @@
 {
+  "framework": "vite",
+  "buildCommand": "npm run build",
+  "outputDirectory": "dist",
   "rewrites": [
     {
       "source": "/onebuilding/:path*",
@@ -19,10 +22,6 @@
     {
       "source": "/map-esri/:path*",
       "destination": "https://server.arcgisonline.com/ArcGIS/rest/services/:path*"
-    },
-    {
-      "source": "/(.*)",
-      "destination": "/index.html"
     }
   ]
 }

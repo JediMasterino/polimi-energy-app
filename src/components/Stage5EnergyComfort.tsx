@@ -14,6 +14,7 @@ import {
   HvacSystemType
 } from '../context/DesignProjectContext';
 import { AdvancedHvacRenewableModal } from './AdvancedHvacRenewableModal';
+import { HourlySimulationTab } from './HourlySimulationTab';
 
 export const Stage5EnergyComfort: React.FC = () => {
   const {
@@ -43,6 +44,7 @@ export const Stage5EnergyComfort: React.FC = () => {
   } = useDesignProject();
 
   const [showHvacModal, setShowHvacModal] = useState(false);
+  const [engineMode, setEngineMode] = useState<'monthly_iso' | 'hourly_8760'>('monthly_iso');
 
   return (
     <div className="space-y-5">
@@ -66,7 +68,31 @@ export const Stage5EnergyComfort: React.FC = () => {
           </p>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="flex items-center bg-slate-950/70 p-1 rounded-xl border border-slate-700">
+            <button
+              type="button"
+              onClick={() => setEngineMode('monthly_iso')}
+              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition ${
+                engineMode === 'monthly_iso'
+                  ? 'bg-teal-500 text-slate-950 shadow'
+                  : 'text-slate-300 hover:text-white'
+              }`}
+            >
+              Monthly ISO 52000-1
+            </button>
+            <button
+              type="button"
+              onClick={() => setEngineMode('hourly_8760')}
+              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition ${
+                engineMode === 'hourly_8760'
+                  ? 'bg-amber-400 text-slate-950 shadow'
+                  : 'text-slate-300 hover:text-white'
+              }`}
+            >
+              8,760h Dynamic 5R1C
+            </button>
+          </div>
           <button
             type="button"
             onClick={() => setShowHvacModal(true)}
@@ -85,6 +111,8 @@ export const Stage5EnergyComfort: React.FC = () => {
           </button>
         </div>
       </div>
+
+      {engineMode === 'hourly_8760' && <HourlySimulationTab />}
 
       {/* Row 1: ISO 52000-1 Sankey / Energy Boundary Flow Diagram + HVAC & Ventilation Controls */}
       <div className="grid grid-cols-1 xl:grid-cols-12 gap-5">

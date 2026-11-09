@@ -51,8 +51,9 @@ export const HourlySimulationTab: React.FC = () => {
     visTrans,
     overhangDepth,
     shadingMode,
-    hvacCopHeating,
-    hvacEerCooling,
+    heatingCop,
+    coolingEer,
+    internalLoadsWm2,
     sim
   } = useDesignProject();
 
@@ -87,7 +88,7 @@ export const HourlySimulationTab: React.FC = () => {
 
     // Internal heat gains baseline schedule (W)
     const occBase = buildingProgram === 'residential' ? 0.04 : 0.07;
-    const baseInternalW = totalGfa * (occBase * 80 + sim.lightingPowerWm2);
+    const baseInternalW = totalGfa * (occBase * 80 + internalLoadsWm2);
 
     // Shading multiplier from Stage 2 + dynamic louvers
     const urbanShadeAvg = sim.urbanShading.avg;
