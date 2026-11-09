@@ -21,8 +21,20 @@ import {
   Maximize2,
   ShieldCheck,
   Sparkles,
-  ArrowRight
+  ArrowRight,
+  Globe,
+  Eye
 } from 'lucide-react';
+import {
+  ClimateDataset,
+  synthesizeHourlyFromPreset
+} from './utils/epwEngine';
+import {
+  EpwSearchAndUploadWidget,
+  CbeClimaExplorerTab,
+  CeaParetoPortfolioPanel,
+  SavedScenarioItem
+} from './components/ClimaAndAdvancedPanels';
 
 // ============================================================================
 // REFERENCE DATASETS (CLIMATE ZONES, ARCHETYPES, HVAC & LCA MATERIALS)
@@ -310,10 +322,12 @@ const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', '
 export default function SustainabilityStudioApp() {
   const [activeTab, setActiveTab] = useState('box');
   const [savedScenario, setSavedScenario] = useState(null);
+  const [scenarioPortfolio, setScenarioPortfolio] = useState<SavedScenarioItem[]>([]);
   const [showReportModal, setShowReportModal] = useState(false);
 
-  // --- TAB 1 STATE: SIMPLE BOX & ZONING ---
+  // --- TAB 1 STATE: SIMPLE BOX, EPW CLIMATE & URBAN ZONING ---
   const [climateId, setClimateId] = useState('mantova');
+  const [customClimates, setCustomClimates] = useState<Record<string, ClimateDataset>>({});
   const [programId, setProgramId] = useState('office');
   const [length, setLength] = useState(36);          // m (East-West axis at 0° rot)
   const [width, setWidth] = useState(20);            // m (North-South axis at 0° rot)
@@ -321,24 +335,30 @@ export default function SustainabilityStudioApp() {
   const [floorHeight, setFloorHeight] = useState(3.5); // m
   const [orientation, setOrientation] = useState(0);   // deg from North
   const [perimeterDepth, setPerimeterDepth] = useState(4.5); // ASHRAE 90.1 offset (3m-5m)
+  const [urbanObstructionDeg, setUrbanObstructionDeg] = useState(12); // CEA Urban Canyon Obstruction Angle (0-50°)
   const [wwrNorth, setWwrNorth] = useState(25);
   const [wwrSouth, setWwrSouth] = useState(50);
   const [wwrEast, setWwrEast] = useState(30);
   const [wwrWest, setWwrWest] = useState(30);
 
-  // --- TAB 2 STATE: STATIONARY ENERGY BALANCE ---
+  // --- TAB 2 STATE: STATIONARY ENERGY BALANCE, DALEC DAYLIGHTING & BIPV ---
   const [uWall, setUWall] = useState(0.24);          // W/m2K
   const [uRoof, setURoof] = useState(0.20);          // W/m2K
   const [uFloor, setUFloor] = useState(0.26);        // W/m2K
   const [uWin, setUWin] = useState(1.30);            // W/m2K
   const [shgc, setShgc] = useState(0.45);            // g-value
+  const [visTrans, setVisTrans] = useState(0.68);    // DALEC Visible Transmittance (tau_v)
   const [shadingFactor, setShadingFactor] = useState(0.65); // 1 = no shade, 0.3 = heavy louvers
+  const [autoBlinds, setAutoBlinds] = useState(true); // DALEC dynamic solar-tracking louver control
+  const [daylightControl, setDaylightControl] = useState<'dalec_dimming' | 'occupancy' | 'manual'>('dalec_dimming');
   const [ach, setAch] = useState(0.6);               // Air changes per hour (h^-1)
   const [mvhrEff, setMvhrEff] = useState(75);        // % Heat recovery efficiency
+  const [nightFlushOn, setNightFlushOn] = useState(true); // EnergyPlus Night Ventilative Cooling / Economizer
   const [hvacId, setHvacId] = useState('heatpump');
   const [pvRoofPct, setPvRoofPct] = useState(35);    // % of roof covered by PV
+  const [pvFacadePct, setPvFacadePct] = useState(15);// CEA % of S/E/W opaque spandrel covered by BIPV
 
-  // --- TAB 3 STATE: INDOOR COMFORT (EN 16798 / FANGER PMV) ---
+  // --- TAB 3 STATE: INDOOR COMFORT (EN 16798 / FANGER PMV / CBE CLIMA) ---
   const [comfortMode, setComfortMode] = useState('pmv'); // 'pmv' or 'adaptive'
   const [airTemp, setAirTemp] = useState(23.5);      // °C
   const [radTemp, setRadTemp] = useState(23.0);      // °C
@@ -347,6 +367,7 @@ export default function SustainabilityStudioApp() {
   const [metRate, setMetRate] = useState(1.2);       // met
   const [cloValue, setCloValue] = useState(0.7);     // clo
   const [runningMeanOutdoor, setRunningMeanOutdoor] = useState(23.5); // °C
+  const [showEpwCloudOnPsychro, setShowEpwCloudOnPsychro] = useState(true); // CBE Clima 8760h overlay
 
   // --- TAB 4 STATE: WHOLE-LIFE CARBON LCA & 5Rs ---
   const [structId, setStructId] = useState('timber');
@@ -365,7 +386,19 @@ export default function SustainabilityStudioApp() {
   // CORE PHYSICS & ENGINEERING ENGINE (REAL-TIME CALCULATIONS)
   // ==========================================================================
 
-  const climate = CLIMATE_PRESETS[climateId];
+  // Synthesize full 8,760-hour EPW datasets for presets and merge with user-imported EPW stations
+  const allClimates = useMemo<Record<string, ClimateDataset>>(() => {
+    const map: Record<string, ClimateDataset> = {};
+    Object.values(CLIMATE_PRESETS).forEach((p) => {
+      map[p.id] = synthesizeHourlyFromPreset(p);
+    });
+    Object.entries(customClimates).forEach(([k, v]) => {
+      map[k] = v;
+    });
+    return map;
+  }, [customClimates]);
+
+  const climate = allClimates[climateId] || allClimates.mantova;
   const program = PROGRAM_ARCHETYPES[programId];
   const hvac = HVAC_SYSTEMS[hvacId];
   const structure = STRUCTURAL_SYSTEMS[structId];
@@ -416,6 +449,10 @@ export default function SustainabilityStudioApp() {
       totalHeight,
       volume,
       totalWallGross,
+      areaNorthGross,
+      areaSouthGross,
+      areaEastGross,
+      areaWestGross,
       winNorth,
       winSouth,
       winEast,
@@ -436,7 +473,55 @@ export default function SustainabilityStudioApp() {
     };
   }, [length, width, floors, floorHeight, perimeterDepth, wwrNorth, wwrSouth, wwrEast, wwrWest]);
 
-  // 2. QUASI-STEADY-STATE MONTHLY ENERGY BALANCE (ISO 52000-1 / UNI/TS 11300 / CIBSE TM54)
+  // 1B. DALEC DAYLIGHTING & DYNAMIC FACADE ENGINE (EN 17037 / Bartenbach-UIBK Split-Flux)
+  const daylightCalc = useMemo(() => {
+    // CEA Urban Canyon Sky View Factor reduction from obstruction angle
+    const skyViewFactor = Math.max(0.35, Math.cos((urbanObstructionDeg * Math.PI) / 180));
+    const roomDepthFactor = Math.max(0.55, 4.5 / Math.max(2.5, geometry.effPerim));
+
+    // Average Daylight Factor DF (%) per perimeter zone: DF ≈ 0.22 * WWR * tau_v * skyView * depthFactor
+    const calcZoneDf = (wwrPct: number) =>
+      +((wwrPct / 100) * visTrans * skyViewFactor * roomDepthFactor * 16.5).toFixed(2);
+
+    const dfSouth = calcZoneDf(wwrSouth);
+    const dfNorth = calcZoneDf(wwrNorth);
+    const dfEast = calcZoneDf(wwrEast);
+    const dfWest = calcZoneDf(wwrWest);
+    const avgPerimDf = +((dfSouth + dfNorth + dfEast + dfWest) / 4).toFixed(2);
+
+    // Spatial Daylight Autonomy sDA_300/50% (%) across total floorplate (accounting for core vs perimeter)
+    const perimShare = (100 - geometry.coreSharePct) / 100;
+    const perimSda = Math.min(98, avgPerimDf * 24.5);
+    const sdaPct = Math.round(perimSda * perimShare);
+
+    // Useful Daylight Illuminance UDI (100-2000 lx) %
+    const glarePenalty = !autoBlinds && wwrSouth > 55 ? (wwrSouth - 55) * 0.6 : 0;
+    const udiPct = Math.round(Math.max(25, Math.min(92, 52 + avgPerimDf * 9.5 - glarePenalty)));
+
+    // DALEC Artificial Lighting Power Reduction Factor (f_L)
+    let lightingDimmingFactor = 1.0;
+    if (daylightControl === 'dalec_dimming') {
+      // Continuous daylight dimming in perimeter zones saves up to 62% of perimeter lighting
+      const perimSaving = Math.min(0.65, (avgPerimDf / 3.2) * 0.55) * perimShare;
+      lightingDimmingFactor = +(1 - perimSaving - 0.10).toFixed(2); // +10% absence sensor synergy
+    } else if (daylightControl === 'occupancy') {
+      lightingDimmingFactor = 0.82;
+    }
+
+    return {
+      skyViewFactor,
+      dfSouth,
+      dfNorth,
+      dfEast,
+      dfWest,
+      avgPerimDf,
+      sdaPct,
+      udiPct,
+      lightingDimmingFactor: Math.max(0.35, lightingDimmingFactor)
+    };
+  }, [urbanObstructionDeg, geometry.effPerim, geometry.coreSharePct, visTrans, wwrSouth, wwrNorth, wwrEast, wwrWest, autoBlinds, daylightControl]);
+
+  // 2. QUASI-STEADY-STATE MONTHLY ENERGY BALANCE (ISO 52000-1 / DALEC / CEA / EnergyPlus)
   const energyBalance = useMemo(() => {
     // Heat transfer coefficients H_tr and H_ve (W/K)
     // Include minor thermal bridging surcharge (+8%)
@@ -479,8 +564,12 @@ export default function SustainabilityStudioApp() {
       return climate.solarSouth[mIdx];
     };
 
-    // Internal gains power density (W/m2)
-    const qIntTotalWm2 = (program.occGain + program.lightGain + program.equipGain) * program.scheduleFactor;
+    // DALEC Coupled Internal Gains power density (W/m2) — dimmed lighting reduces internal heat load!
+    const effectiveLightWm2 = program.lightGain * daylightCalc.lightingDimmingFactor;
+    const qIntTotalWm2 = (program.occGain + effectiveLightWm2 + program.equipGain) * program.scheduleFactor;
+
+    // CEA Urban Canyon shading multiplier on vertical facades
+    const urbanSolarFactor = daylightCalc.skyViewFactor;
 
     const monthlyData = MONTHS.map((mName, idx) => {
       const hoursInMonth = [744, 672, 744, 720, 744, 720, 744, 744, 720, 744, 720, 744][idx];
@@ -496,8 +585,19 @@ export default function SustainabilityStudioApp() {
       const Q_ve_heat = H_ve * dT_heat * kwhToHours;
       const Q_ht_loss = Q_tr_heat + Q_ve_heat;
 
-      // Solar Gains (kWh) = Sum(I_sol,k * A_win,k) * g_gl * 0.9 (frame factor) * shading
-      const effG = shgc * 0.85 * shadingFactor;
+      // DALEC Seasonal Dynamic Blind Tracking:
+      // In winter (T_ext < 12°C), automated blinds retract to maximize passive solar heating (+18% vs static)
+      // In summer (T_ext > 18°C), automated blinds track solar cut-off angle to block direct beam (-22% solar load)
+      const dynamicShadeMult = autoBlinds
+        ? T_ext < 12
+          ? Math.min(0.92, shadingFactor * 1.18)
+          : T_ext > 18
+          ? shadingFactor * 0.78
+          : shadingFactor
+        : shadingFactor;
+
+      // Solar Gains (kWh) = Sum(I_sol,k * A_win,k) * g_gl * 0.85 (frame factor) * shading * urbanContext
+      const effG = shgc * 0.85 * dynamicShadeMult * urbanSolarFactor;
       const solN = getRotatedSolar(idx, 0) * geometry.winNorth * effG;
       const solE = getRotatedSolar(idx, 90) * geometry.winEast * effG;
       const solS = getRotatedSolar(idx, 180) * geometry.winSouth * effG;
@@ -520,9 +620,10 @@ export default function SustainabilityStudioApp() {
       // Monthly Net Heating Need (kWh)
       const Q_H_nd = Math.max(0, Q_ht_loss - eta_H * Q_gn);
 
-      // Cooling balance: heat rejection during warm months
+      // Cooling balance: heat rejection during warm months (with EnergyPlus Night-Flush / Economizer boost)
+      const nightFlushBoost = nightFlushOn ? 1.28 : 1.0;
       const dT_reject = Math.max(0, program.coolSetpoint - T_ext);
-      const Q_ht_reject = (H_tr + H_ve) * dT_reject * kwhToHours;
+      const Q_ht_reject = (H_tr + H_ve * nightFlushBoost) * dT_reject * kwhToHours;
       const lambda_C = Q_gn > 1 ? Q_ht_reject / Q_gn : 10;
       let eta_C = 1.0;
       if (lambda_C > 0 && Math.abs(lambda_C - 1) > 1e-4) {
@@ -532,10 +633,20 @@ export default function SustainabilityStudioApp() {
       }
       const Q_C_nd = T_ext > 13.5 ? Math.max(0, Q_gn - eta_C * Q_ht_reject + (H_tr + H_ve) * dT_cool * kwhToHours * 0.35) : 0;
 
-      // Rooftop PV Generation (kWh)
-      // Assume 20% module efficiency & 0.80 system performance ratio
-      const pvArea = geometry.footprintArea * (pvRoofPct / 100);
-      const pvGen = climate.solarHoriz[idx] * pvArea * 0.20 * 0.82;
+      // Rooftop PV + CEA Vertical Facade BIPV Generation (kWh)
+      const pvRoofArea = geometry.footprintArea * (pvRoofPct / 100);
+      const pvRoofKwh = climate.solarHoriz[idx] * pvRoofArea * 0.20 * 0.82;
+
+      // Vertical BIPV on S/E/W opaque spandrel walls (16% BIPV module efficiency, derated by urban canyon)
+      const opaqueSEW =
+        (geometry.areaSouthGross - geometry.winSouth) +
+        (geometry.areaEastGross - geometry.winEast) +
+        (geometry.areaWestGross - geometry.winWest);
+      const bipvArea = Math.max(0, opaqueSEW) * (pvFacadePct / 100);
+      const avgVertSolar = (getRotatedSolar(idx, 180) + getRotatedSolar(idx, 90) + getRotatedSolar(idx, 270)) / 3;
+      const pvFacadeKwh = avgVertSolar * urbanSolarFactor * bipvArea * 0.16 * 0.80;
+
+      const pvGen = pvRoofKwh + pvFacadeKwh;
 
       return {
         month: mName,
@@ -548,7 +659,8 @@ export default function SustainabilityStudioApp() {
         eta_H,
         Q_H_nd: Q_H_nd / geometry.gfa,
         Q_C_nd: Q_C_nd / geometry.gfa,
-        pvGen: pvGen / geometry.gfa
+        pvGen: pvGen / geometry.gfa,
+        pvFacadeGen: pvFacadeKwh / geometry.gfa
       };
     });
 
@@ -561,21 +673,24 @@ export default function SustainabilityStudioApp() {
     const annualHeatNeed = sum('Q_H_nd');
     const annualCoolNeed = sum('Q_C_nd');
     const annualPvGen = sum('pvGen');
+    const annualBipvGen = sum('pvFacadeGen');
 
     // Component breakdown of transmission losses
     const wallShare = H_wall / H_tr;
     const winShare = H_win / H_tr;
     const roofFloorShare = (H_roof + H_floor) / H_tr;
 
-    // Delivered Energy (kWh/m2.yr)
+    // Delivered Energy (kWh/m2.yr) — with DALEC daylight dimming savings
     const delivHeat = annualHeatNeed / hvac.heatEff;
     const delivCool = annualCoolNeed / hvac.coolEff;
-    const delivLight = (program.lightGain * program.scheduleFactor * 8760) / 1000;
+    const baseDelivLight = (program.lightGain * program.scheduleFactor * 8760) / 1000;
+    const delivLight = baseDelivLight * daylightCalc.lightingDimmingFactor;
+    const lightingSavedKwh = baseDelivLight - delivLight;
     const delivEquip = (program.equipGain * program.scheduleFactor * 8760) / 1000;
 
     // Total EUI (Site Energy Use Intensity before PV, and Net after PV)
     const totalSiteEui = delivHeat + delivCool + delivLight + delivEquip;
-    const usablePv = Math.min(annualPvGen, totalSiteEui * 0.75); // Self-consumption + grid credit cap
+    const usablePv = Math.min(annualPvGen, totalSiteEui * 0.80); // Self-consumption + grid credit cap
     const netSiteEui = Math.max(0, totalSiteEui - usablePv);
 
     // Primary Energy (kWh_p/m2.yr)
@@ -611,6 +726,7 @@ export default function SustainabilityStudioApp() {
       annualHeatNeed,
       annualCoolNeed,
       annualPvGen,
+      annualBipvGen,
       usablePv,
       wallShare,
       winShare,
@@ -618,6 +734,7 @@ export default function SustainabilityStudioApp() {
       delivHeat,
       delivCool,
       delivLight,
+      lightingSavedKwh,
       delivEquip,
       totalSiteEui,
       netSiteEui,
@@ -639,14 +756,18 @@ export default function SustainabilityStudioApp() {
     uWin,
     shgc,
     shadingFactor,
+    autoBlinds,
     ach,
     mvhrEff,
+    nightFlushOn,
     hvac,
     pvRoofPct,
+    pvFacadePct,
     orientation,
     climate,
     program,
-    structure
+    structure,
+    daylightCalc
   ]);
 
   // 3. THERMAL COMFORT ENGINE (ISO 7730 FANGER PMV/PPD & EN 16798-1 ADAPTIVE)
@@ -801,10 +922,11 @@ export default function SustainabilityStudioApp() {
     };
   }, [structure, envelopeSys, insulation, studyPeriod, fiveRs, energyBalance.totalOpCarbon, geometry.gfa, envTypeId, insulId]);
 
-  // Save current state as Baseline Scenario (ClimaPlus style)
+  // Save current state as Baseline Scenario & append to Multi-Scenario Portfolio (CEA / DALEC style)
   const handleSaveScenario = () => {
-    setSavedScenario({
-      name: `${climate.name.split(',')[0]} - ${program.name.split(' ')[0]}`,
+    const snap: SavedScenarioItem = {
+      id: `scen_${Date.now()}`,
+      name: `${climate.name.split(',')[0]} • ${program.name.split(' ')[0]} (${structure.id.toUpperCase()})`,
       svRatio: geometry.svRatio,
       heatNeed: energyBalance.annualHeatNeed,
       coolNeed: energyBalance.annualCoolNeed,
@@ -812,7 +934,59 @@ export default function SustainabilityStudioApp() {
       primaryEnergy: energyBalance.primaryEnergy,
       totalOpCarbon: energyBalance.totalOpCarbon,
       wholeLifeCarbon: lcaCalc.wholeLifeCarbonPerM2,
-      circularityScore: lcaCalc.circularityScore
+      circularityScore: lcaCalc.circularityScore,
+      opCost: energyBalance.totalOpCost
+    };
+    setSavedScenario(snap);
+    setScenarioPortfolio((prev) => [snap, ...prev.slice(0, 7)]);
+  };
+
+  // Load 3 Reference Concepts for Pareto Front comparison (RC Baseline, DALEC Smart Facade, CEA NZEB Timber)
+  const handleAddPresetPortfolios = () => {
+    const presets: SavedScenarioItem[] = [
+      {
+        id: 'ref_rc_base',
+        name: 'Concept A: Cast RC + Static Blinds',
+        svRatio: geometry.svRatio,
+        heatNeed: energyBalance.annualHeatNeed * 1.28,
+        coolNeed: energyBalance.annualCoolNeed * 1.32,
+        netSiteEui: Math.max(68, energyBalance.netSiteEui * 1.55),
+        primaryEnergy: energyBalance.primaryEnergy * 1.48,
+        totalOpCarbon: energyBalance.totalOpCarbon * 1.45,
+        wholeLifeCarbon: 920,
+        circularityScore: 34,
+        opCost: energyBalance.totalOpCost * 1.4
+      },
+      {
+        id: 'ref_dalec_smart',
+        name: 'Concept B: Steel + DALEC Auto-Louvers',
+        svRatio: geometry.svRatio,
+        heatNeed: energyBalance.annualHeatNeed * 1.05,
+        coolNeed: energyBalance.annualCoolNeed * 0.88,
+        netSiteEui: Math.max(42, energyBalance.netSiteEui * 1.12),
+        primaryEnergy: energyBalance.primaryEnergy * 1.10,
+        totalOpCarbon: energyBalance.totalOpCarbon * 1.08,
+        wholeLifeCarbon: 640,
+        circularityScore: 76,
+        opCost: energyBalance.totalOpCost * 1.05
+      },
+      {
+        id: 'ref_cea_nzeb',
+        name: 'Concept C: CLT Timber + BIPV + 5Rs',
+        svRatio: geometry.svRatio,
+        heatNeed: energyBalance.annualHeatNeed * 0.86,
+        coolNeed: energyBalance.annualCoolNeed * 0.82,
+        netSiteEui: Math.max(18, energyBalance.netSiteEui * 0.68),
+        primaryEnergy: energyBalance.primaryEnergy * 0.65,
+        totalOpCarbon: energyBalance.totalOpCarbon * 0.65,
+        wholeLifeCarbon: 410,
+        circularityScore: 94,
+        opCost: energyBalance.totalOpCost * 0.65
+      }
+    ];
+    setScenarioPortfolio((prev) => {
+      const existingIds = new Set(prev.map((p) => p.id));
+      return [...prev, ...presets.filter((p) => !existingIds.has(p.id))];
     });
   };
 
@@ -826,6 +1000,7 @@ export default function SustainabilityStudioApp() {
     setFloorHeight(3.5);
     setOrientation(0);
     setPerimeterDepth(4.5);
+    setUrbanObstructionDeg(12);
     setWwrNorth(25);
     setWwrSouth(50);
     setWwrEast(30);
@@ -835,11 +1010,16 @@ export default function SustainabilityStudioApp() {
     setUFloor(0.26);
     setUWin(1.30);
     setShgc(0.45);
+    setVisTrans(0.68);
     setShadingFactor(0.65);
+    setAutoBlinds(true);
+    setDaylightControl('dalec_dimming');
     setAch(0.6);
     setMvhrEff(75);
+    setNightFlushOn(true);
     setHvacId('heatpump');
     setPvRoofPct(35);
+    setPvFacadePct(15);
     setStructId('timber');
     setEnvTypeId('offsite');
     setInsulId('woodfiber');
@@ -862,7 +1042,7 @@ export default function SustainabilityStudioApp() {
                   Politecnico di Milano 1863 • D.ABC
                 </span>
                 <span className="hidden sm:inline-block text-xs px-2 py-0.5 rounded bg-slate-800 text-slate-300 border border-slate-700">
-                  ASHRAE 209 • CIBSE TM54 • EN 16798 • EN 15978
+                  ASHRAE 209 • DALEC • CEA • CBE Clima • EnergyPlus EPW
                 </span>
               </div>
               <h1 className="text-base sm:text-lg font-bold tracking-tight text-white">
@@ -875,10 +1055,10 @@ export default function SustainabilityStudioApp() {
             <button
               onClick={handleSaveScenario}
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-teal-600 hover:bg-teal-500 text-white text-xs font-semibold transition shadow-sm"
-              title="Save current configuration as Baseline Scenario to compare design iterations"
+              title="Save current configuration to Baseline & Pareto Portfolio"
             >
               <BookmarkPlus className="w-3.5 h-3.5" />
-              {savedScenario ? 'Update Baseline' : 'Save Baseline'}
+              {savedScenario ? `Snapshot (${scenarioPortfolio.length})` : 'Save Concept'}
             </button>
             <button
               onClick={() => setShowReportModal(true)}
@@ -907,9 +1087,9 @@ export default function SustainabilityStudioApp() {
               </span>
             </div>
             <div className="flex flex-col">
-              <span className="text-slate-400">GFA & Compactness (S/V)</span>
+              <span className="text-slate-400">GFA & Daylighting (DALEC)</span>
               <span className="font-semibold text-teal-300">
-                {geometry.gfa.toLocaleString()} m² • {geometry.svRatio.toFixed(2)} m⁻¹
+                {geometry.gfa.toLocaleString()} m² • DF {daylightCalc.avgPerimDf}% (sDA {daylightCalc.sdaPct}%)
               </span>
             </div>
             <div className="flex flex-col">
@@ -925,9 +1105,9 @@ export default function SustainabilityStudioApp() {
               </span>
             </div>
             <div className="flex flex-col">
-              <span className="text-slate-400">EN 16798 Comfort</span>
+              <span className="text-slate-400">EN 16798 & NatVent</span>
               <span className="font-semibold text-emerald-300">
-                PMV {comfortCalc.pmv >= 0 ? `+${comfortCalc.pmv.toFixed(2)}` : comfortCalc.pmv.toFixed(2)} (PPD {comfortCalc.ppd.toFixed(0)}%)
+                PMV {comfortCalc.pmv >= 0 ? `+${comfortCalc.pmv.toFixed(2)}` : comfortCalc.pmv.toFixed(2)} • NV {climate.natVentHoursPct}%
               </span>
             </div>
             <div className="flex flex-col">
@@ -941,83 +1121,102 @@ export default function SustainabilityStudioApp() {
       </header>
 
       {/* =================================================================== */}
-      {/* NAVIGATION TABS (4 INTEGRATED COURSE MODULES)                       */}
+      {/* NAVIGATION TABS (5 INTEGRATED COURSE & RESEARCH MODULES)            */}
       {/* =================================================================== */}
       <div className="max-w-7xl mx-auto px-4 pt-5">
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5 bg-white p-2 rounded-xl shadow-sm border border-slate-200">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-2 bg-white p-2 rounded-xl shadow-sm border border-slate-200">
           <button
             onClick={() => setActiveTab('box')}
-            className={`flex items-center gap-3 p-3 rounded-lg text-left transition ${
+            className={`flex items-center gap-2.5 p-2.5 rounded-lg text-left transition ${
               activeTab === 'box'
                 ? 'bg-slate-900 text-white shadow-sm'
                 : 'hover:bg-slate-100 text-slate-700'
             }`}
           >
             <div className={`p-2 rounded-lg ${activeTab === 'box' ? 'bg-teal-500/20 text-teal-300' : 'bg-slate-100 text-slate-600'}`}>
-              <Building2 className="w-5 h-5" />
+              <Building2 className="w-4 h-4" />
             </div>
             <div>
-              <div className="text-[11px] font-semibold uppercase tracking-wider opacity-75">
-                1. ASHRAE 209 / UBEM
+              <div className="text-[10px] font-semibold uppercase tracking-wider opacity-75">
+                1. ASHRAE 209 / CEA
               </div>
-              <div className="font-bold text-sm">Simple Box & Zoning</div>
+              <div className="font-bold text-xs sm:text-sm">Box, EPW & Zoning</div>
+            </div>
+          </button>
+
+          <button
+            onClick={() => setActiveTab('clima')}
+            className={`flex items-center gap-2.5 p-2.5 rounded-lg text-left transition ${
+              activeTab === 'clima'
+                ? 'bg-slate-900 text-white shadow-sm'
+                : 'hover:bg-slate-100 text-slate-700'
+            }`}
+          >
+            <div className={`p-2 rounded-lg ${activeTab === 'clima' ? 'bg-sky-500/20 text-sky-300' : 'bg-slate-100 text-slate-600'}`}>
+              <Globe className="w-4 h-4" />
+            </div>
+            <div>
+              <div className="text-[10px] font-semibold uppercase tracking-wider opacity-75">
+                2. CBE Clima / 8760h
+              </div>
+              <div className="font-bold text-xs sm:text-sm">Sun, Wind & Heatmaps</div>
             </div>
           </button>
 
           <button
             onClick={() => setActiveTab('energy')}
-            className={`flex items-center gap-3 p-3 rounded-lg text-left transition ${
+            className={`flex items-center gap-2.5 p-2.5 rounded-lg text-left transition ${
               activeTab === 'energy'
                 ? 'bg-slate-900 text-white shadow-sm'
                 : 'hover:bg-slate-100 text-slate-700'
             }`}
           >
             <div className={`p-2 rounded-lg ${activeTab === 'energy' ? 'bg-amber-500/20 text-amber-300' : 'bg-slate-100 text-slate-600'}`}>
-              <Flame className="w-5 h-5" />
+              <Flame className="w-4 h-4" />
             </div>
             <div>
-              <div className="text-[11px] font-semibold uppercase tracking-wider opacity-75">
-                2. CIBSE TM54 / ISO 52000
+              <div className="text-[10px] font-semibold uppercase tracking-wider opacity-75">
+                3. ISO 52000 / DALEC
               </div>
-              <div className="font-bold text-sm">Stationary Energy Balance</div>
+              <div className="font-bold text-xs sm:text-sm">Energy, Daylight & PV</div>
             </div>
           </button>
 
           <button
             onClick={() => setActiveTab('comfort')}
-            className={`flex items-center gap-3 p-3 rounded-lg text-left transition ${
+            className={`flex items-center gap-2.5 p-2.5 rounded-lg text-left transition ${
               activeTab === 'comfort'
                 ? 'bg-slate-900 text-white shadow-sm'
                 : 'hover:bg-slate-100 text-slate-700'
             }`}
           >
             <div className={`p-2 rounded-lg ${activeTab === 'comfort' ? 'bg-emerald-500/20 text-emerald-300' : 'bg-slate-100 text-slate-600'}`}>
-              <Thermometer className="w-5 h-5" />
+              <Thermometer className="w-4 h-4" />
             </div>
             <div>
-              <div className="text-[11px] font-semibold uppercase tracking-wider opacity-75">
-                3. CBE Tool / EN 16798-1
+              <div className="text-[10px] font-semibold uppercase tracking-wider opacity-75">
+                4. CBE / EN 16798-1
               </div>
-              <div className="font-bold text-sm">Indoor Comfort (PMV/PPD)</div>
+              <div className="font-bold text-xs sm:text-sm">Comfort & Psychro</div>
             </div>
           </button>
 
           <button
             onClick={() => setActiveTab('lca')}
-            className={`flex items-center gap-3 p-3 rounded-lg text-left transition ${
+            className={`flex items-center gap-2.5 p-2.5 rounded-lg text-left transition ${
               activeTab === 'lca'
                 ? 'bg-slate-900 text-white shadow-sm'
                 : 'hover:bg-slate-100 text-slate-700'
             }`}
           >
             <div className={`p-2 rounded-lg ${activeTab === 'lca' ? 'bg-purple-500/20 text-purple-300' : 'bg-slate-100 text-slate-600'}`}>
-              <Recycle className="w-5 h-5" />
+              <Recycle className="w-4 h-4" />
             </div>
             <div>
-              <div className="text-[11px] font-semibold uppercase tracking-wider opacity-75">
-                4. EN 15978 / 5Rs Module
+              <div className="text-[10px] font-semibold uppercase tracking-wider opacity-75">
+                5. EN 15978 / Pareto
               </div>
-              <div className="font-bold text-sm">Whole-Life Carbon & 5Rs</div>
+              <div className="font-bold text-xs sm:text-sm">Whole-Life CO₂ & 5Rs</div>
             </div>
           </button>
         </div>
@@ -1028,45 +1227,86 @@ export default function SustainabilityStudioApp() {
       {/* =================================================================== */}
       <main className="max-w-7xl mx-auto px-4 py-6">
         {/* ================================================================= */}
-        {/* TAB 1: SIMPLE BOX & ZONING (ASHRAE 209 / UBEM)                    */}
+        {/* TAB 2 (NEW): CBE CLIMA & 8,760-HOUR EPW EXPLORER                  */}
+        {/* ================================================================= */}
+        {activeTab === 'clima' && (
+          <div className="space-y-6">
+            <EpwSearchAndUploadWidget
+              currentClimate={climate}
+              customClimates={customClimates}
+              onSelectClimate={(ds) => {
+                setCustomClimates((prev) => ({ ...prev, [ds.id]: ds }));
+                setClimateId(ds.id);
+                setRunningMeanOutdoor(ds.runningMeanTemp);
+              }}
+            />
+            <CbeClimaExplorerTab
+              climate={climate}
+              orientation={orientation}
+              uWall={uWall}
+              uWin={uWin}
+              shgc={shgc}
+              wwrAvg={geometry.avgWwr}
+              tauHours={energyBalance.tau}
+              visTrans={visTrans}
+            />
+          </div>
+        )}
+
+        {/* ================================================================= */}
+        {/* TAB 1: SIMPLE BOX & ZONING (ASHRAE 209 / UBEM / EPW)              */}
         {/* ================================================================= */}
         {activeTab === 'box' && (
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
             {/* LEFT CONTROLS (5 COLS) */}
             <div className="lg:col-span-5 space-y-5">
-              {/* Climate & Archetype Selection */}
+              {/* Climate & Archetype Selection + Live EPW Search */}
               <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm space-y-4">
                 <div className="flex items-center justify-between border-b border-slate-100 pb-3">
                   <h2 className="font-bold text-slate-800 flex items-center gap-2">
                     <Sun className="w-4 h-4 text-amber-500" />
-                    Climate Context & Building End-Use
+                    Climate Context & EPW Weather Engine
                   </h2>
                   <span className="text-xs font-medium px-2 py-0.5 rounded bg-amber-50 text-amber-700 border border-amber-200">
                     Köppen: {climate.koppen}
                   </span>
                 </div>
 
+                {/* Live EPW Search, Import & Export Widget */}
+                <EpwSearchAndUploadWidget
+                  currentClimate={climate}
+                  customClimates={customClimates}
+                  onSelectClimate={(ds) => {
+                    setCustomClimates((prev) => ({ ...prev, [ds.id]: ds }));
+                    setClimateId(ds.id);
+                    setRunningMeanOutdoor(ds.runningMeanTemp);
+                  }}
+                />
+
                 <div>
                   <label className="block text-xs font-semibold text-slate-600 mb-1.5">
-                    Reference Weather Station (EPW / Köppen-Geiger)
+                    Active Weather Station (Presets + Searched / Imported EPW)
                   </label>
                   <select
                     value={climateId}
                     onChange={(e) => {
-                      setClimateId(e.target.value);
-                      setRunningMeanOutdoor(CLIMATE_PRESETS[e.target.value].runningMeanTemp);
+                      const nextId = e.target.value;
+                      setClimateId(nextId);
+                      if (allClimates[nextId]) {
+                        setRunningMeanOutdoor(allClimates[nextId].runningMeanTemp);
+                      }
                     }}
                     className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-medium bg-slate-50 focus:outline-none focus:ring-2 focus:ring-teal-500"
                   >
-                    {Object.values(CLIMATE_PRESETS).map((c) => (
+                    {Object.values(allClimates).map((c) => (
                       <option key={c.id} value={c.id}>
-                        {c.name} — [{c.koppen}] (HDD: {c.hdd}, CDD: {c.cdd})
+                        {c.name} — [{c.koppen}] (HDD: {c.hdd}, CDD: {c.cdd}) {c.sourceType !== 'preset' ? '★ EPW' : ''}
                       </option>
                     ))}
                   </select>
                   <p className="text-[11px] text-slate-500 mt-1">
-                    {climate.koppenDesc} • Latitude {climate.lat}°N • Annual South Irrad.:{' '}
-                    {climate.solarSouth.reduce((a, b) => a + b, 0)} kWh/m²
+                    {climate.koppenDesc} • Lat {climate.lat}°N, Lon {climate.lon}°E • South Irrad.:{' '}
+                    {climate.solarSouth.reduce((a, b) => a + b, 0)} kWh/m²y
                   </p>
                 </div>
 
@@ -1091,8 +1331,10 @@ export default function SustainabilityStudioApp() {
                       <span className="font-bold text-slate-700">{program.occGain} W/m²</span>
                     </div>
                     <div>
-                      <span className="text-slate-400 block text-[10px]">Lighting</span>
-                      <span className="font-bold text-slate-700">{program.lightGain} W/m²</span>
+                      <span className="text-slate-400 block text-[10px]">Lighting (Eff.)</span>
+                      <span className="font-bold text-teal-700">
+                        {(program.lightGain * daylightCalc.lightingDimmingFactor).toFixed(1)} W/m²
+                      </span>
                     </div>
                     <div>
                       <span className="text-slate-400 block text-[10px]">Equipment</span>
@@ -1102,14 +1344,14 @@ export default function SustainabilityStudioApp() {
                 </div>
               </div>
 
-              {/* Footprint Dimensions & Orientation */}
+              {/* Footprint Dimensions, Orientation & CEA Urban Canyon Context */}
               <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm space-y-4">
                 <div className="flex items-center justify-between border-b border-slate-100 pb-3">
                   <h2 className="font-bold text-slate-800 flex items-center gap-2">
                     <Maximize2 className="w-4 h-4 text-teal-600" />
-                    Morphology, Massing & Zoning Offset
+                    Morphology, Massing & CEA Urban Context
                   </h2>
-                  <span className="text-xs text-slate-500">ASHRAE 209 Cycle #1</span>
+                  <span className="text-xs text-slate-500">ASHRAE 209 + CEA</span>
                 </div>
 
                 <div className="grid grid-cols-2 gap-4">
@@ -1211,13 +1453,32 @@ export default function SustainabilityStudioApp() {
                     />
                   </div>
                 </div>
+
+                {/* CEA Urban Context Obstruction Angle Slider */}
+                <div className="pt-2 border-t border-slate-100">
+                  <div className="flex justify-between text-xs font-medium mb-1">
+                    <span className="text-slate-600">CEA Urban Canyon Obstruction Angle (Surrounding Buildings)</span>
+                    <span className="font-bold text-indigo-700">
+                      {urbanObstructionDeg}° (SVF {(daylightCalc.skyViewFactor * 100).toFixed(0)}%)
+                    </span>
+                  </div>
+                  <input
+                    type="range"
+                    min="0"
+                    max="50"
+                    step="2"
+                    value={urbanObstructionDeg}
+                    onChange={(e) => setUrbanObstructionDeg(Number(e.target.value))}
+                    className="w-full accent-indigo-600"
+                  />
+                </div>
               </div>
 
-              {/* Facade Window-to-Wall Ratio (WWR %) */}
+              {/* Facade Window-to-Wall Ratio (WWR %) & DALEC Daylight Factors */}
               <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm space-y-3">
                 <div className="flex items-center justify-between border-b border-slate-100 pb-2">
                   <h2 className="font-bold text-slate-800 text-sm">
-                    Window-to-Wall Ratio (WWR %) per Facade
+                    Window-to-Wall Ratio (WWR %) & DALEC Daylight Factor
                   </h2>
                   <span className="text-xs font-bold text-sky-700 bg-sky-50 px-2 py-0.5 rounded border border-sky-200">
                     Avg WWR: {geometry.avgWwr.toFixed(1)}%
@@ -1226,10 +1487,10 @@ export default function SustainabilityStudioApp() {
 
                 <div className="grid grid-cols-2 gap-4">
                   {[
-                    { label: 'South Facade', val: wwrSouth, set: setWwrSouth, area: geometry.winSouth },
-                    { label: 'North Facade', val: wwrNorth, set: setWwrNorth, area: geometry.winNorth },
-                    { label: 'East Facade', val: wwrEast, set: setWwrEast, area: geometry.winEast },
-                    { label: 'West Facade', val: wwrWest, set: setWwrWest, area: geometry.winWest }
+                    { label: 'South Facade', val: wwrSouth, set: setWwrSouth, area: geometry.winSouth, df: daylightCalc.dfSouth },
+                    { label: 'North Facade', val: wwrNorth, set: setWwrNorth, area: geometry.winNorth, df: daylightCalc.dfNorth },
+                    { label: 'East Facade', val: wwrEast, set: setWwrEast, area: geometry.winEast, df: daylightCalc.dfEast },
+                    { label: 'West Facade', val: wwrWest, set: setWwrWest, area: geometry.winWest, df: daylightCalc.dfWest }
                   ].map((f) => (
                     <div key={f.label} className="bg-slate-50 p-2.5 rounded-lg border border-slate-200">
                       <div className="flex justify-between text-xs font-semibold mb-1">
@@ -1245,6 +1506,12 @@ export default function SustainabilityStudioApp() {
                         onChange={(e) => f.set(Number(e.target.value))}
                         className="w-full accent-sky-600"
                       />
+                      <div className="flex justify-between text-[10px] text-slate-500 mt-1">
+                        <span>Zone Daylight Factor:</span>
+                        <span className={`font-bold ${f.df >= 2.0 ? 'text-emerald-600' : 'text-amber-600'}`}>
+                          DF {f.df}% {f.df >= 2.0 ? '✓ EN 17037' : 'Low'}
+                        </span>
+                      </div>
                     </div>
                   ))}
                 </div>
@@ -1567,6 +1834,28 @@ export default function SustainabilityStudioApp() {
                   })()}
                 </div>
               </div>
+
+              {/* CEA & DALEC Multi-Scenario Pareto Front Optimization Panel */}
+              <CeaParetoPortfolioPanel
+                scenarios={scenarioPortfolio}
+                currentScenario={{
+                  id: 'active',
+                  name: `${climate.name.split(',')[0]} • ${program.name.split(' ')[0]}`,
+                  svRatio: geometry.svRatio,
+                  heatNeed: energyBalance.annualHeatNeed,
+                  coolNeed: energyBalance.annualCoolNeed,
+                  netSiteEui: energyBalance.netSiteEui,
+                  primaryEnergy: energyBalance.primaryEnergy,
+                  totalOpCarbon: energyBalance.totalOpCarbon,
+                  wholeLifeCarbon: lcaCalc.wholeLifeCarbonPerM2,
+                  circularityScore: lcaCalc.circularityScore,
+                  opCost: energyBalance.totalOpCost
+                }}
+                onAddPresetPortfolios={handleAddPresetPortfolios}
+                onRemoveScenario={(id) =>
+                  setScenarioPortfolio((prev) => prev.filter((item) => item.id !== id))
+                }
+              />
             </div>
           </div>
         )}
@@ -1692,6 +1981,64 @@ export default function SustainabilityStudioApp() {
                       className="w-full accent-amber-500"
                     />
                   </div>
+
+                  {/* DALEC Daylighting, Visible Transmittance & Dynamic Blind Coupling */}
+                  <div className="pt-2.5 border-t border-slate-100 space-y-2.5">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-bold text-slate-700 flex items-center gap-1">
+                        <Eye className="w-3.5 h-3.5 text-amber-500" />
+                        DALEC Coupled Daylighting & Blind Control
+                      </span>
+                      <span className="text-[11px] font-semibold px-2 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-200">
+                        sDA {daylightCalc.sdaPct}% • UDI {daylightCalc.udiPct}%
+                      </span>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <div className="flex justify-between text-xs font-medium mb-1">
+                          <span className="text-slate-600">Glazing Vis. Trans. (τ_v)</span>
+                          <span className="font-bold text-sky-700">{(visTrans * 100).toFixed(0)}%</span>
+                        </div>
+                        <input
+                          type="range"
+                          min="0.35"
+                          max="0.82"
+                          step="0.02"
+                          value={visTrans}
+                          onChange={(e) => setVisTrans(Number(e.target.value))}
+                          className="w-full accent-sky-600"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-xs font-medium text-slate-600 mb-1">
+                          Lighting Dimming Control
+                        </label>
+                        <select
+                          value={daylightControl}
+                          onChange={(e) => setDaylightControl(e.target.value as any)}
+                          className="w-full rounded-lg border border-slate-300 px-2 py-1 text-xs font-medium bg-slate-50"
+                        >
+                          <option value="dalec_dimming">DALEC Daylight Dimming (-{Math.round((1 - daylightCalc.lightingDimmingFactor) * 100)}%)</option>
+                          <option value="occupancy">Occupancy Sensor Only (-18%)</option>
+                          <option value="manual">Manual Switch (0% saving)</option>
+                        </select>
+                      </div>
+                    </div>
+
+                    <label className="flex items-center justify-between p-2 rounded-lg bg-amber-50/60 border border-amber-200 cursor-pointer text-xs">
+                      <span className="font-medium text-slate-700">
+                        Automated Solar Cut-Off Venetian Blinds (Retracts in Winter / Blocks Summer Beam)
+                      </span>
+                      <input
+                        type="checkbox"
+                        checked={autoBlinds}
+                        onChange={() => setAutoBlinds(!autoBlinds)}
+                        className="accent-amber-600 w-4 h-4 rounded"
+                      />
+                    </label>
+                  </div>
                 </div>
 
                 {/* Dynamic Envelope Parameter Check (Assignment 3 compliance) */}
@@ -1781,7 +2128,7 @@ export default function SustainabilityStudioApp() {
                   <div className="flex justify-between text-xs font-medium mb-1">
                     <span className="text-slate-600">On-Site Rooftop Solar PV Coverage (% of Footprint)</span>
                     <span className="font-bold text-emerald-700">
-                      {pvRoofPct}% ({energyBalance.annualPvGen.toFixed(1)} kWh/m²y)
+                      {pvRoofPct}% (Total PV: {energyBalance.annualPvGen.toFixed(1)} kWh/m²y)
                     </span>
                   </div>
                   <input
@@ -1793,6 +2140,39 @@ export default function SustainabilityStudioApp() {
                     onChange={(e) => setPvRoofPct(Number(e.target.value))}
                     className="w-full accent-emerald-600"
                   />
+                </div>
+
+                {/* CEA Vertical Facade BIPV + EnergyPlus Night Flush */}
+                <div className="pt-2 border-t border-slate-100 space-y-2.5">
+                  <div>
+                    <div className="flex justify-between text-xs font-medium mb-1">
+                      <span className="text-slate-600">CEA Vertical Spandrel BIPV (% of S/E/W Opaque Wall)</span>
+                      <span className="font-bold text-teal-700">
+                        {pvFacadePct}% (+{energyBalance.annualBipvGen.toFixed(1)} kWh/m²y)
+                      </span>
+                    </div>
+                    <input
+                      type="range"
+                      min="0"
+                      max="60"
+                      step="5"
+                      value={pvFacadePct}
+                      onChange={(e) => setPvFacadePct(Number(e.target.value))}
+                      className="w-full accent-teal-600"
+                    />
+                  </div>
+
+                  <label className="flex items-center justify-between p-2 rounded-lg bg-sky-50/70 border border-sky-200 cursor-pointer text-xs">
+                    <span className="font-medium text-slate-700">
+                      EnergyPlus Night-Flush Ventilative Cooling / Economizer Purge
+                    </span>
+                    <input
+                      type="checkbox"
+                      checked={nightFlushOn}
+                      onChange={() => setNightFlushOn(!nightFlushOn)}
+                      className="accent-sky-600 w-4 h-4 rounded"
+                    />
+                  </label>
                 </div>
               </div>
             </div>
@@ -2334,12 +2714,21 @@ export default function SustainabilityStudioApp() {
                   <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
                     <div>
                       <h3 className="font-bold text-slate-800 text-sm">
-                        Interactive Psychrometric Comfort Chart (Operative Temperature vs. Humidity Ratio)
+                        Interactive Psychrometric Comfort Chart + CBE Clima 8,760h EPW Cloud
                       </h3>
                       <p className="text-xs text-slate-500">
-                        Green polygon indicates EN 16798-1 Category II comfort zone ({cloValue} clo, {metRate} met) • Red target shows current operating point
+                        Green = EN 16798-1 Comfort Zone • Dashed Blue = Givoni Natural Ventilation Zone • Dots = Hourly EPW Outdoor States
                       </p>
                     </div>
+                    <label className="flex items-center gap-1.5 text-xs font-semibold text-teal-800 bg-teal-50 px-2.5 py-1 rounded-lg border border-teal-200 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={showEpwCloudOnPsychro}
+                        onChange={() => setShowEpwCloudOnPsychro(!showEpwCloudOnPsychro)}
+                        className="accent-teal-600 rounded"
+                      />
+                      Show 8,760h EPW & Passive Zones
+                    </label>
                   </div>
 
                   <div className="bg-slate-50 rounded-xl border border-slate-200 p-3">
@@ -2411,6 +2800,38 @@ export default function SustainabilityStudioApp() {
                               strokeDasharray={rh === 100 ? 'none' : '3 2'}
                             />
                           ))}
+
+                          {/* CBE Clima 8,760h EPW Outdoor Cloud + Givoni Passive Bioclimatic Envelope */}
+                          {showEpwCloudOnPsychro && (
+                            <g>
+                              {/* Givoni Natural Ventilation & Night-Flush Extension Polygon */}
+                              <polygon
+                                points={`
+                                  ${xTemp(czRight)},${yHum(3)}
+                                  ${xTemp(31.5)},${yHum(4)}
+                                  ${xTemp(30.0)},${yHum(15)}
+                                  ${xTemp(czRight - 0.6)},${yHum(12)}
+                                `}
+                                fill="rgba(14, 165, 233, 0.12)"
+                                stroke="#0284c7"
+                                strokeWidth="1.2"
+                                strokeDasharray="4 2"
+                              />
+                              {/* Subsampled 8,760h EPW weather dots (every 24th hour for fast SVG rendering) */}
+                              {climate.hourly
+                                .filter((_, idx) => idx % 19 === 0 && _.dryBulb >= 10 && _.dryBulb <= 36)
+                                .map((h) => (
+                                  <circle
+                                    key={h.hourOfYear}
+                                    cx={xTemp(h.dryBulb)}
+                                    cy={yHum(h.humRatio)}
+                                    r="2"
+                                    fill={h.dryBulb >= 18 && h.dryBulb <= 26 ? '#10b981' : h.dryBulb > 26 ? '#f59e0b' : '#38bdf8'}
+                                    opacity="0.55"
+                                  />
+                                ))}
+                            </g>
+                          )}
 
                           {/* Dynamic Comfort Zone Polygon */}
                           <polygon
@@ -2856,6 +3277,28 @@ export default function SustainabilityStudioApp() {
                   })()}
                 </div>
               </div>
+
+              {/* CEA & DALEC Multi-Scenario Pareto Front Optimization Panel */}
+              <CeaParetoPortfolioPanel
+                scenarios={scenarioPortfolio}
+                currentScenario={{
+                  id: 'active',
+                  name: `${climate.name.split(',')[0]} • ${program.name.split(' ')[0]}`,
+                  svRatio: geometry.svRatio,
+                  heatNeed: energyBalance.annualHeatNeed,
+                  coolNeed: energyBalance.annualCoolNeed,
+                  netSiteEui: energyBalance.netSiteEui,
+                  primaryEnergy: energyBalance.primaryEnergy,
+                  totalOpCarbon: energyBalance.totalOpCarbon,
+                  wholeLifeCarbon: lcaCalc.wholeLifeCarbonPerM2,
+                  circularityScore: lcaCalc.circularityScore,
+                  opCost: energyBalance.totalOpCost
+                }}
+                onAddPresetPortfolios={handleAddPresetPortfolios}
+                onRemoveScenario={(id) =>
+                  setScenarioPortfolio((prev) => prev.filter((item) => item.id !== id))
+                }
+              />
             </div>
           </div>
         )}
