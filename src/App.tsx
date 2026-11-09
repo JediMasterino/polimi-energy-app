@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { Analytics } from '@vercel/analytics/react';
 import {
   Globe,
   Building2,
@@ -927,6 +928,7 @@ export default function App() {
   return (
     <DesignProjectProvider>
       <StudioWorkspace />
+      <Analytics />
     </DesignProjectProvider>
   );
 }
