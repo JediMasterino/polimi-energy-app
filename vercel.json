@@ -1,0 +1,29 @@
+{
+  "rewrites": [
+    {
+      "source": "/onebuilding/:path*",
+      "destination": "https://climate.onebuilding.org/:path*"
+    },
+    {
+      "source": "/epw-s3/:path*",
+      "destination": "https://energyplus-weather.s3.amazonaws.com/:path*"
+    },
+    {
+      "source": "/pvgis-api/:path*",
+      "destination": "https://re.jrc.ec.europa.eu/api/v5_2/:path*"
+    },
+    {
+      "source": "/map-osm/:path*",
+      "destination": "https://tile.openstreetmap.org/:path*"
+    },
+    {
+      "source": "/map-esri/:path*",
+      "destination": "https://server.arcgisonline.com/ArcGIS/rest/services/:path*"
+    },
+    {
+      "source": "/(.*)",
+      "destination": "/index.html"
+    }
+  ]
+}
+

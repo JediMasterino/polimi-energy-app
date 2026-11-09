@@ -1,0 +1,41 @@
+[build]
+  command = "npm run build"
+  publish = "dist"
+
+# Proxy rules to avoid CORS on academic weather archives & map servers
+[[redirects]]
+  from = "/onebuilding/*"
+  to = "https://climate.onebuilding.org/:splat"
+  status = 200
+  force = true
+
+[[redirects]]
+  from = "/epw-s3/*"
+  to = "https://energyplus-weather.s3.amazonaws.com/:splat"
+  status = 200
+  force = true
+
+[[redirects]]
+  from = "/pvgis-api/*"
+  to = "https://re.jrc.ec.europa.eu/api/v5_2/:splat"
+  status = 200
+  force = true
+
+[[redirects]]
+  from = "/map-osm/*"
+  to = "https://tile.openstreetmap.org/:splat"
+  status = 200
+  force = true
+
+[[redirects]]
+  from = "/map-esri/*"
+  to = "https://server.arcgisonline.com/ArcGIS/rest/services/:splat"
+  status = 200
+  force = true
+
+# Single Page Application (SPA) fallback
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
+
