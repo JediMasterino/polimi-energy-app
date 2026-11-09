@@ -64,18 +64,27 @@ export interface ClimateDataset {
   windRose: WindRoseSector[];
   natVentHoursPct: number;
   utciNoStressPct: number;
-  sourceType: 'preset' | 'epw-upload' | 'energyplus-s3' | 'open-meteo';
+  dpr412Zone: 'A' | 'B' | 'C' | 'D' | 'E' | 'F';
+  dpr412Schedule: string;
+  ashraeZone: string;
+  designHeat996: number;
+  designCool004: number;
+  sourceType: 'preset' | 'epw-upload' | 'energyplus-s3' | 'onebuilding' | 'open-meteo';
 }
+
+export type OneBuildingPeriod = '2009-2023' | '2007-2021' | '2004-2018' | 'full';
 
 export interface EpwStationSearchResult {
   id: string;
+  wmo?: string;
+  datasetType?: string;
   title: string;
   city: string;
   country: string;
   lat: number;
   lon: number;
   epwUrl: string;
-  source: 'energyplus' | 'open-meteo';
+  source: 'onebuilding' | 'energyplus' | 'open-meteo';
 }
 
 const DAYS_IN_MONTH = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
@@ -299,6 +308,47 @@ export function buildClimateFromHourly(
   const kop = classifyKoppen(monthlyTemp, meta.lat);
   // Warm-season running mean outdoor temperature (June-August average)
   const runningMeanTemp = +((monthlyTemp[5] + monthlyTemp[6] + monthlyTemp[7]) / 3).toFixed(1);
+  const hddVal = Math.round(hddSum);
+  const cddVal = Math.round(cddSum);
+
+  // Italian DPR 412/93 Climatic Zone & Statutory Heating Schedule
+  let dpr412Zone: 'A' | 'B' | 'C' | 'D' | 'E' | 'F' = 'E';
+  let dpr412Schedule = 'Oct 15 – Apr 15 (14 h/day)';
+  if (hddVal <= 600) {
+    dpr412Zone = 'A';
+    dpr412Schedule = 'Dec 1 – Mar 15 (6 h/day)';
+  } else if (hddVal <= 900) {
+    dpr412Zone = 'B';
+    dpr412Schedule = 'Dec 1 – Mar 31 (8 h/day)';
+  } else if (hddVal <= 1400) {
+    dpr412Zone = 'C';
+    dpr412Schedule = 'Nov 15 – Mar 31 (10 h/day)';
+  } else if (hddVal <= 2100) {
+    dpr412Zone = 'D';
+    dpr412Schedule = 'Nov 1 – Apr 15 (12 h/day)';
+  } else if (hddVal <= 3000) {
+    dpr412Zone = 'E';
+    dpr412Schedule = 'Oct 15 – Apr 15 (14 h/day)';
+  } else {
+    dpr412Zone = 'F';
+    dpr412Schedule = 'Year-round (No hour limit)';
+  }
+
+  // ASHRAE 169 Climate Zone approximation
+  let ashraeZone = '4A Mixed-Humid';
+  if (cddVal > 2500) ashraeZone = '1B Very Hot-Dry';
+  else if (cddVal > 1400) ashraeZone = '2A Hot-Humid';
+  else if (hddVal < 1500) ashraeZone = '3C Warm-Marine / Med';
+  else if (hddVal < 2600) ashraeZone = '4A Mixed-Humid';
+  else if (hddVal < 3600) ashraeZone = '5A Cool-Humid';
+  else ashraeZone = '6A Cold / Alpine';
+
+  // ASHRAE 99.6% Heating and 0.4% Cooling Design Temperatures from sorted hourly dry-bulb
+  const sortedTemps = hourly.map((h) => h.dryBulb).sort((a, b) => a - b);
+  const designHeat996 =
+    sortedTemps.length > 0 ? +sortedTemps[Math.floor(sortedTemps.length * 0.004)].toFixed(1) : -5.0;
+  const designCool004 =
+    sortedTemps.length > 0 ? +sortedTemps[Math.floor(sortedTemps.length * 0.996)].toFixed(1) : 33.0;
 
   return {
     id: meta.id,
@@ -307,8 +357,8 @@ export function buildClimateFromHourly(
     wmo: meta.wmo,
     koppen: kop.code,
     koppenDesc: kop.desc,
-    hdd: Math.round(hddSum),
-    cdd: Math.round(cddSum),
+    hdd: hddVal,
+    cdd: cddVal,
     lat: +meta.lat.toFixed(2),
     lon: +meta.lon.toFixed(2),
     elev: Math.round(meta.elev),
@@ -327,6 +377,11 @@ export function buildClimateFromHourly(
     windRose,
     natVentHoursPct: +((natVentHours / totalHours) * 100).toFixed(1),
     utciNoStressPct: +((utciNoStressHours / totalHours) * 100).toFixed(1),
+    dpr412Zone,
+    dpr412Schedule,
+    ashraeZone,
+    designHeat996,
+    designCool004,
     sourceType: meta.sourceType
   };
 }
@@ -611,7 +666,7 @@ export function exportDatasetToEpw(climate: ClimateDataset): string {
   return [...header, ...rows].join('\n');
 }
 
-// Cache for NREL EnergyPlus master.geojson station catalog
+// Cache for combined Ladybug epwmap (Climate.OneBuilding.org + DOE EnergyPlus) 23,227-station catalog
 let cachedEnergyPlusCatalog: EpwStationSearchResult[] | null = null;
 
 // Haversine distance in kilometers between two lat/lon points
@@ -628,9 +683,112 @@ export function haversineKm(lat1: number, lon1: number, lat2: number, lon2: numb
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
-// Load and cache the entire 3,000+ official EnergyPlus Weather station catalog for Map & Search
+// Extract .epw text from a standard .zip archive buffer (Climate.OneBuilding.org or DOE EnergyPlus .zip)
+// Uses browser-native DataView + DecompressionStream('deflate-raw') with zero external dependencies
+export async function extractEpwFromZipBuffer(arrayBuffer: ArrayBuffer): Promise<string | null> {
+  const buf = new Uint8Array(arrayBuffer);
+  const dv = new DataView(buf.buffer, buf.byteOffset, buf.byteLength);
+
+  // Locate End of Central Directory (EOCD) signature 0x06054b50
+  let eocdOffset = -1;
+  for (let i = buf.length - 22; i >= Math.max(0, buf.length - 65557); i--) {
+    if (dv.getUint32(i, true) === 0x06054b50) {
+      eocdOffset = i;
+      break;
+    }
+  }
+  if (eocdOffset < 0) return null;
+
+  const cdEntries = dv.getUint16(eocdOffset + 10, true);
+  const cdOffset = dv.getUint32(eocdOffset + 16, true);
+  const decoder = new TextDecoder();
+
+  let ptr = cdOffset;
+  for (let e = 0; e < cdEntries; e++) {
+    if (ptr + 46 > buf.length || dv.getUint32(ptr, true) !== 0x02014b50) break;
+    const method = dv.getUint16(ptr + 10, true);
+    const compSize = dv.getUint32(ptr + 20, true);
+    const nameLen = dv.getUint16(ptr + 28, true);
+    const extraLen = dv.getUint16(ptr + 30, true);
+    const commentLen = dv.getUint16(ptr + 32, true);
+    const localHeaderOffset = dv.getUint32(ptr + 42, true);
+    const name = decoder.decode(buf.subarray(ptr + 46, ptr + 46 + nameLen));
+
+    if (name.toLowerCase().endsWith('.epw')) {
+      const lhNameLen = dv.getUint16(localHeaderOffset + 26, true);
+      const lhExtraLen = dv.getUint16(localHeaderOffset + 28, true);
+      const dataStart = localHeaderOffset + 30 + lhNameLen + lhExtraLen;
+      const compData = buf.subarray(dataStart, dataStart + compSize);
+
+      if (method === 0) {
+        return decoder.decode(compData);
+      }
+      if (method === 8) {
+        const ds = new DecompressionStream('deflate-raw');
+        const writer = ds.writable.getWriter();
+        writer.write(compData);
+        writer.close();
+        return await new Response(ds.readable).text();
+      }
+    }
+
+    ptr += 46 + nameLen + extraLen + commentLen;
+  }
+
+  return null;
+}
+
+// Load and cache the combined 23,227+ station catalog from Ladybug epwmap (Climate.OneBuilding.org + DOE EnergyPlus)
 export async function loadEnergyPlusStationCatalog(): Promise<EpwStationSearchResult[]> {
   if (cachedEnergyPlusCatalog) return cachedEnergyPlusCatalog;
+
+  // 1. Load local /epwmap-catalog.json (23,227 unique stations = 20,180 OneBuilding + 3,047 DOE EnergyPlus)
+  try {
+    const resp = await fetch('/epwmap-catalog.json');
+    if (resp.ok) {
+      const rows: Array<[string, string, string, number, number, string, number]> = await resp.json();
+      cachedEnergyPlusCatalog = rows.map((row, idx) => {
+        const [wmo, rawName, datasetType, lat, lon, zipPath, isOneBuilding] = row;
+        const cleanName = rawName.replace(/\./g, ' ').replace(/__/g, ' ').replace(/_/g, ' ').trim();
+        const tokens = cleanName.split(/\s+/);
+        // Extract 3-letter country code from end of OneBuilding name or path
+        let country = '';
+        if (isOneBuilding && tokens.length >= 2) {
+          country = tokens[tokens.length - 1];
+        } else {
+          const pathMatch = zipPath.match(/\/([A-Z]{3})[_/]/);
+          country = pathMatch ? pathMatch[1] : '';
+        }
+        const city =
+          isOneBuilding && tokens.length >= 2
+            ? tokens.slice(0, -1).join(' ')
+            : cleanName;
+
+        const source = isOneBuilding ? ('onebuilding' as const) : ('energyplus' as const);
+        const baseHost = isOneBuilding
+          ? 'https://climate.onebuilding.org'
+          : 'https://energyplus-weather.s3.amazonaws.com';
+
+        return {
+          id: `${source}_${wmo}_${idx}`,
+          wmo,
+          datasetType,
+          title: `${cleanName} [${datasetType} • WMO ${wmo}]`,
+          city,
+          country,
+          lat: Number(lat) || 0,
+          lon: Number(lon) || 0,
+          epwUrl: `${baseHost}${zipPath}`,
+          source
+        };
+      });
+      return cachedEnergyPlusCatalog;
+    }
+  } catch {
+    // Fallback to remote master.geojson if local catalog fails
+  }
+
+  // 2. Fallback: NREL EnergyPlus master.geojson
   try {
     const resp = await fetch(
       'https://raw.githubusercontent.com/NatLabRockies/EnergyPlus/develop/weather/master.geojson'
@@ -667,14 +825,17 @@ export async function loadEnergyPlusStationCatalog(): Promise<EpwStationSearchRe
   return [];
 }
 
-// Find nearest official EnergyPlus stations to a given (lat, lon) coordinate
+// Find nearest stations (Climate.OneBuilding.org + DOE EnergyPlus) to a given (lat, lon) coordinate
 export async function findNearestEpwStations(
   lat: number,
   lon: number,
-  limit = 6
+  limit = 8,
+  sourceFilter: 'all' | 'onebuilding' | 'energyplus' = 'all'
 ): Promise<Array<EpwStationSearchResult & { distanceKm: number }>> {
   const catalog = await loadEnergyPlusStationCatalog();
-  return catalog
+  const filtered =
+    sourceFilter === 'all' ? catalog : catalog.filter((s) => s.source === sourceFilter);
+  return filtered
     .map((st) => ({
       ...st,
       distanceKm: +haversineKm(lat, lon, st.lat, st.lon).toFixed(1)
@@ -683,30 +844,46 @@ export async function findNearestEpwStations(
     .slice(0, limit);
 }
 
-export async function searchGlobalEpwStations(query: string): Promise<EpwStationSearchResult[]> {
+export async function searchGlobalEpwStations(
+  query: string,
+  sourceFilter: 'all' | 'onebuilding' | 'energyplus' = 'all'
+): Promise<EpwStationSearchResult[]> {
   const q = query.trim().toLowerCase();
   if (q.length < 2) return [];
 
   const results: EpwStationSearchResult[] = [];
 
-  // 1. Search Official EnergyPlus Weather GeoJSON catalog (3,000+ stations)
+  // 1. Search combined 23,227-station catalog (Climate.OneBuilding.org + DOE EnergyPlus)
   const catalog = await loadEnergyPlusStationCatalog();
   if (catalog.length > 0) {
-    const matches = catalog
-      .filter(
-        (s) =>
-          s.title.toLowerCase().includes(q) ||
-          s.city.toLowerCase().includes(q) ||
-          s.country.toLowerCase().includes(q)
-      )
-      .slice(0, 8);
-    results.push(...matches);
+    const pool =
+      sourceFilter === 'all' ? catalog : catalog.filter((s) => s.source === sourceFilter);
+
+    const exactOrPrefix: EpwStationSearchResult[] = [];
+    const substringMatches: EpwStationSearchResult[] = [];
+
+    for (const s of pool) {
+      const cityLower = s.city.toLowerCase();
+      const titleLower = s.title.toLowerCase();
+      const wmoLower = (s.wmo || '').toLowerCase();
+      if (cityLower.startsWith(q) || wmoLower === q) {
+        exactOrPrefix.push(s);
+        if (exactOrPrefix.length >= 16) break;
+      } else if (
+        substringMatches.length < 16 &&
+        (titleLower.includes(q) || cityLower.includes(q) || s.country.toLowerCase() === q)
+      ) {
+        substringMatches.push(s);
+      }
+    }
+
+    results.push(...exactOrPrefix, ...substringMatches.slice(0, Math.max(0, 20 - exactOrPrefix.length)));
   }
 
   // 2. Also query Open-Meteo Global Geocoding API for any town/city worldwide
   try {
     const geoResp = await fetch(
-      `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(query.trim())}&count=5&language=en&format=json`
+      `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(query.trim())}&count=4&language=en&format=json`
     );
     if (geoResp.ok) {
       const geoData = await geoResp.json();
@@ -730,13 +907,64 @@ export async function searchGlobalEpwStations(query: string): Promise<EpwStation
   return results;
 }
 
+// Helper to build candidate OneBuilding .zip URLs for a chosen TMYx period with automatic fallback
+function buildOneBuildingCandidateUrls(rawUrl: string, period: OneBuildingPeriod): string[] {
+  const proxiedBase = rawUrl.replace('https://climate.onebuilding.org', '/onebuilding');
+  const stripPeriod = proxiedBase.replace(/_TMYx(?:\.\d{4}-\d{4})?\.zip$/i, '');
+  if (stripPeriod === proxiedBase) {
+    return [proxiedBase];
+  }
+  const periodUrl =
+    period === 'full' ? `${stripPeriod}_TMYx.zip` : `${stripPeriod}_TMYx.${period}.zip`;
+  const candidates = [
+    periodUrl,
+    `${stripPeriod}_TMYx.2009-2023.zip`,
+    `${stripPeriod}_TMYx.2007-2021.zip`,
+    proxiedBase,
+    `${stripPeriod}_TMYx.zip`
+  ];
+  return Array.from(new Set(candidates));
+}
+
 // Fetch and build a full 8,760-hour ClimateDataset from an EpwStationSearchResult
-export async function fetchStationClimateDataset(station: EpwStationSearchResult): Promise<ClimateDataset> {
-  // Case A: Official EnergyPlus S3 .epw file (via Vite /epw-s3 proxy first, or fallback to Open-Meteo at same lat/lon)
+// Supports:
+//  - Climate.OneBuilding.org (.zip containing .epw via /onebuilding proxy + native ZIP deflate extractor)
+//  - Official DOE/NREL EnergyPlus S3 (.epw or .zip via /epw-s3 proxy)
+//  - Open-Meteo ERA5 8,760-hour Archive fallback
+export async function fetchStationClimateDataset(
+  station: EpwStationSearchResult,
+  oneBuildingPeriod: OneBuildingPeriod = '2009-2023'
+): Promise<ClimateDataset> {
+  // Case A: Climate.OneBuilding.org (.zip -> extract .epw in browser)
+  if (station.source === 'onebuilding' && station.epwUrl.includes('climate.onebuilding.org')) {
+    const candidateUrls = buildOneBuildingCandidateUrls(station.epwUrl, oneBuildingPeriod);
+    for (const url of candidateUrls) {
+      try {
+        const resp = await fetch(url);
+        if (resp.ok) {
+          const buf = await resp.arrayBuffer();
+          const epwText = await extractEpwFromZipBuffer(buf);
+          if (epwText && epwText.includes('LOCATION,')) {
+            const periodTag = url.match(/(\d{4}-\d{4})/)?.[1] || 'TMYx';
+            const parsed = parseEpwText(epwText, `${station.city} (${periodTag}), ${station.country}`);
+            parsed.sourceType = 'onebuilding';
+            return parsed;
+          }
+        }
+      } catch {
+        // Try next candidate URL
+      }
+    }
+  }
+
+  // Case B: Official DOE / NREL EnergyPlus S3 (.epw or .zip via Vite /epw-s3 proxy)
   if (station.source === 'energyplus' && station.epwUrl.includes('energyplus-weather.s3.amazonaws.com')) {
+    const proxiedUrl = station.epwUrl.replace('https://energyplus-weather.s3.amazonaws.com', '/epw-s3');
+    const directEpwUrl = proxiedUrl.replace(/\.zip$/i, '.epw');
+
+    // Try direct .epw first
     try {
-      const proxiedUrl = station.epwUrl.replace('https://energyplus-weather.s3.amazonaws.com', '/epw-s3');
-      const resp = await fetch(proxiedUrl);
+      const resp = await fetch(directEpwUrl);
       if (resp.ok) {
         const text = await resp.text();
         if (text.includes('LOCATION,')) {
@@ -746,11 +974,29 @@ export async function fetchStationClimateDataset(station: EpwStationSearchResult
         }
       }
     } catch {
-      // Fall through to Open-Meteo ERA5 hourly fetch for the exact station coordinates
+      // Try .zip next
+    }
+
+    // Try .zip archive if direct .epw wasn't found
+    if (proxiedUrl.toLowerCase().endsWith('.zip')) {
+      try {
+        const resp = await fetch(proxiedUrl);
+        if (resp.ok) {
+          const buf = await resp.arrayBuffer();
+          const epwText = await extractEpwFromZipBuffer(buf);
+          if (epwText && epwText.includes('LOCATION,')) {
+            const parsed = parseEpwText(epwText, `${station.city}, ${station.country}`);
+            parsed.sourceType = 'energyplus-s3';
+            return parsed;
+          }
+        }
+      } catch {
+        // Fall through to Open-Meteo ERA5 hourly fetch
+      }
     }
   }
 
-  // Case B: Fetch full 8,760-hour ERA5 Reanalysis Year from Open-Meteo Archive API (CORS-enabled globally)
+  // Case C: Fetch full 8,760-hour ERA5 Reanalysis Year from Open-Meteo Archive API (CORS-enabled globally)
   const url = `https://archive-api.open-meteo.com/v1/archive?latitude=${station.lat.toFixed(4)}&longitude=${station.lon.toFixed(4)}&start_date=2023-01-01&end_date=2023-12-31&hourly=temperature_2m,relative_humidity_2m,shortwave_radiation,direct_normal_irradiance,diffuse_radiation,wind_speed_10m,wind_direction_10m&timezone=UTC`;
   const resp = await fetch(url);
   if (!resp.ok) {

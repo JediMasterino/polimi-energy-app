@@ -13,6 +13,11 @@ export default defineConfig({
         changeOrigin: true,
         rewrite: (path) => path.replace(/^\/epw-s3/, '')
       },
+      '/onebuilding': {
+        target: 'https://climate.onebuilding.org',
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/onebuilding/, '')
+      },
       '/pvgis-api': {
         target: 'https://re.jrc.ec.europa.eu/api/v5_2',
         changeOrigin: true,

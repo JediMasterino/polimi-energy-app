@@ -19,6 +19,7 @@ import {
 import {
   ClimateDataset,
   EpwStationSearchResult,
+  OneBuildingPeriod,
   searchGlobalEpwStations,
   fetchStationClimateDataset,
   parseEpwText,
@@ -30,7 +31,7 @@ import { EpwInteractiveMap } from './EpwInteractiveMap';
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
 // ============================================================================
-// 1. LIVE EPW SEARCH, UPLOAD & EXPORT WIDGET (EnergyPlus + Open-Meteo + Local)
+// 1. LIVE EPW SEARCH, UPLOAD & EXPORT WIDGET (Ladybug epwmap + OneBuilding + DOE)
 // ============================================================================
 interface EpwWidgetProps {
   currentClimate: ClimateDataset;
@@ -50,6 +51,8 @@ export const EpwSearchAndUploadWidget: React.FC<EpwWidgetProps> = ({
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [showMap, setShowMap] = useState<boolean>(true);
   const [focusedStation, setFocusedStation] = useState<EpwStationSearchResult | null>(null);
+  const [oneBuildingPeriod, setOneBuildingPeriod] = useState<OneBuildingPeriod>('2009-2023');
+  const [sourceFilter, setSourceFilter] = useState<'all' | 'onebuilding' | 'energyplus'>('all');
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   const handleSearch = async (e?: React.FormEvent) => {
@@ -58,12 +61,12 @@ export const EpwSearchAndUploadWidget: React.FC<EpwWidgetProps> = ({
     setSearching(true);
     setErrorMsg(null);
     try {
-      const res = await searchGlobalEpwStations(query);
+      const res = await searchGlobalEpwStations(query, sourceFilter);
       setResults(res);
       if (res.length > 0) {
         setFocusedStation(res[0]);
       } else {
-        setErrorMsg('No matching stations found. Try a major city or country code (e.g., Milano, Torino, Munich, Tokyo).');
+        setErrorMsg('No matching stations found. Try a city, WMO code, or country code (e.g., Milano, Como, 160800, ITA).');
       }
     } catch (err: any) {
       setErrorMsg(err?.message || 'Search failed');
@@ -72,12 +75,19 @@ export const EpwSearchAndUploadWidget: React.FC<EpwWidgetProps> = ({
     }
   };
 
-  const handleLoadRemoteStation = async (st: EpwStationSearchResult) => {
+  const handleLoadRemoteStation = async (st: EpwStationSearchResult, period?: OneBuildingPeriod) => {
     setLoadingStationId(st.id);
     setErrorMsg(null);
-    setStatusMsg(`Fetching 8,760-hour weather dataset for ${st.city}...`);
+    const activePeriod = period || oneBuildingPeriod;
+    const srcLabel =
+      st.source === 'onebuilding'
+        ? `Climate.OneBuilding.org (${activePeriod})`
+        : st.source === 'energyplus'
+        ? 'DOE EnergyPlus S3'
+        : 'Open-Meteo ERA5';
+    setStatusMsg(`Downloading & extracting 8,760h EPW for ${st.city} from ${srcLabel}...`);
     try {
-      const ds = await fetchStationClimateDataset(st);
+      const ds = await fetchStationClimateDataset(st, activePeriod);
       onSelectClimate(ds);
       setStatusMsg(`Loaded ${ds.name} (${ds.koppen}, HDD ${ds.hdd}, CDD ${ds.cdd}) — 8,760h active!`);
       setResults([]);
@@ -173,6 +183,10 @@ export const EpwSearchAndUploadWidget: React.FC<EpwWidgetProps> = ({
           onSelectStation={handleLoadRemoteStation}
           loadingStationId={loadingStationId}
           focusedStation={focusedStation}
+          oneBuildingPeriod={oneBuildingPeriod}
+          onChangeOneBuildingPeriod={setOneBuildingPeriod}
+          sourceFilter={sourceFilter}
+          onChangeSourceFilter={setSourceFilter}
         />
       )}
 
@@ -184,7 +198,7 @@ export const EpwSearchAndUploadWidget: React.FC<EpwWidgetProps> = ({
             type="text"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search 3,000+ EPW stations or any city (e.g. Milano, Bologna, Bolzano, London)..."
+            placeholder="Search 23,227+ OneBuilding & EnergyPlus stations (e.g. Milano, Como, 160800, London)..."
             className="w-full pl-8 pr-2.5 py-1.5 rounded-lg bg-slate-800 border border-slate-600 text-xs text-white placeholder-slate-400 focus:outline-none focus:border-teal-400"
           />
         </div>
@@ -199,7 +213,7 @@ export const EpwSearchAndUploadWidget: React.FC<EpwWidgetProps> = ({
 
       {/* Search Results Dropdown List */}
       {results.length > 0 && (
-        <div className="max-h-44 overflow-y-auto rounded-lg bg-slate-800 border border-slate-700 divide-y divide-slate-700/70">
+        <div className="max-h-52 overflow-y-auto rounded-lg bg-slate-800 border border-slate-700 divide-y divide-slate-700/70">
           {results.map((st) => (
             <div
               key={st.id}
@@ -213,8 +227,20 @@ export const EpwSearchAndUploadWidget: React.FC<EpwWidgetProps> = ({
                 <div className="font-semibold text-white truncate">{st.title}</div>
                 <div className="text-[10px] text-slate-400">
                   Lat {st.lat.toFixed(2)}°, Lon {st.lon.toFixed(2)}° •{' '}
-                  <span className={st.source === 'energyplus' ? 'text-amber-300' : 'text-sky-300'}>
-                    {st.source === 'energyplus' ? 'Official NREL EnergyPlus EPW' : 'Open-Meteo ERA5 8760h TMY'}
+                  <span
+                    className={
+                      st.source === 'onebuilding'
+                        ? 'text-sky-300 font-semibold'
+                        : st.source === 'energyplus'
+                        ? 'text-amber-300 font-semibold'
+                        : 'text-pink-300'
+                    }
+                  >
+                    {st.source === 'onebuilding'
+                      ? `Climate.OneBuilding.org (${oneBuildingPeriod})`
+                      : st.source === 'energyplus'
+                      ? 'Official DOE / NREL EnergyPlus EPW'
+                      : 'Open-Meteo ERA5 8760h TMY'}
                   </span>
                 </div>
               </div>
@@ -237,7 +263,7 @@ export const EpwSearchAndUploadWidget: React.FC<EpwWidgetProps> = ({
                   disabled={loadingStationId === st.id}
                   onClick={(ev) => {
                     ev.stopPropagation();
-                    handleLoadRemoteStation(st);
+                    handleLoadRemoteStation(st, oneBuildingPeriod);
                   }}
                   className="px-2.5 py-1 rounded bg-teal-600 hover:bg-teal-500 text-white text-[11px] font-bold shrink-0 flex items-center gap-1"
                 >

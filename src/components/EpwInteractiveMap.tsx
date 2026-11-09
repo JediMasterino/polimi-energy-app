@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState, useCallback } from 'react';
 import L from 'leaflet';
 import {
   MapPin,
@@ -9,21 +9,31 @@ import {
   Layers,
   CheckCircle2,
   Radio,
-  Sparkles
+  Sparkles,
+  Search,
+  Compass,
+  Database,
+  ExternalLink
 } from 'lucide-react';
 import {
   ClimateDataset,
   EpwStationSearchResult,
+  OneBuildingPeriod,
   loadEnergyPlusStationCatalog,
   findNearestEpwStations,
+  searchGlobalEpwStations,
   haversineKm
 } from '../utils/epwEngine';
 
 interface EpwInteractiveMapProps {
   currentClimate: ClimateDataset;
-  onSelectStation: (station: EpwStationSearchResult) => Promise<void>;
+  onSelectStation: (station: EpwStationSearchResult, period?: OneBuildingPeriod) => Promise<void>;
   loadingStationId: string | null;
   focusedStation?: EpwStationSearchResult | null;
+  oneBuildingPeriod: OneBuildingPeriod;
+  onChangeOneBuildingPeriod: (period: OneBuildingPeriod) => void;
+  sourceFilter: 'all' | 'onebuilding' | 'energyplus';
+  onChangeSourceFilter: (filter: 'all' | 'onebuilding' | 'energyplus') => void;
 }
 
 type TileStyleId = 'esri_street' | 'esri_topo' | 'esri_sat' | 'osm' | 'vector_only';
@@ -63,11 +73,28 @@ const TILE_LAYERS: Record<
   }
 };
 
+function calcCompassBearing(lat1: number, lon1: number, lat2: number, lon2: number): string {
+  const toRad = (d: number) => (d * Math.PI) / 180;
+  const toDeg = (r: number) => (r * 180) / Math.PI;
+  const dLon = toRad(lon2 - lon1);
+  const y = Math.sin(dLon) * Math.cos(toRad(lat2));
+  const x =
+    Math.cos(toRad(lat1)) * Math.sin(toRad(lat2)) -
+    Math.sin(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.cos(dLon);
+  const brng = (toDeg(Math.atan2(y, x)) + 360) % 360;
+  const dirs = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'];
+  return dirs[Math.round(brng / 45) % 8];
+}
+
 export const EpwInteractiveMap: React.FC<EpwInteractiveMapProps> = ({
   currentClimate,
   onSelectStation,
   loadingStationId,
-  focusedStation
+  focusedStation,
+  oneBuildingPeriod,
+  onChangeOneBuildingPeriod,
+  sourceFilter,
+  onChangeSourceFilter
 }) => {
   const mapContainerRef = useRef<HTMLDivElement | null>(null);
   const mapInstanceRef = useRef<L.Map | null>(null);
@@ -77,17 +104,23 @@ export const EpwInteractiveMap: React.FC<EpwInteractiveMapProps> = ({
   const activeMarkerRef = useRef<L.LayerGroup | null>(null);
   const clickedMarkerRef = useRef<L.LayerGroup | null>(null);
   const selectedHighlightRef = useRef<L.LayerGroup | null>(null);
+  const canvasRendererRef = useRef<L.Canvas | null>(null);
   const worldGeoJsonCacheRef = useRef<any | null>(null);
 
   const [catalog, setCatalog] = useState<EpwStationSearchResult[]>([]);
   const [catalogLoading, setCatalogLoading] = useState(true);
+  const [visibleCount, setVisibleCount] = useState(0);
   const [selectedStation, setSelectedStation] = useState<(EpwStationSearchResult & { distanceKm?: number }) | null>(null);
   const [clickedCoords, setClickedCoords] = useState<{ lat: number; lon: number } | null>(null);
   const [nearestStations, setNearestStations] = useState<Array<EpwStationSearchResult & { distanceKm: number }>>([]);
   const [tileStyle, setTileStyle] = useState<TileStyleId>('esri_topo');
   const [expanded, setExpanded] = useState(false);
 
-  // 1. Load 3,000+ NREL EnergyPlus stations on mount
+  // In-map quick filter / search (especially useful in Fullscreen mode)
+  const [mapQuery, setMapQuery] = useState('');
+  const [mapSearching, setMapSearching] = useState(false);
+
+  // 1. Load 23,227+ Combined Ladybug epwmap (Climate.OneBuilding.org + DOE EnergyPlus) catalog on mount
   useEffect(() => {
     let mounted = true;
     setCatalogLoading(true);
@@ -138,7 +171,6 @@ export const EpwInteractiveMap: React.FC<EpwInteractiveMapProps> = ({
 
     const isVectorOnly = style === 'vector_only';
 
-    // Draw latitude / longitude graticule lines
     const graticuleColor = isVectorOnly ? '#334155' : 'rgba(100,116,139,0.22)';
     for (let lat = -60; lat <= 80; lat += 20) {
       L.polyline(
@@ -192,6 +224,77 @@ export const EpwInteractiveMap: React.FC<EpwInteractiveMapProps> = ({
     }
   };
 
+  // Viewport-culled Canvas renderer for all 23,227 stations (keeps 60 FPS at all zoom levels)
+  const renderViewportStations = useCallback(() => {
+    const map = mapInstanceRef.current;
+    const layer = stationsLayerRef.current;
+    if (!map || !layer || catalog.length === 0) return;
+
+    layer.clearLayers();
+    if (!canvasRendererRef.current) {
+      canvasRendererRef.current = L.canvas({ padding: 0.35 });
+    }
+    const renderer = canvasRendererRef.current;
+
+    const bounds = map.getBounds().pad(0.2);
+    const zoom = map.getZoom();
+
+    // Filter stations inside current map viewport bounds & matching sourceFilter
+    const inBounds: EpwStationSearchResult[] = [];
+    for (let i = 0; i < catalog.length; i++) {
+      const st = catalog[i];
+      if (sourceFilter !== 'all' && st.source !== sourceFilter) continue;
+      if (bounds.contains([st.lat, st.lon])) {
+        inBounds.push(st);
+      }
+    }
+
+    // At global zoom-out, cap markers to 3,200 with stride sampling so canvas redraw is instantaneous;
+    // at regional/country zoom (zoom >= 5 or <= 3,200 stations in view), show 100% of stations!
+    const maxRender = zoom >= 6 ? 8000 : 3200;
+    const stride = inBounds.length > maxRender ? Math.ceil(inBounds.length / maxRender) : 1;
+    const radius = zoom >= 8 ? 5.5 : zoom >= 6 ? 4.5 : 3.5;
+
+    let rendered = 0;
+    const refLat = clickedCoords ? clickedCoords.lat : currentClimate.lat;
+    const refLon = clickedCoords ? clickedCoords.lon : currentClimate.lon;
+
+    for (let i = 0; i < inBounds.length; i += stride) {
+      const st = inBounds[i];
+      const isOneBuilding = st.source === 'onebuilding';
+      const marker = L.circleMarker([st.lat, st.lon], {
+        renderer,
+        radius,
+        fillColor: isOneBuilding ? '#0ea5e9' : '#f59e0b',
+        color: isOneBuilding ? '#0369a1' : '#78350f',
+        weight: 1,
+        opacity: 0.92,
+        fillOpacity: 0.85
+      });
+
+      const badgeLabel = isOneBuilding ? 'Climate.OneBuilding.org' : 'DOE / NREL EnergyPlus';
+      const badgeColor = isOneBuilding ? '#0284c7' : '#d97706';
+
+      marker.bindTooltip(
+        `<div style="font-size:11px;font-weight:700;">${st.city} (${st.country})</div>` +
+          `<div style="font-size:10px;color:${badgeColor};font-weight:600;">${badgeLabel} • ${st.datasetType || 'TMYx'}</div>` +
+          `<div style="font-size:10px;color:#475569;">WMO ${st.wmo || '-'} • Lat ${st.lat.toFixed(2)}°, Lon ${st.lon.toFixed(2)}°</div>`,
+        { direction: 'top', offset: [0, -4] }
+      );
+
+      marker.on('click', (ev) => {
+        L.DomEvent.stopPropagation(ev);
+        const dist = +haversineKm(refLat, refLon, st.lat, st.lon).toFixed(1);
+        setSelectedStation({ ...st, distanceKm: dist });
+      });
+
+      marker.addTo(layer);
+      rendered++;
+    }
+
+    setVisibleCount(inBounds.length);
+  }, [catalog, sourceFilter, clickedCoords, currentClimate.lat, currentClimate.lon]);
+
   // 2. Initialize Leaflet Map
   useEffect(() => {
     if (!mapContainerRef.current || mapInstanceRef.current) return;
@@ -212,17 +315,6 @@ export const EpwInteractiveMap: React.FC<EpwInteractiveMapProps> = ({
     activeMarkerRef.current = L.layerGroup().addTo(map);
     clickedMarkerRef.current = L.layerGroup().addTo(map);
 
-    // Map click handler: drop site pin and find nearest EPW stations
-    map.on('click', async (e: L.LeafletMouseEvent) => {
-      const { lat, lng } = e.latlng;
-      setClickedCoords({ lat: +lat.toFixed(4), lon: +lng.toFixed(4) });
-      const nearest = await findNearestEpwStations(lat, lng, 5);
-      setNearestStations(nearest);
-      if (nearest.length > 0) {
-        setSelectedStation(nearest[0]);
-      }
-    });
-
     mapInstanceRef.current = map;
 
     return () => {
@@ -230,6 +322,34 @@ export const EpwInteractiveMap: React.FC<EpwInteractiveMapProps> = ({
       mapInstanceRef.current = null;
     };
   }, []);
+
+  // Attach map click & moveend/zoomend listeners
+  useEffect(() => {
+    const map = mapInstanceRef.current;
+    if (!map) return;
+
+    const handleMapClick = async (e: L.LeafletMouseEvent) => {
+      const { lat, lng } = e.latlng;
+      setClickedCoords({ lat: +lat.toFixed(4), lon: +lng.toFixed(4) });
+      const nearest = await findNearestEpwStations(lat, lng, 8, sourceFilter);
+      setNearestStations(nearest);
+      if (nearest.length > 0) {
+        setSelectedStation(nearest[0]);
+      }
+    };
+
+    map.on('click', handleMapClick);
+    map.on('moveend', renderViewportStations);
+    map.on('zoomend', renderViewportStations);
+
+    renderViewportStations();
+
+    return () => {
+      map.off('click', handleMapClick);
+      map.off('moveend', renderViewportStations);
+      map.off('zoomend', renderViewportStations);
+    };
+  }, [renderViewportStations, sourceFilter]);
 
   // 3. Switch tile layer style when tileStyle changes
   useEffect(() => {
@@ -245,47 +365,12 @@ export const EpwInteractiveMap: React.FC<EpwInteractiveMapProps> = ({
     if (!map) return;
     const timer = setTimeout(() => {
       map.invalidateSize();
+      renderViewportStations();
     }, 150);
     return () => clearTimeout(timer);
-  }, [expanded]);
+  }, [expanded, renderViewportStations]);
 
-  // 5. Render all 3,000+ official EnergyPlus weather station markers on Canvas
-  useEffect(() => {
-    const layer = stationsLayerRef.current;
-    if (!layer || catalog.length === 0) return;
-
-    layer.clearLayers();
-    const canvasRenderer = L.canvas({ padding: 0.5 });
-
-    catalog.forEach((st) => {
-      const marker = L.circleMarker([st.lat, st.lon], {
-        renderer: canvasRenderer,
-        radius: 5,
-        fillColor: '#f59e0b',
-        color: '#78350f',
-        weight: 1,
-        opacity: 0.9,
-        fillOpacity: 0.85
-      });
-
-      marker.bindTooltip(
-        `<div style="font-size:11px;font-weight:700;">${st.city} (${st.country})</div><div style="font-size:10px;color:#475569;">${st.title}<br/>Lat ${st.lat.toFixed(2)}°, Lon ${st.lon.toFixed(2)}° • Click to select</div>`,
-        { direction: 'top', offset: [0, -4] }
-      );
-
-      marker.on('click', (ev) => {
-        L.DomEvent.stopPropagation(ev);
-        const refLat = clickedCoords ? clickedCoords.lat : currentClimate.lat;
-        const refLon = clickedCoords ? clickedCoords.lon : currentClimate.lon;
-        const dist = +haversineKm(refLat, refLon, st.lat, st.lon).toFixed(1);
-        setSelectedStation({ ...st, distanceKm: dist });
-      });
-
-      marker.addTo(layer);
-    });
-  }, [catalog, currentClimate.lat, currentClimate.lon, clickedCoords]);
-
-  // 6. Highlight currently selected station & draw distance vector line
+  // 5. Highlight currently selected station & draw distance vector line
   useEffect(() => {
     const hLayer = selectedHighlightRef.current;
     if (!hLayer) return;
@@ -302,25 +387,25 @@ export const EpwInteractiveMap: React.FC<EpwInteractiveMapProps> = ({
         [selectedStation.lat, selectedStation.lon]
       ],
       {
-        color: '#f59e0b',
+        color: selectedStation.source === 'onebuilding' ? '#38bdf8' : '#f59e0b',
         weight: 2,
         dashArray: '4 4',
-        opacity: 0.9
+        opacity: 0.95
       }
     ).addTo(hLayer);
 
     // Highlight halo around selected station
     L.circleMarker([selectedStation.lat, selectedStation.lon], {
       radius: 11,
-      fillColor: '#fbbf24',
+      fillColor: selectedStation.source === 'onebuilding' ? '#38bdf8' : '#fbbf24',
       color: '#ffffff',
       weight: 2.5,
       opacity: 1,
-      fillOpacity: 0.35
+      fillOpacity: 0.4
     }).addTo(hLayer);
   }, [selectedStation, clickedCoords, currentClimate.lat, currentClimate.lon]);
 
-  // 7. When parent search focuses a station, fly to it and compute nearest EPW stations
+  // 6. When parent search focuses a station, fly to it and compute nearest EPW stations
   useEffect(() => {
     if (!focusedStation || !mapInstanceRef.current) return;
     const dist = +haversineKm(
@@ -333,12 +418,12 @@ export const EpwInteractiveMap: React.FC<EpwInteractiveMapProps> = ({
     mapInstanceRef.current.flyTo([focusedStation.lat, focusedStation.lon], 8, {
       duration: 0.7
     });
-    findNearestEpwStations(focusedStation.lat, focusedStation.lon, 5).then((nearest) => {
+    findNearestEpwStations(focusedStation.lat, focusedStation.lon, 8, sourceFilter).then((nearest) => {
       setNearestStations(nearest);
     });
-  }, [focusedStation]);
+  }, [focusedStation, sourceFilter]);
 
-  // 8. Update Active Climate Station Marker & flyTo when currentClimate changes
+  // 7. Update Active Climate Station Marker & flyTo when currentClimate changes
   useEffect(() => {
     const map = mapInstanceRef.current;
     const activeLayer = activeMarkerRef.current;
@@ -376,12 +461,12 @@ export const EpwInteractiveMap: React.FC<EpwInteractiveMapProps> = ({
     });
 
     // Update nearest stations list around active station
-    findNearestEpwStations(currentClimate.lat, currentClimate.lon, 5).then((nearest) => {
+    findNearestEpwStations(currentClimate.lat, currentClimate.lon, 8, sourceFilter).then((nearest) => {
       setNearestStations(nearest);
     });
-  }, [currentClimate.id, currentClimate.lat, currentClimate.lon, currentClimate.name, currentClimate.koppen]);
+  }, [currentClimate.id, currentClimate.lat, currentClimate.lon, currentClimate.name, currentClimate.koppen, sourceFilter]);
 
-  // 9. Render clicked arbitrary map coordinate pin
+  // 8. Render clicked arbitrary map coordinate pin
   useEffect(() => {
     const clickedLayer = clickedMarkerRef.current;
     if (!clickedLayer) return;
@@ -390,18 +475,44 @@ export const EpwInteractiveMap: React.FC<EpwInteractiveMapProps> = ({
 
     L.circleMarker([clickedCoords.lat, clickedCoords.lon], {
       radius: 7,
-      fillColor: '#3b82f6',
+      fillColor: '#ec4899',
       color: '#ffffff',
       weight: 2,
       opacity: 1,
       fillOpacity: 0.9
     })
       .bindTooltip(
-        `<div style="font-size:11px;font-weight:700;color:#1d4ed8;">Selected Map Pin</div><div style="font-size:10px;">Lat ${clickedCoords.lat}°, Lon ${clickedCoords.lon}°</div>`,
+        `<div style="font-size:11px;font-weight:700;color:#be185d;">Selected Map Pin</div><div style="font-size:10px;">Lat ${clickedCoords.lat}°, Lon ${clickedCoords.lon}°</div>`,
         { permanent: false, direction: 'top' }
       )
       .addTo(clickedLayer);
   }, [clickedCoords]);
+
+  const handleInMapSearch = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (mapQuery.trim().length < 2) return;
+    setMapSearching(true);
+    try {
+      const res = await searchGlobalEpwStations(mapQuery, sourceFilter);
+      if (res.length > 0) {
+        const top = res[0];
+        const dist = +haversineKm(currentClimate.lat, currentClimate.lon, top.lat, top.lon).toFixed(1);
+        setSelectedStation({ ...top, distanceKm: dist });
+        mapInstanceRef.current?.flyTo([top.lat, top.lon], 8, { duration: 0.7 });
+        const nearest = await findNearestEpwStations(top.lat, top.lon, 8, sourceFilter);
+        setNearestStations(nearest);
+      }
+    } finally {
+      setMapSearching(false);
+    }
+  };
+
+  const refLat = clickedCoords ? clickedCoords.lat : currentClimate.lat;
+  const refLon = clickedCoords ? clickedCoords.lon : currentClimate.lon;
+  const selectedBearing =
+    selectedStation && selectedStation.distanceKm && selectedStation.distanceKm > 0.5
+      ? calcCompassBearing(refLat, refLon, selectedStation.lat, selectedStation.lon)
+      : null;
 
   return (
     <div
@@ -413,18 +524,49 @@ export const EpwInteractiveMap: React.FC<EpwInteractiveMapProps> = ({
     >
       {/* Top Map Toolbar */}
       <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
-        <div className="flex items-center gap-2">
-          <span className="flex items-center gap-1.5 font-bold text-teal-300">
+        <div className="flex flex-wrap items-center gap-1.5">
+          <span className="flex items-center gap-1 font-bold text-teal-300">
             <MapPin className="w-3.5 h-3.5 text-teal-400" />
-            Interactive EPW Weather Station Map
+            EPW Map (Ladybug + OneBuilding + DOE)
           </span>
-          <span className="hidden sm:inline-block text-[10px] px-2 py-0.5 rounded bg-slate-900 text-amber-300 border border-slate-700">
-            {catalogLoading ? 'Loading NREL GeoJSON...' : `${catalog.length.toLocaleString()} Official EPW Stations`}
+          <span className="text-[10px] px-2 py-0.5 rounded bg-slate-900 text-sky-300 border border-slate-700">
+            {catalogLoading
+              ? 'Loading 58,000+ EPW Catalog...'
+              : `${catalog.length.toLocaleString()} Stations (${visibleCount.toLocaleString()} in view)`}
           </span>
         </div>
 
-        <div className="flex items-center gap-1.5">
-          {/* Map Layer Style Selector (All Keyless Free Providers + Local Vector) */}
+        <div className="flex flex-wrap items-center gap-1.5">
+          {/* Quick Region Jump Pills */}
+          <div className="hidden md:flex items-center gap-1 bg-slate-900 px-1.5 py-0.5 rounded border border-slate-700 text-[10px]">
+            <Compass className="w-3 h-3 text-teal-400 mr-0.5" />
+            <button
+              type="button"
+              onClick={() => mapInstanceRef.current?.flyTo([45.0, 11.0], 6, { duration: 0.6 })}
+              className="px-1.5 py-0.5 rounded hover:bg-slate-800 text-slate-300"
+              title="Zoom to Italy & Alpine region"
+            >
+              Italy (270+)
+            </button>
+            <button
+              type="button"
+              onClick={() => mapInstanceRef.current?.flyTo([50.0, 10.0], 4, { duration: 0.6 })}
+              className="px-1.5 py-0.5 rounded hover:bg-slate-800 text-slate-300"
+              title="Zoom to Europe"
+            >
+              Europe
+            </button>
+            <button
+              type="button"
+              onClick={() => mapInstanceRef.current?.flyTo([25.0, 10.0], 2, { duration: 0.6 })}
+              className="px-1.5 py-0.5 rounded hover:bg-slate-800 text-slate-300"
+              title="Zoom to World view"
+            >
+              World
+            </button>
+          </div>
+
+          {/* Map Layer Style Selector */}
           <div className="flex items-center gap-1 bg-slate-900 px-2 py-0.5 rounded border border-slate-700 text-[10px]">
             <Layers className="w-3 h-3 text-slate-400" />
             <select
@@ -432,11 +574,11 @@ export const EpwInteractiveMap: React.FC<EpwInteractiveMapProps> = ({
               onChange={(e) => setTileStyle(e.target.value as TileStyleId)}
               className="bg-transparent text-slate-200 focus:outline-none cursor-pointer"
             >
-              <option value="esri_topo" className="bg-slate-900">Esri Topographic (No Key)</option>
-              <option value="esri_street" className="bg-slate-900">Esri World Street (No Key)</option>
-              <option value="esri_sat" className="bg-slate-900">Esri Satellite Imagery</option>
-              <option value="osm" className="bg-slate-900">OpenStreetMap (Proxied)</option>
-              <option value="vector_only" className="bg-slate-900">Offline Vector Blueprint</option>
+              <option value="esri_topo" className="bg-slate-900">Esri Topographic</option>
+              <option value="esri_street" className="bg-slate-900">Esri World Street</option>
+              <option value="esri_sat" className="bg-slate-900">Esri Satellite</option>
+              <option value="osm" className="bg-slate-900">OpenStreetMap</option>
+              <option value="vector_only" className="bg-slate-900">Offline Vector</option>
             </select>
           </div>
 
@@ -474,6 +616,51 @@ export const EpwInteractiveMap: React.FC<EpwInteractiveMapProps> = ({
         </div>
       </div>
 
+      {/* Repository Filter + OneBuilding TMYx Period Bar */}
+      <div className="flex flex-wrap items-center justify-between gap-1.5 bg-slate-900/90 px-2.5 py-1.5 rounded-lg border border-slate-700/80 text-[10px]">
+        <div className="flex items-center gap-1">
+          <Database className="w-3 h-3 text-sky-400 mr-0.5" />
+          <span className="text-slate-400 font-semibold">Source:</span>
+          {(['all', 'onebuilding', 'energyplus'] as const).map((src) => (
+            <button
+              key={src}
+              type="button"
+              onClick={() => onChangeSourceFilter(src)}
+              className={`px-2 py-0.5 rounded font-semibold transition ${
+                sourceFilter === src
+                  ? src === 'onebuilding'
+                    ? 'bg-sky-600 text-white'
+                    : src === 'energyplus'
+                    ? 'bg-amber-500 text-slate-950'
+                    : 'bg-teal-600 text-white'
+                  : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
+              }`}
+            >
+              {src === 'all'
+                ? 'All (23.2k)'
+                : src === 'onebuilding'
+                ? 'OneBuilding.org (20.2k)'
+                : 'DOE EnergyPlus (3.0k)'}
+            </button>
+          ))}
+        </div>
+
+        <div className="flex items-center gap-1">
+          <span className="text-slate-400 font-semibold">OneBuilding TMYx:</span>
+          <select
+            value={oneBuildingPeriod}
+            onChange={(e) => onChangeOneBuildingPeriod(e.target.value as OneBuildingPeriod)}
+            className="bg-slate-800 text-sky-300 border border-slate-700 rounded px-1.5 py-0.5 font-semibold focus:outline-none cursor-pointer"
+            title="Select TMYx historical baseline window when loading Climate.OneBuilding.org stations"
+          >
+            <option value="2009-2023">TMYx 2009–2023 (Recent 15-yr)</option>
+            <option value="2007-2021">TMYx 2007–2021</option>
+            <option value="2004-2018">TMYx 2004–2018</option>
+            <option value="full">TMYx Full Period</option>
+          </select>
+        </div>
+      </div>
+
       {/* Main Map Container + Side/Bottom Inspector */}
       <div className={expanded ? 'grid grid-cols-1 lg:grid-cols-12 gap-4 flex-1 min-h-0' : 'space-y-2'}>
         {/* Leaflet Canvas Container */}
@@ -481,7 +668,7 @@ export const EpwInteractiveMap: React.FC<EpwInteractiveMapProps> = ({
           className={`${
             expanded
               ? 'lg:col-span-8 h-full min-h-[380px] rounded-xl'
-              : 'w-full h-60 rounded-lg'
+              : 'w-full h-64 rounded-lg'
           } overflow-hidden border border-slate-600 relative ${
             tileStyle === 'vector_only' ? 'bg-slate-950' : 'bg-slate-200'
           }`}
@@ -492,73 +679,115 @@ export const EpwInteractiveMap: React.FC<EpwInteractiveMapProps> = ({
             style={{ background: tileStyle === 'vector_only' ? '#090d16' : '#e2e8f0' }}
           />
 
+          {/* Floating In-Map Selected Station Callout (Top-Right Overlay) */}
+          {selectedStation && (
+            <div className="absolute top-2.5 right-2.5 z-20 max-w-[275px] bg-slate-900/95 backdrop-blur-md text-white p-2.5 rounded-xl border border-sky-500/70 shadow-xl space-y-1.5">
+              <div className="flex items-start justify-between gap-2">
+                <div className="truncate">
+                  <div className="text-[11px] font-bold text-sky-300 flex items-center gap-1 truncate">
+                    <Radio className="w-3 h-3 text-sky-400 shrink-0" />
+                    {selectedStation.city}, {selectedStation.country}
+                  </div>
+                  <div className="text-[10px] text-slate-300 truncate">{selectedStation.title}</div>
+                </div>
+                {selectedStation.distanceKm !== undefined && (
+                  <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-slate-800 text-teal-300 border border-slate-700 shrink-0">
+                    {selectedStation.distanceKm} km {selectedBearing || ''}
+                  </span>
+                )}
+              </div>
+              <div className="flex items-center justify-between gap-1.5 pt-0.5">
+                <div className="flex items-center gap-1.5">
+                  <span className="text-[9px] text-slate-400 font-mono">
+                    {selectedStation.lat.toFixed(2)}°N, {selectedStation.lon.toFixed(2)}°E
+                  </span>
+                  {selectedStation.epwUrl.startsWith('http') && (
+                    <a
+                      href={selectedStation.epwUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="text-[9px] text-sky-400 hover:underline flex items-center gap-0.5"
+                      title="Download raw archive from source repository"
+                    >
+                      <ExternalLink className="w-2.5 h-2.5" />
+                      .zip
+                    </a>
+                  )}
+                </div>
+                <button
+                  type="button"
+                  disabled={loadingStationId === selectedStation.id}
+                  onClick={() => onSelectStation(selectedStation, oneBuildingPeriod)}
+                  className="px-2.5 py-1 rounded-lg bg-teal-500 hover:bg-teal-400 text-slate-950 font-bold text-[10px] flex items-center gap-1 transition shadow"
+                >
+                  {loadingStationId === selectedStation.id ? (
+                    <>
+                      <Loader2 className="w-3 h-3 animate-spin" />
+                      Loading...
+                    </>
+                  ) : (
+                    <>
+                      <CheckCircle2 className="w-3 h-3" />
+                      Load Station (.epw)
+                    </>
+                  )}
+                </button>
+              </div>
+            </div>
+          )}
+
           {/* Floating Map Legend Overlay */}
-          <div className="absolute bottom-2 left-2 z-20 bg-slate-900/90 backdrop-blur-sm text-white px-2.5 py-1.5 rounded-lg border border-slate-700 text-[10px] flex flex-wrap items-center gap-3 pointer-events-none">
+          <div className="absolute bottom-2 left-2 z-20 bg-slate-900/90 backdrop-blur-sm text-white px-2.5 py-1.5 rounded-lg border border-slate-700 text-[10px] flex flex-wrap items-center gap-2.5 pointer-events-none">
             <span className="flex items-center gap-1">
               <span className="w-2.5 h-2.5 rounded-full bg-teal-500 border border-white inline-block" />
-              Active: {currentClimate.name.split(',')[0]} ({currentClimate.lat.toFixed(2)}°N, {currentClimate.lon.toFixed(2)}°E)
+              Active: {currentClimate.name.split(',')[0]}
+            </span>
+            <span className="flex items-center gap-1">
+              <span className="w-2.5 h-2.5 rounded-full bg-sky-500 inline-block" />
+              OneBuilding.org (20.2k)
             </span>
             <span className="flex items-center gap-1">
               <span className="w-2.5 h-2.5 rounded-full bg-amber-500 inline-block" />
-              Official EnergyPlus Station (.epw)
+              DOE EnergyPlus (3.0k)
             </span>
-            <span className="text-slate-400 hidden sm:inline">Click any orange dot or map location</span>
           </div>
         </div>
 
         {/* Station Inspector & Nearest Stations List */}
         <div className={expanded ? 'lg:col-span-4 flex flex-col gap-3 overflow-y-auto pr-1' : 'space-y-2'}>
-          {/* Currently Selected Station on Map */}
-          {selectedStation && (
-            <div className="bg-slate-900 p-2.5 rounded-lg border border-amber-500/50 flex items-center justify-between gap-2 text-xs">
-              <div className="truncate">
-                <div className="flex items-center gap-1.5">
-                  <Radio className="w-3.5 h-3.5 text-amber-400 shrink-0" />
-                  <span className="font-bold text-amber-300 truncate">
-                    {selectedStation.city}, {selectedStation.country}
-                  </span>
-                  {selectedStation.distanceKm !== undefined && (
-                    <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-950 text-amber-300 border border-amber-800">
-                      {selectedStation.distanceKm} km
-                    </span>
-                  )}
-                </div>
-                <div className="text-[10px] text-slate-400 truncate mt-0.5">
-                  {selectedStation.title} • Lat {selectedStation.lat.toFixed(2)}°, Lon {selectedStation.lon.toFixed(2)}°
-                </div>
+          {/* Fullscreen Search Box */}
+          {expanded && (
+            <form onSubmit={handleInMapSearch} className="flex gap-1.5">
+              <div className="relative flex-1">
+                <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-2.5" />
+                <input
+                  type="text"
+                  value={mapQuery}
+                  onChange={(e) => setMapQuery(e.target.value)}
+                  placeholder="Find city or WMO across 23,227 stations..."
+                  className="w-full pl-8 pr-2.5 py-1.5 rounded-lg bg-slate-800 border border-slate-600 text-xs text-white placeholder-slate-400 focus:outline-none focus:border-teal-400"
+                />
               </div>
-
               <button
-                type="button"
-                disabled={loadingStationId === selectedStation.id}
-                onClick={() => onSelectStation(selectedStation)}
-                className="px-2.5 py-1.5 rounded-lg bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-[11px] shrink-0 flex items-center gap-1 transition"
+                type="submit"
+                disabled={mapSearching}
+                className="px-3 py-1.5 rounded-lg bg-teal-600 hover:bg-teal-500 text-white text-xs font-bold"
               >
-                {loadingStationId === selectedStation.id ? (
-                  <>
-                    <Loader2 className="w-3 h-3 animate-spin" />
-                    Loading...
-                  </>
-                ) : (
-                  <>
-                    <CheckCircle2 className="w-3 h-3" />
-                    Use Station
-                  </>
-                )}
+                {mapSearching ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : 'Locate'}
               </button>
-            </div>
+            </form>
           )}
 
           {/* Custom Clicked Coordinate ERA5 TMY Synthesizer */}
           {clickedCoords && (
-            <div className="bg-slate-900/90 p-2 rounded-lg border border-sky-500/40 flex items-center justify-between gap-2 text-xs">
+            <div className="bg-slate-900/90 p-2 rounded-lg border border-pink-500/40 flex items-center justify-between gap-2 text-xs">
               <div className="truncate">
-                <div className="font-semibold text-sky-300 flex items-center gap-1">
+                <div className="font-semibold text-pink-300 flex items-center gap-1">
                   <Sparkles className="w-3 h-3" />
                   Clicked Site: {clickedCoords.lat}°N, {clickedCoords.lon}°E
                 </div>
                 <div className="text-[10px] text-slate-400">
-                  Pick a nearby station below or synthesize exact local ERA5 TMY
+                  Pick a nearby OneBuilding / DOE station below or synthesize local ERA5
                 </div>
               </div>
               <button
@@ -575,9 +804,9 @@ export const EpwInteractiveMap: React.FC<EpwInteractiveMapProps> = ({
                     source: 'open-meteo'
                   })
                 }
-                className="px-2 py-1 rounded bg-sky-600 hover:bg-sky-500 text-white text-[10px] font-bold shrink-0"
+                className="px-2 py-1 rounded bg-pink-600 hover:bg-pink-500 text-white text-[10px] font-bold shrink-0"
               >
-                Synthesize Exact Pin
+                Synthesize Pin
               </button>
             </div>
           )}
@@ -587,40 +816,58 @@ export const EpwInteractiveMap: React.FC<EpwInteractiveMapProps> = ({
             <div className="bg-slate-900/80 p-2 rounded-lg border border-slate-700 space-y-1">
               <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400 flex justify-between">
                 <span>
-                  Nearest Official EPW Stations {clickedCoords ? 'to Clicked Pin' : 'to Active Site'}
+                  Nearest EPW Stations {clickedCoords ? 'to Clicked Pin' : 'to Active Site'}
                 </span>
                 <span>Distance</span>
               </div>
-              <div className="divide-y divide-slate-800 max-h-36 overflow-y-auto">
-                {nearestStations.map((st) => (
-                  <div
-                    key={st.id}
-                    className="py-1.5 flex items-center justify-between gap-2 text-[11px] hover:bg-slate-800/60 px-1 rounded cursor-pointer"
-                    onClick={() => {
-                      setSelectedStation(st);
-                      mapInstanceRef.current?.flyTo([st.lat, st.lon], 8, { duration: 0.5 });
-                    }}
-                  >
-                    <div className="truncate">
-                      <span className="font-semibold text-slate-200">{st.city}</span>{' '}
-                      <span className="text-[10px] text-slate-400">({st.country})</span>
-                      <span className="block text-[9px] text-slate-500 truncate">{st.title}</span>
+              <div className="divide-y divide-slate-800 max-h-44 overflow-y-auto">
+                {nearestStations.map((st) => {
+                  const isSelected = selectedStation?.id === st.id;
+                  const isOB = st.source === 'onebuilding';
+                  return (
+                    <div
+                      key={st.id}
+                      className={`py-1.5 flex items-center justify-between gap-2 text-[11px] px-1.5 rounded cursor-pointer transition ${
+                        isSelected ? 'bg-sky-500/20 border border-sky-500/40' : 'hover:bg-slate-800/60'
+                      }`}
+                      onClick={() => {
+                        setSelectedStation(st);
+                        mapInstanceRef.current?.flyTo([st.lat, st.lon], 8, { duration: 0.5 });
+                      }}
+                    >
+                      <div className="truncate">
+                        <div className="flex items-center gap-1.5 truncate">
+                          <span
+                            className={`w-2 h-2 rounded-full shrink-0 ${
+                              isOB ? 'bg-sky-400' : 'bg-amber-400'
+                            }`}
+                          />
+                          <span className="font-semibold text-slate-200 truncate">{st.city}</span>
+                          <span className="text-[10px] text-slate-400">({st.country})</span>
+                        </div>
+                        <span className="block text-[9px] text-slate-400 truncate pl-3.5">
+                          <span className={isOB ? 'text-sky-300' : 'text-amber-300'}>
+                            {isOB ? 'OneBuilding' : 'DOE EnergyPlus'}
+                          </span>{' '}
+                          • {st.datasetType || 'TMYx'} • WMO {st.wmo || '-'}
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-1.5 shrink-0">
+                        <span className="text-[10px] font-mono text-teal-300">{st.distanceKm} km</span>
+                        <button
+                          type="button"
+                          onClick={(ev) => {
+                            ev.stopPropagation();
+                            onSelectStation(st, oneBuildingPeriod);
+                          }}
+                          className="px-2 py-0.5 rounded bg-teal-600 hover:bg-teal-500 text-white text-[10px] font-bold"
+                        >
+                          Load
+                        </button>
+                      </div>
                     </div>
-                    <div className="flex items-center gap-1.5 shrink-0">
-                      <span className="text-[10px] font-mono text-teal-300">{st.distanceKm} km</span>
-                      <button
-                        type="button"
-                        onClick={(ev) => {
-                          ev.stopPropagation();
-                          onSelectStation(st);
-                        }}
-                        className="px-2 py-0.5 rounded bg-teal-600 hover:bg-teal-500 text-white text-[10px] font-bold"
-                      >
-                        Load
-                      </button>
-                    </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             </div>
           )}
