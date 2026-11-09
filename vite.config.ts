@@ -17,6 +17,19 @@ export default defineConfig({
         target: 'https://re.jrc.ec.europa.eu/api/v5_2',
         changeOrigin: true,
         rewrite: (path) => path.replace(/^\/pvgis-api/, '')
+      },
+      '/map-osm': {
+        target: 'https://tile.openstreetmap.org',
+        changeOrigin: true,
+        headers: {
+          'User-Agent': 'Polimi-BEM-Sustainability-Studio/1.0 (https://polimi.it)'
+        },
+        rewrite: (path) => path.replace(/^\/map-osm/, '')
+      },
+      '/map-esri': {
+        target: 'https://server.arcgisonline.com/ArcGIS/rest/services',
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/map-esri/, '')
       }
     }
   }

@@ -1,0 +1,18 @@
+# Dependencies
+node_modules
+.pnp
+.pnp.js
+
+# Build & caches
+dist
+dist-ssr
+.vite
+*.tsbuildinfo
+
+# Logs & OS
+*.log
+.DS_Store
+Thumbs.db
+.env
+.env.*
+

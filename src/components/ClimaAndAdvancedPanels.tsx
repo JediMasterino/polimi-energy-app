@@ -11,6 +11,7 @@ import {
   CheckCircle2,
   Loader2,
   Globe,
+  MapPin,
   Eye,
   Building2,
   Zap
@@ -24,6 +25,7 @@ import {
   exportDatasetToEpw,
   calcSolarPosition
 } from '../utils/epwEngine';
+import { EpwInteractiveMap } from './EpwInteractiveMap';
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
@@ -46,6 +48,8 @@ export const EpwSearchAndUploadWidget: React.FC<EpwWidgetProps> = ({
   const [loadingStationId, setLoadingStationId] = useState<string | null>(null);
   const [statusMsg, setStatusMsg] = useState<string | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [showMap, setShowMap] = useState<boolean>(true);
+  const [focusedStation, setFocusedStation] = useState<EpwStationSearchResult | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   const handleSearch = async (e?: React.FormEvent) => {
@@ -56,7 +60,9 @@ export const EpwSearchAndUploadWidget: React.FC<EpwWidgetProps> = ({
     try {
       const res = await searchGlobalEpwStations(query);
       setResults(res);
-      if (res.length === 0) {
+      if (res.length > 0) {
+        setFocusedStation(res[0]);
+      } else {
         setErrorMsg('No matching stations found. Try a major city or country code (e.g., Milano, Torino, Munich, Tokyo).');
       }
     } catch (err: any) {
@@ -119,6 +125,18 @@ export const EpwSearchAndUploadWidget: React.FC<EpwWidgetProps> = ({
         <div className="flex items-center gap-1.5">
           <button
             type="button"
+            onClick={() => setShowMap((v) => !v)}
+            className={`flex items-center gap-1 px-2 py-1 rounded border text-[11px] font-semibold transition ${showMap
+                ? 'bg-teal-600/30 border-teal-500 text-teal-200'
+                : 'bg-slate-800 hover:bg-slate-700 text-slate-300 border-slate-600'
+              }`}
+            title="Toggle interactive EPW weather station map"
+          >
+            <MapPin className="w-3 h-3" />
+            {showMap ? 'Hide Map' : 'Station Map'}
+          </button>
+          <button
+            type="button"
             onClick={() => fileInputRef.current?.click()}
             className="flex items-center gap-1 px-2 py-1 rounded bg-slate-800 hover:bg-slate-700 text-teal-300 border border-slate-600 text-[11px] font-semibold transition"
             title="Upload a local EnergyPlus .epw weather file"
@@ -148,6 +166,16 @@ export const EpwSearchAndUploadWidget: React.FC<EpwWidgetProps> = ({
         </div>
       </div>
 
+      {/* Interactive EPW Station Map */}
+      {showMap && (
+        <EpwInteractiveMap
+          currentClimate={currentClimate}
+          onSelectStation={handleLoadRemoteStation}
+          loadingStationId={loadingStationId}
+          focusedStation={focusedStation}
+        />
+      )}
+
       {/* Search Bar */}
       <form onSubmit={handleSearch} className="flex gap-1.5">
         <div className="relative flex-1">
@@ -175,7 +203,11 @@ export const EpwSearchAndUploadWidget: React.FC<EpwWidgetProps> = ({
           {results.map((st) => (
             <div
               key={st.id}
-              className="p-2 flex items-center justify-between gap-2 hover:bg-slate-700/70 transition text-xs"
+              onClick={() => {
+                setShowMap(true);
+                setFocusedStation(st);
+              }}
+              className="p-2 flex items-center justify-between gap-2 hover:bg-slate-700/70 transition text-xs cursor-pointer"
             >
               <div className="truncate">
                 <div className="font-semibold text-white truncate">{st.title}</div>
@@ -186,21 +218,39 @@ export const EpwSearchAndUploadWidget: React.FC<EpwWidgetProps> = ({
                   </span>
                 </div>
               </div>
-              <button
-                type="button"
-                disabled={loadingStationId === st.id}
-                onClick={() => handleLoadRemoteStation(st)}
-                className="px-2.5 py-1 rounded bg-teal-600 hover:bg-teal-500 text-white text-[11px] font-bold shrink-0 flex items-center gap-1"
-              >
-                {loadingStationId === st.id ? (
-                  <>
-                    <Loader2 className="w-3 h-3 animate-spin" />
-                    Loading
-                  </>
-                ) : (
-                  'Load 8760h'
-                )}
-              </button>
+              <div className="flex items-center gap-1.5 shrink-0">
+                <button
+                  type="button"
+                  onClick={(ev) => {
+                    ev.stopPropagation();
+                    setShowMap(true);
+                    setFocusedStation(st);
+                  }}
+                  className="px-2 py-1 rounded bg-slate-700 hover:bg-slate-600 text-teal-300 text-[10px] font-semibold flex items-center gap-1"
+                  title="Locate station on map"
+                >
+                  <MapPin className="w-3 h-3" />
+                  Map
+                </button>
+                <button
+                  type="button"
+                  disabled={loadingStationId === st.id}
+                  onClick={(ev) => {
+                    ev.stopPropagation();
+                    handleLoadRemoteStation(st);
+                  }}
+                  className="px-2.5 py-1 rounded bg-teal-600 hover:bg-teal-500 text-white text-[11px] font-bold shrink-0 flex items-center gap-1"
+                >
+                  {loadingStationId === st.id ? (
+                    <>
+                      <Loader2 className="w-3 h-3 animate-spin" />
+                      Loading
+                    </>
+                  ) : (
+                    'Load 8760h'
+                  )}
+                </button>
+              </div>
             </div>
           ))}
         </div>
@@ -503,9 +553,8 @@ export const CbeClimaExplorerTab: React.FC<ClimaTabProps> = ({
                 <button
                   key={s}
                   onClick={() => setWindSeason(s)}
-                  className={`px-2 py-0.5 rounded capitalize ${
-                    windSeason === s ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-600'
-                  }`}
+                  className={`px-2 py-0.5 rounded capitalize ${windSeason === s ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-600'
+                    }`}
                 >
                   {s}
                 </button>
@@ -616,9 +665,8 @@ export const CbeClimaExplorerTab: React.FC<ClimaTabProps> = ({
               <button
                 key={tab.id}
                 onClick={() => setHeatmapVar(tab.id as any)}
-                className={`px-2.5 py-1 rounded-md transition ${
-                  heatmapVar === tab.id ? 'bg-slate-900 text-white shadow-sm' : 'text-slate-600 hover:text-slate-900'
-                }`}
+                className={`px-2.5 py-1 rounded-md transition ${heatmapVar === tab.id ? 'bg-slate-900 text-white shadow-sm' : 'text-slate-600 hover:text-slate-900'
+                  }`}
               >
                 {tab.label}
               </button>

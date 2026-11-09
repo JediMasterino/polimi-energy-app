@@ -614,6 +614,75 @@ export function exportDatasetToEpw(climate: ClimateDataset): string {
 // Cache for NREL EnergyPlus master.geojson station catalog
 let cachedEnergyPlusCatalog: EpwStationSearchResult[] | null = null;
 
+// Haversine distance in kilometers between two lat/lon points
+export function haversineKm(lat1: number, lon1: number, lat2: number, lon2: number): number {
+  const R = 6371;
+  const dLat = ((lat2 - lat1) * Math.PI) / 180;
+  const dLon = ((lon2 - lon1) * Math.PI) / 180;
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos((lat1 * Math.PI) / 180) *
+      Math.cos((lat2 * Math.PI) / 180) *
+      Math.sin(dLon / 2) *
+      Math.sin(dLon / 2);
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+// Load and cache the entire 3,000+ official EnergyPlus Weather station catalog for Map & Search
+export async function loadEnergyPlusStationCatalog(): Promise<EpwStationSearchResult[]> {
+  if (cachedEnergyPlusCatalog) return cachedEnergyPlusCatalog;
+  try {
+    const resp = await fetch(
+      'https://raw.githubusercontent.com/NatLabRockies/EnergyPlus/develop/weather/master.geojson'
+    );
+    if (resp.ok) {
+      const geojson = await resp.json();
+      cachedEnergyPlusCatalog = (geojson.features || [])
+        .map((f: any, idx: number) => {
+          const title: string = f.properties?.title || '';
+          const epwHtml: string = f.properties?.epw || '';
+          const match = epwHtml.match(/href=([^\s>]+)/i);
+          const rawUrl = match ? match[1].replace(/["']/g, '') : '';
+          const coords = f.geometry?.coordinates || [0, 0];
+          const parts = title.split('_');
+          const country = parts[0] || '';
+          const cityPart = (parts[1] || title).replace(/\.\d+$/, '').replace(/\./g, ' ');
+          return {
+            id: `ep_${idx}_${title}`,
+            title,
+            city: cityPart,
+            country,
+            lon: Number(coords[0]) || 0,
+            lat: Number(coords[1]) || 0,
+            epwUrl: rawUrl,
+            source: 'energyplus' as const
+          };
+        })
+        .filter((item: EpwStationSearchResult) => item.epwUrl.endsWith('.epw'));
+      return cachedEnergyPlusCatalog || [];
+    }
+  } catch {
+    // Ignore network error
+  }
+  return [];
+}
+
+// Find nearest official EnergyPlus stations to a given (lat, lon) coordinate
+export async function findNearestEpwStations(
+  lat: number,
+  lon: number,
+  limit = 6
+): Promise<Array<EpwStationSearchResult & { distanceKm: number }>> {
+  const catalog = await loadEnergyPlusStationCatalog();
+  return catalog
+    .map((st) => ({
+      ...st,
+      distanceKm: +haversineKm(lat, lon, st.lat, st.lon).toFixed(1)
+    }))
+    .sort((a, b) => a.distanceKm - b.distanceKm)
+    .slice(0, limit);
+}
+
 export async function searchGlobalEpwStations(query: string): Promise<EpwStationSearchResult[]> {
   const q = query.trim().toLowerCase();
   if (q.length < 2) return [];
@@ -621,51 +690,17 @@ export async function searchGlobalEpwStations(query: string): Promise<EpwStation
   const results: EpwStationSearchResult[] = [];
 
   // 1. Search Official EnergyPlus Weather GeoJSON catalog (3,000+ stations)
-  try {
-    if (!cachedEnergyPlusCatalog) {
-      const resp = await fetch(
-        'https://raw.githubusercontent.com/NatLabRockies/EnergyPlus/develop/weather/master.geojson'
-      );
-      if (resp.ok) {
-        const geojson = await resp.json();
-        cachedEnergyPlusCatalog = (geojson.features || [])
-          .map((f: any, idx: number) => {
-            const title: string = f.properties?.title || '';
-            const epwHtml: string = f.properties?.epw || '';
-            const match = epwHtml.match(/href=([^\s>]+)/i);
-            const rawUrl = match ? match[1].replace(/["']/g, '') : '';
-            const coords = f.geometry?.coordinates || [0, 0];
-            const parts = title.split('_');
-            const country = parts[0] || '';
-            const cityPart = (parts[1] || title).replace(/\.\d+$/, '').replace(/\./g, ' ');
-            return {
-              id: `ep_${idx}_${title}`,
-              title,
-              city: cityPart,
-              country,
-              lon: Number(coords[0]) || 0,
-              lat: Number(coords[1]) || 0,
-              epwUrl: rawUrl,
-              source: 'energyplus' as const
-            };
-          })
-          .filter((item: EpwStationSearchResult) => item.epwUrl.endsWith('.epw'));
-      }
-    }
-
-    if (cachedEnergyPlusCatalog) {
-      const matches = cachedEnergyPlusCatalog
-        .filter(
-          (s) =>
-            s.title.toLowerCase().includes(q) ||
-            s.city.toLowerCase().includes(q) ||
-            s.country.toLowerCase().includes(q)
-        )
-        .slice(0, 8);
-      results.push(...matches);
-    }
-  } catch {
-    // Ignore catalog network error and fall back to Open-Meteo geocoding
+  const catalog = await loadEnergyPlusStationCatalog();
+  if (catalog.length > 0) {
+    const matches = catalog
+      .filter(
+        (s) =>
+          s.title.toLowerCase().includes(q) ||
+          s.city.toLowerCase().includes(q) ||
+          s.country.toLowerCase().includes(q)
+      )
+      .slice(0, 8);
+    results.push(...matches);
   }
 
   // 2. Also query Open-Meteo Global Geocoding API for any town/city worldwide
