@@ -11,6 +11,19 @@ export default defineConfig({
       plugins: [tailwindcss(), autoprefixer()],
     },
   },
+  build: {
+    chunkSizeWarningLimit: 600,
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          'vendor-react': ['react', 'react-dom'],
+          'vendor-three': ['three'],
+          'vendor-leaflet': ['leaflet'],
+          'vendor-icons': ['lucide-react'],
+        },
+      },
+    },
+  },
   server: {
     host: true,
     port: 5173,
