@@ -25,7 +25,8 @@ import {
   Check,
   ShieldCheck,
   Maximize2,
-  X
+  X,
+  BookOpen
 } from 'lucide-react';
 
 import {
@@ -74,6 +75,81 @@ import {
 import { StructuralBay3DViewer, SelectedMemberType } from './StructuralBay3DViewer';
 import { CrossSection3DViewer } from './CrossSection3DViewer';
 import { StructuralReportModal, ProjectMetadata } from './StructuralReportModal';
+import { EurocodeGuideModal } from './EurocodeGuideModal';
+
+const MEMBER_SCOPE_NOTES: Record<SelectedMemberType, {
+  standard: string;
+  scope: string;
+  domain: string;
+  excluded: string;
+}> = {
+  rc_slab: {
+    standard: 'EN 1992-1-1 §6.1, §6.2, §7.4, §9.2',
+    scope: 'Singly reinforced one-way flexure, concrete shear resistance without shear rebar VRd,c, minimum & maximum longitudinal steel, and span-to-depth deflection screen (L/d)adj.',
+    domain: 'C20/25 to C50/60 concrete, fyk = 500 MPa rebar, singly reinforced section (μ ≤ 0.2952, x/d ≤ 0.45).',
+    excluded: 'Two-way bidirectional slab action, punching shear at column heads, crack width calculation, fire resistance, long-term creep deflection.'
+  },
+  rc_beam: {
+    standard: 'EN 1992-1-1 §6.1, §6.2.3, §7.4, §9.2',
+    scope: 'Singly reinforced rectangular beam flexure, variable strut angle shear (1.0 ≤ cotθ ≤ 2.5), link spacing sw ≤ 0.75d, stirrup minimums, and span/depth deflection screen.',
+    domain: 'C20/25 to C50/60, fyk = 500 MPa, single layer tension steel, rectangular web section.',
+    excluded: 'Compression reinforcement, torsion, lateral-torsional buckling of slender unrestrained beams, anchorage detailing, fire resistance.'
+  },
+  rc_wall: {
+    standard: 'EN 1992-1-1 §5.8.8, §9.6',
+    scope: 'Uniaxial compression and out-of-plane bending on unit strip (b = 1000 mm), nominal curvature second-order eccentricity e2, and 28-iteration strain-compatible bisection equilibrium.',
+    domain: 'fck ≤ 50 MPa, normalised axial force n ≤ 0.50, slenderness λ ≤ 100, symmetric reinforcement, neutral axis x within section (x < h).',
+    excluded: 'In-plane horizontal shear, boundary element rebar cages, ties/transverse links, orthogonal bending plane, foundation rotation.'
+  },
+  rc_column: {
+    standard: 'EN 1992-1-1 §5.8.8, §9.5',
+    scope: 'Uniaxial compression-bending of isolated braced column, nominal curvature second-order moment e2, and 28-iteration strain-compatible bisection section equilibrium (parabola-rectangle concrete law).',
+    domain: 'fck ≤ 50 MPa, normalised axial force n ≤ 0.50, geometric slenderness λ ≤ 100, symmetric two-face rebar, neutral axis x within section depth h.',
+    excluded: 'Biaxial bending (repeat checks separately for orthogonal axis), shear, column-beam joints, links/transverse ties, bar restraint, lap splice zones, crack control, axial shortening.'
+  },
+  steel_beam: {
+    standard: 'EN 1993-1-1 §6.2.5, §6.2.6, §7.2',
+    scope: 'IPE, HEA, HEB and hollow SHS/CHS in elastic bending and shear, plus imposed and total SLS deflection limits.',
+    domain: 'Hot-finished (EN 10210) or cold-formed (EN 10219) sections. I/H requires assumed lateral restraint; SHS/CHS is inherently exempt from LTB.',
+    excluded: 'Unrestrained lateral-torsional buckling for I/H, Class 4 slender sections, web crippling at concentrated loads, connection design.'
+  },
+  steel_column: {
+    standard: 'EN 1993-1-1 §6.3.1',
+    scope: 'Concentric axial compression with two-axis flexural buckling (y-y and z-z) and torsional buckling using Eurocode buckling curves (HF curve a, CF curve c).',
+    domain: 'Concentric compression only, Class 1-3 cross-sections.',
+    excluded: 'Applied first-order bending moments, Class 4 cross-sections, base plates, connection details, thermal elongation.'
+  },
+  clt_slab: {
+    standard: 'EN 1995-1-1 / ETA Shear Analogy',
+    scope: 'One-way cross-laminated timber panel in flexure, rolling shear, support bearing Rc90,Rk, instantaneous deflection, and final creep deflection with kdef.',
+    domain: 'One-way spanning panel with manufacturer certified or ETA documented properties.',
+    excluded: 'Two-way plate action, concentrated wheel/point loads, vibration serviceability (Eurocode 5 Annex), openings/cutouts, inter-panel joints.'
+  },
+  clt_wall: {
+    standard: 'EN 1995-1-1 / ETA Equivalent Column',
+    scope: 'One-way CLT wall strip in combined axial compression and out-of-plane lateral wind pressure, equivalent column method buckling with EI05/GA05 and imperfection βc.',
+    domain: 'Single-storey height with documented ETA cross-section properties.',
+    excluded: 'Diaphragm action, lintels, hold-down bracket tie-downs, acoustic flanking transmission, fire resistance.'
+  },
+  wood_beam: {
+    standard: 'EN 1995-1-1 §6.1, §6.1.5, §7.2',
+    scope: 'Solid timber and glulam (C18–GL32h) in bending, shear with crack factor kcr, support bearing compression perp-to-grain fc,90, instantaneous and final creep deflections.',
+    domain: 'Service Classes 1–3, five Eurocode load duration classes (kmod), rectangular solid or glued laminated section.',
+    excluded: 'Slender beam lateral-torsional buckling if unrestrained, notched supports, hole cuts, timber connections.'
+  },
+  wood_column: {
+    standard: 'EN 1995-1-1 §6.3.2',
+    scope: 'Solid timber and glulam in combined axial compression and two-axis bending (My and Mz) with column instability reduction factors kc,y and kc,z.',
+    domain: 'Rectangular solid or glulam section, Service Classes 1–3, five load duration classes.',
+    excluded: 'Column-to-beam moment connections, column base shoes, cyclic seismic loading.'
+  },
+  masonry_wall: {
+    standard: 'EN 1996-1-1 §6.1, §6.2',
+    scope: 'Single-leaf unreinforced masonry in compression at top, mid-height, and bottom with load eccentricities, slenderness reduction factor Φ, and separate bed-joint in-plane shear.',
+    domain: 'Clay G1–G4, Calcium Silicate, Concrete, AAC, or Natural Stone units with general purpose mortar.',
+    excluded: '3D building box-action, shear wall coupling lintels, soil-structure interaction, reinforced masonry.'
+  }
+};
 
 export const StructuralEurocodeStudio: React.FC = () => {
   // --------------------------------------------------------------------------
@@ -82,6 +158,8 @@ export const StructuralEurocodeStudio: React.FC = () => {
   const [activeStep, setActiveStep] = useState<1 | 2 | 3 | 4>(2);
   const [showReportModal, setShowReportModal] = useState(false);
   const [showEtaModal, setShowEtaModal] = useState(false);
+  const [showGuideModal, setShowGuideModal] = useState(false);
+  const [showScopeBanner, setShowScopeBanner] = useState(true);
 
   // --------------------------------------------------------------------------
   // PROJECT METADATA
@@ -439,6 +517,15 @@ export const StructuralEurocodeStudio: React.FC = () => {
 
           {/* Quick Actions & A4 Report Button */}
           <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setShowGuideModal(true)}
+              className="px-3.5 py-1.5 rounded-xl bg-indigo-600/90 hover:bg-indigo-500 text-white font-bold text-xs flex items-center gap-1.5 shadow transition"
+              title="Eurocodes Essential Preliminary Sizing Guide: 7-Rule Workflow & Sheet Scope"
+            >
+              <BookOpen className="w-3.5 h-3.5" />
+              Eurocode Guide: Workflow & Scope
+            </button>
             <button
               type="button"
               onClick={() => setShowReportModal(true)}
@@ -1004,6 +1091,63 @@ export const StructuralEurocodeStudio: React.FC = () => {
             })}
           </div>
 
+          {/* Member Scope, Domain Limits & Excluded Checks Banner */}
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl p-3.5 shadow-lg space-y-2">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="flex items-center gap-2">
+                <span className="p-1 rounded bg-sky-500/20 text-sky-400">
+                  <Info className="w-3.5 h-3.5" />
+                </span>
+                <span className="font-extrabold text-xs text-white">
+                  {activeDetails.name} • Eurocode Sizing Scope & Validity
+                </span>
+                <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-slate-800 text-teal-300 border border-slate-700">
+                  {MEMBER_SCOPE_NOTES[activeMember]?.standard}
+                </span>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setShowGuideModal(true)}
+                  className="text-[11px] font-bold text-sky-400 hover:text-sky-300 flex items-center gap-1 transition"
+                >
+                  <BookOpen className="w-3.5 h-3.5" />
+                  Full Eurocode Guide (7 Rules) ↗
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setShowScopeBanner(!showScopeBanner)}
+                  className="text-[11px] text-slate-400 hover:text-slate-200 px-2 py-0.5 rounded bg-slate-800 transition"
+                >
+                  {showScopeBanner ? 'Hide Scope' : 'Show Scope'}
+                </button>
+              </div>
+            </div>
+
+            {showScopeBanner && (
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-3 pt-2 border-t border-slate-800 text-xs">
+                <div className="space-y-1">
+                  <span className="font-bold text-emerald-400 uppercase text-[10px] tracking-wider block">1. Sizing Scope</span>
+                  <p className="text-slate-300 text-[11px] leading-relaxed">
+                    {MEMBER_SCOPE_NOTES[activeMember]?.scope}
+                  </p>
+                </div>
+                <div className="space-y-1">
+                  <span className="font-bold text-sky-400 uppercase text-[10px] tracking-wider block">2. Validity Domain</span>
+                  <p className="text-slate-300 text-[11px] leading-relaxed">
+                    {MEMBER_SCOPE_NOTES[activeMember]?.domain}
+                  </p>
+                </div>
+                <div className="space-y-1">
+                  <span className="font-bold text-amber-400 uppercase text-[10px] tracking-wider block">3. Excluded Checks</span>
+                  <p className="text-slate-400 text-[11px] leading-relaxed">
+                    {MEMBER_SCOPE_NOTES[activeMember]?.excluded}
+                  </p>
+                </div>
+              </div>
+            )}
+          </div>
+
           {/* Split Section View: Left 3D/2D Cutaway Visualizer, Right Parameter Editor */}
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
             <div className="lg:col-span-5">
@@ -1015,27 +1159,46 @@ export const StructuralEurocodeStudio: React.FC = () => {
             </div>
 
             <div className="lg:col-span-7 bg-slate-900 border border-slate-800 rounded-2xl p-4 shadow-xl space-y-4">
-              <div className="flex items-center justify-between border-b border-slate-800 pb-2.5">
+              <div className="flex flex-wrap items-center justify-between border-b border-slate-800 pb-2.5 gap-2">
                 <div className="font-extrabold text-sm text-white flex items-center gap-2">
                   <Sliders className="w-4 h-4 text-sky-400" />
                   {activeDetails.name} Parameters
                 </div>
-                {activeMember.startsWith('clt') && (
+                <div className="flex items-center gap-2">
                   <button
                     type="button"
-                    onClick={() => setShowEtaModal(true)}
-                    className="px-2.5 py-1 rounded-lg bg-sky-950 text-sky-300 border border-sky-800 text-[11px] font-bold hover:bg-sky-900 transition"
+                    onClick={() => setBayConfig({ ...bayConfig, autoLoadTakedown: !bayConfig.autoLoadTakedown })}
+                    className={`px-2.5 py-1 rounded-lg text-[10px] font-bold border transition flex items-center gap-1.5 ${
+                      bayConfig.autoLoadTakedown
+                        ? 'bg-sky-950 text-sky-300 border-sky-800 hover:bg-sky-900'
+                        : 'bg-amber-950 text-amber-300 border-amber-800 hover:bg-amber-900'
+                    }`}
+                    title="Toggle between automatic 3D structural bay tributary cascade and manual forces"
                   >
-                    ETA Product Manager ↗
+                    {bayConfig.autoLoadTakedown ? '⚡ 3D Tributary Loads: ON' : '✏️ Manual Forces: ON'}
                   </button>
-                )}
+                  {activeMember.startsWith('clt') && (
+                    <button
+                      type="button"
+                      onClick={() => setShowEtaModal(true)}
+                      className="px-2.5 py-1 rounded-lg bg-teal-950 text-teal-300 border border-teal-800 text-[10px] font-bold hover:bg-teal-900 transition"
+                    >
+                      ETA Product Manager ↗
+                    </button>
+                  )}
+                </div>
               </div>
 
               {/* Dynamic Inputs depending on member type */}
-              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 text-xs">
-                {/* RC SLAB INPUTS */}
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 text-xs max-h-[520px] overflow-y-auto pr-1">
+                {/* =========================================================
+                    1. RC SLAB INPUTS
+                   ========================================================= */}
                 {activeMember === 'rc_slab' && (
                   <>
+                    <div className="col-span-2 sm:col-span-3 text-[11px] font-bold text-sky-400 uppercase tracking-wider border-b border-slate-800 pb-1 mt-1">
+                      1. Slab Geometry & Materials
+                    </div>
                     <div>
                       <label className="text-slate-400 block font-semibold">Concrete Class:</label>
                       <select
@@ -1049,6 +1212,19 @@ export const StructuralEurocodeStudio: React.FC = () => {
                       </select>
                     </div>
                     <div>
+                      <label className="text-slate-400 block font-semibold">
+                        Span L (m):
+                        {bayConfig.autoLoadTakedown && <span className="text-sky-400 font-mono text-[10px] ml-1">(bay: {bayConfig.spanL.toFixed(1)})</span>}
+                      </label>
+                      <input
+                        type="number"
+                        step="0.1"
+                        value={rcSlabInputs.L}
+                        onChange={(e) => setRcSlabInputs({ ...rcSlabInputs, L: parseFloat(e.target.value) || 4.5 })}
+                        className="w-full mt-1 bg-slate-800 border border-slate-700 rounded p-1.5 text-white font-mono"
+                      />
+                    </div>
+                    <div>
                       <label className="text-slate-400 block font-semibold">Slab Depth h (mm):</label>
                       <input
                         type="number"
@@ -1059,22 +1235,11 @@ export const StructuralEurocodeStudio: React.FC = () => {
                       />
                     </div>
                     <div>
-                      <label className="text-slate-400 block font-semibold">Bar Diameter φ (mm):</label>
+                      <label className="text-slate-400 block font-semibold">Width b (mm):</label>
                       <input
                         type="number"
-                        step="2"
-                        value={rcSlabInputs.phi}
-                        onChange={(e) => setRcSlabInputs({ ...rcSlabInputs, phi: parseInt(e.target.value) || 12 })}
-                        className="w-full mt-1 bg-slate-800 border border-slate-700 rounded p-1.5 text-white font-mono"
-                      />
-                    </div>
-                    <div>
-                      <label className="text-slate-400 block font-semibold">Bar Spacing s (mm):</label>
-                      <input
-                        type="number"
-                        step="25"
-                        value={rcSlabInputs.s}
-                        onChange={(e) => setRcSlabInputs({ ...rcSlabInputs, s: parseInt(e.target.value) || 150 })}
+                        value={rcSlabInputs.b}
+                        onChange={(e) => setRcSlabInputs({ ...rcSlabInputs, b: parseInt(e.target.value) || 1000 })}
                         className="w-full mt-1 bg-slate-800 border border-slate-700 rounded p-1.5 text-white font-mono"
                       />
                     </div>
@@ -1089,7 +1254,7 @@ export const StructuralEurocodeStudio: React.FC = () => {
                       />
                     </div>
                     <div>
-                      <label className="text-slate-400 block font-semibold">Rebar fyk (MPa):</label>
+                      <label className="text-slate-400 block font-semibold">Rebar Yield fyk (MPa):</label>
                       <input
                         type="number"
                         value={rcSlabInputs.fyk}
@@ -1097,12 +1262,99 @@ export const StructuralEurocodeStudio: React.FC = () => {
                         className="w-full mt-1 bg-slate-800 border border-slate-700 rounded p-1.5 text-white font-mono"
                       />
                     </div>
+
+                    <div className="col-span-2 sm:col-span-3 text-[11px] font-bold text-sky-400 uppercase tracking-wider border-b border-slate-800 pb-1 mt-2">
+                      2. Reinforcement Layout
+                    </div>
+                    <div>
+                      <label className="text-slate-400 block font-semibold">Main Bar φ (mm):</label>
+                      <input
+                        type="number"
+                        step="2"
+                        value={rcSlabInputs.phi}
+                        onChange={(e) => setRcSlabInputs({ ...rcSlabInputs, phi: parseInt(e.target.value) || 12 })}
+                        className="w-full mt-1 bg-slate-800 border border-slate-700 rounded p-1.5 text-white font-mono"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-slate-400 block font-semibold">Main Spacing s (mm):</label>
+                      <input
+                        type="number"
+                        step="25"
+                        value={rcSlabInputs.s}
+                        onChange={(e) => setRcSlabInputs({ ...rcSlabInputs, s: parseInt(e.target.value) || 150 })}
+                        className="w-full mt-1 bg-slate-800 border border-slate-700 rounded p-1.5 text-white font-mono"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-slate-400 block font-semibold">Transverse Bar φt (mm):</label>
+                      <input
+                        type="number"
+                        step="2"
+                        value={rcSlabInputs.phi_t}
+                        onChange={(e) => setRcSlabInputs({ ...rcSlabInputs, phi_t: parseInt(e.target.value) || 8 })}
+                        className="w-full mt-1 bg-slate-800 border border-slate-700 rounded p-1.5 text-white font-mono"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-slate-400 block font-semibold">Transverse Spacing st (mm):</label>
+                      <input
+                        type="number"
+                        step="25"
+                        value={rcSlabInputs.s_t}
+                        onChange={(e) => setRcSlabInputs({ ...rcSlabInputs, s_t: parseInt(e.target.value) || 200 })}
+                        className="w-full mt-1 bg-slate-800 border border-slate-700 rounded p-1.5 text-white font-mono"
+                      />
+                    </div>
                   </>
                 )}
 
-                {/* RC BEAM INPUTS */}
+                {/* =========================================================
+                    2. RC BEAM INPUTS
+                   ========================================================= */}
                 {activeMember === 'rc_beam' && (
                   <>
+                    <div className="col-span-2 sm:col-span-3 text-[11px] font-bold text-sky-400 uppercase tracking-wider border-b border-slate-800 pb-1 mt-1">
+                      1. Beam Geometry & Materials
+                    </div>
+                    <div>
+                      <label className="text-slate-400 block font-semibold">Concrete Class:</label>
+                      <select
+                        value={rcBeamInputs.concreteClass}
+                        onChange={(e) => setRcBeamInputs({ ...rcBeamInputs, concreteClass: e.target.value })}
+                        className="w-full mt-1 bg-slate-800 border border-slate-700 rounded p-1.5 text-white font-semibold"
+                      >
+                        {Object.keys(CONCRETE_CLASSES).map((c) => (
+                          <option key={c} value={c}>{c}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="text-slate-400 block font-semibold">
+                        Span L (m):
+                        {bayConfig.autoLoadTakedown && <span className="text-sky-400 font-mono text-[10px] ml-1">(bay: {bayConfig.spanL.toFixed(1)})</span>}
+                      </label>
+                      <input
+                        type="number"
+                        step="0.5"
+                        value={rcBeamInputs.L}
+                        onChange={(e) => setRcBeamInputs({ ...rcBeamInputs, L: parseFloat(e.target.value) || 6.0 })}
+                        className="w-full mt-1 bg-slate-800 border border-slate-700 rounded p-1.5 text-white font-mono"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-slate-400 block font-semibold">
+                        Tributary Width Btr (m):
+                        {bayConfig.autoLoadTakedown && <span className="text-sky-400 font-mono text-[10px] ml-1">(bay: {bayConfig.tributaryWidthBtr.toFixed(1)})</span>}
+                      </label>
+                      <input
+                        type="number"
+                        step="0.5"
+                        value={rcBeamInputs.Btr}
+                        onChange={(e) => setRcBeamInputs({ ...rcBeamInputs, Btr: parseFloat(e.target.value) || 3.0 })}
+                        className="w-full mt-1 bg-slate-800 border border-slate-700 rounded p-1.5 text-white font-mono"
+                      />
+                    </div>
                     <div>
                       <label className="text-slate-400 block font-semibold">Web Width b (mm):</label>
                       <input
@@ -1122,6 +1374,20 @@ export const StructuralEurocodeStudio: React.FC = () => {
                         onChange={(e) => setRcBeamInputs({ ...rcBeamInputs, h: parseInt(e.target.value) || 550 })}
                         className="w-full mt-1 bg-slate-800 border border-slate-700 rounded p-1.5 text-white font-mono"
                       />
+                    </div>
+                    <div>
+                      <label className="text-slate-400 block font-semibold">Cover cnom (mm):</label>
+                      <input
+                        type="number"
+                        step="5"
+                        value={rcBeamInputs.cnom}
+                        onChange={(e) => setRcBeamInputs({ ...rcBeamInputs, cnom: parseInt(e.target.value) || 30 })}
+                        className="w-full mt-1 bg-slate-800 border border-slate-700 rounded p-1.5 text-white font-mono"
+                      />
+                    </div>
+
+                    <div className="col-span-2 sm:col-span-3 text-[11px] font-bold text-sky-400 uppercase tracking-wider border-b border-slate-800 pb-1 mt-2">
+                      2. Flexural & Shear Reinforcement
                     </div>
                     <div>
                       <label className="text-slate-400 block font-semibold">Tension Bars (n):</label>
@@ -1145,6 +1411,27 @@ export const StructuralEurocodeStudio: React.FC = () => {
                       />
                     </div>
                     <div>
+                      <label className="text-slate-400 block font-semibold">Link Diameter φlink (mm):</label>
+                      <input
+                        type="number"
+                        step="2"
+                        value={rcBeamInputs.phi_link}
+                        onChange={(e) => setRcBeamInputs({ ...rcBeamInputs, phi_link: parseInt(e.target.value) || 8 })}
+                        className="w-full mt-1 bg-slate-800 border border-slate-700 rounded p-1.5 text-white font-mono"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-slate-400 block font-semibold">Link Legs nleg:</label>
+                      <input
+                        type="number"
+                        min="2"
+                        max="4"
+                        value={rcBeamInputs.nleg}
+                        onChange={(e) => setRcBeamInputs({ ...rcBeamInputs, nleg: parseInt(e.target.value) || 2 })}
+                        className="w-full mt-1 bg-slate-800 border border-slate-700 rounded p-1.5 text-white font-mono"
+                      />
+                    </div>
+                    <div>
                       <label className="text-slate-400 block font-semibold">Link Spacing sw (mm):</label>
                       <input
                         type="number"
@@ -1155,10 +1442,10 @@ export const StructuralEurocodeStudio: React.FC = () => {
                       />
                     </div>
                     <div>
-                      <label className="text-slate-400 block font-semibold">Strut cot(θ):</label>
+                      <label className="text-slate-400 block font-semibold">Strut Angle cot(θ):</label>
                       <input
                         type="number"
-                        min="1"
+                        min="1.0"
                         max="2.5"
                         step="0.1"
                         value={rcBeamInputs.cot_theta}
@@ -1169,20 +1456,368 @@ export const StructuralEurocodeStudio: React.FC = () => {
                   </>
                 )}
 
-                {/* STEEL BEAM & COLUMN INPUTS */}
-                {(activeMember === 'steel_beam' || activeMember === 'steel_column') && (
+                {/* =========================================================
+                    3. RC WALL STRIP INPUTS
+                   ========================================================= */}
+                {activeMember === 'rc_wall' && (
                   <>
-                    <div className="col-span-2">
-                      <label className="text-slate-400 block font-semibold">Steel Section Profile (52 Profiles):</label>
+                    <div className="col-span-2 sm:col-span-3 text-[11px] font-bold text-sky-400 uppercase tracking-wider border-b border-slate-800 pb-1 mt-1">
+                      1. Wall Geometry & Strip Dimensions
+                    </div>
+                    <div>
+                      <label className="text-slate-400 block font-semibold">
+                        Clear Height H (m):
+                        {bayConfig.autoLoadTakedown && <span className="text-sky-400 font-mono text-[10px] ml-1">(storey: {bayConfig.storeyHeightH.toFixed(1)})</span>}
+                      </label>
+                      <input
+                        type="number"
+                        step="0.1"
+                        value={rcWallInputs.H}
+                        onChange={(e) => setRcWallInputs({ ...rcWallInputs, H: parseFloat(e.target.value) || 3.0 })}
+                        className="w-full mt-1 bg-slate-800 border border-slate-700 rounded p-1.5 text-white font-mono"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-slate-400 block font-semibold">Effective Height l0 (m):</label>
+                      <input
+                        type="number"
+                        step="0.1"
+                        value={rcWallInputs.l0}
+                        onChange={(e) => setRcWallInputs({ ...rcWallInputs, l0: parseFloat(e.target.value) || 3.0 })}
+                        className="w-full mt-1 bg-slate-800 border border-slate-700 rounded p-1.5 text-white font-mono"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-slate-400 block font-semibold">Wall Strip b (mm):</label>
+                      <input
+                        type="number"
+                        value={rcWallInputs.b}
+                        onChange={(e) => setRcWallInputs({ ...rcWallInputs, b: parseInt(e.target.value) || 1000 })}
+                        className="w-full mt-1 bg-slate-800 border border-slate-700 rounded p-1.5 text-white font-mono"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-slate-400 block font-semibold">Thickness h (mm):</label>
+                      <input
+                        type="number"
+                        step="20"
+                        value={rcWallInputs.h}
+                        onChange={(e) => setRcWallInputs({ ...rcWallInputs, h: parseInt(e.target.value) || 200 })}
+                        className="w-full mt-1 bg-slate-800 border border-slate-700 rounded p-1.5 text-white font-mono"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-slate-400 block font-semibold">Bar Axis Distance a (mm):</label>
+                      <input
+                        type="number"
+                        step="5"
+                        value={rcWallInputs.a}
+                        onChange={(e) => setRcWallInputs({ ...rcWallInputs, a: parseInt(e.target.value) || 40 })}
+                        className="w-full mt-1 bg-slate-800 border border-slate-700 rounded p-1.5 text-white font-mono"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-slate-400 block font-semibold">Concrete Class:</label>
                       <select
-                        value={activeMember === 'steel_beam' ? steelBeamInputs.profileName : steelColInputs.profileName}
-                        onChange={(e) => {
-                          if (activeMember === 'steel_beam') {
-                            setSteelBeamInputs({ ...steelBeamInputs, profileName: e.target.value });
-                          } else {
-                            setSteelColInputs({ ...steelColInputs, profileName: e.target.value });
-                          }
-                        }}
+                        value={rcWallInputs.concreteClass}
+                        onChange={(e) => setRcWallInputs({ ...rcWallInputs, concreteClass: e.target.value })}
+                        className="w-full mt-1 bg-slate-800 border border-slate-700 rounded p-1.5 text-white font-semibold"
+                      >
+                        {Object.keys(CONCRETE_CLASSES).map((c) => (
+                          <option key={c} value={c}>{c}</option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div className="col-span-2 sm:col-span-3 text-[11px] font-bold text-sky-400 uppercase tracking-wider border-b border-slate-800 pb-1 mt-2">
+                      2. Top Axial Loads & 1st Order Moment
+                    </div>
+                    <div>
+                      <label className="text-slate-400 block font-semibold">
+                        Permanent Axial NG,k (kN):
+                        {bayConfig.autoLoadTakedown && <span className="text-sky-400 font-mono text-[10px] ml-1">(auto: {takedown.wall_NG_k.toFixed(0)})</span>}
+                      </label>
+                      <input
+                        type="number"
+                        step="20"
+                        value={rcWallInputs.NG_k}
+                        onChange={(e) => setRcWallInputs({ ...rcWallInputs, NG_k: parseFloat(e.target.value) || 0 })}
+                        className="w-full mt-1 bg-slate-800 border border-slate-700 rounded p-1.5 text-white font-mono"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-slate-400 block font-semibold">
+                        Variable Axial NQ,k (kN):
+                        {bayConfig.autoLoadTakedown && <span className="text-sky-400 font-mono text-[10px] ml-1">(auto: {takedown.wall_NQ_k.toFixed(0)})</span>}
+                      </label>
+                      <input
+                        type="number"
+                        step="10"
+                        value={rcWallInputs.NQ_k}
+                        onChange={(e) => setRcWallInputs({ ...rcWallInputs, NQ_k: parseFloat(e.target.value) || 0 })}
+                        className="w-full mt-1 bg-slate-800 border border-slate-700 rounded p-1.5 text-white font-mono"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-slate-400 block font-semibold">1st Order Moment M0,Ed (kNm):</label>
+                      <input
+                        type="number"
+                        step="1"
+                        value={rcWallInputs.M0_Ed}
+                        onChange={(e) => setRcWallInputs({ ...rcWallInputs, M0_Ed: parseFloat(e.target.value) || 0 })}
+                        className="w-full mt-1 bg-slate-800 border border-slate-700 rounded p-1.5 text-white font-mono"
+                      />
+                    </div>
+
+                    <div className="col-span-2 sm:col-span-3 text-[11px] font-bold text-sky-400 uppercase tracking-wider border-b border-slate-800 pb-1 mt-2">
+                      3. Wall Mesh Reinforcement
+                    </div>
+                    <div>
+                      <label className="text-slate-400 block font-semibold">Vertical Bar φ (mm):</label>
+                      <input
+                        type="number"
+                        step="2"
+                        value={rcWallInputs.phi}
+                        onChange={(e) => setRcWallInputs({ ...rcWallInputs, phi: parseInt(e.target.value) || 12 })}
+                        className="w-full mt-1 bg-slate-800 border border-slate-700 rounded p-1.5 text-white font-mono"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-slate-400 block font-semibold">Vertical Spacing s (mm):</label>
+                      <input
+                        type="number"
+                        step="25"
+                        value={rcWallInputs.s}
+                        onChange={(e) => setRcWallInputs({ ...rcWallInputs, s: parseInt(e.target.value) || 200 })}
+                        className="w-full mt-1 bg-slate-800 border border-slate-700 rounded p-1.5 text-white font-mono"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-slate-400 block font-semibold">Horizontal Bar φh (mm):</label>
+                      <input
+                        type="number"
+                        step="2"
+                        value={rcWallInputs.phi_h}
+                        onChange={(e) => setRcWallInputs({ ...rcWallInputs, phi_h: parseInt(e.target.value) || 8 })}
+                        className="w-full mt-1 bg-slate-800 border border-slate-700 rounded p-1.5 text-white font-mono"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-slate-400 block font-semibold">Horizontal Spacing sh (mm):</label>
+                      <input
+                        type="number"
+                        step="25"
+                        value={rcWallInputs.s_h}
+                        onChange={(e) => setRcWallInputs({ ...rcWallInputs, s_h: parseInt(e.target.value) || 200 })}
+                        className="w-full mt-1 bg-slate-800 border border-slate-700 rounded p-1.5 text-white font-mono"
+                      />
+                    </div>
+                  </>
+                )}
+
+                {/* =========================================================
+                    4. RC COLUMN IN UNIAXIAL BENDING INPUTS (EXPLICIT USER REQUEST)
+                   ========================================================= */}
+                {activeMember === 'rc_column' && (
+                  <>
+                    <div className="col-span-2 sm:col-span-3 text-[11px] font-bold text-sky-400 uppercase tracking-wider border-b border-slate-800 pb-1 mt-1">
+                      1. Column Geometry & Boundary
+                    </div>
+                    <div>
+                      <label className="text-slate-400 block font-semibold">
+                        Clear Height H (m):
+                        {bayConfig.autoLoadTakedown && <span className="text-sky-400 font-mono text-[10px] ml-1">(storey: {bayConfig.storeyHeightH.toFixed(1)})</span>}
+                      </label>
+                      <input
+                        type="number"
+                        step="0.1"
+                        min="1.0"
+                        max="10.0"
+                        value={rcColInputs.H}
+                        onChange={(e) => setRcColInputs({ ...rcColInputs, H: parseFloat(e.target.value) || 3.0 })}
+                        className="w-full mt-1 bg-slate-800 border border-slate-700 rounded p-1.5 text-white font-mono"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-slate-400 block font-semibold">Buckling Length l0 (m):</label>
+                      <input
+                        type="number"
+                        step="0.1"
+                        min="1.0"
+                        max="10.0"
+                        value={rcColInputs.l0}
+                        onChange={(e) => setRcColInputs({ ...rcColInputs, l0: parseFloat(e.target.value) || 3.0 })}
+                        className="w-full mt-1 bg-slate-800 border border-slate-700 rounded p-1.5 text-white font-mono"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-slate-400 block font-semibold">Breadth b (mm):</label>
+                      <input
+                        type="number"
+                        step="25"
+                        min="150"
+                        max="1200"
+                        value={rcColInputs.b}
+                        onChange={(e) => setRcColInputs({ ...rcColInputs, b: parseInt(e.target.value) || 400 })}
+                        className="w-full mt-1 bg-slate-800 border border-slate-700 rounded p-1.5 text-white font-mono"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-slate-400 block font-semibold">Depth in Bending h (mm):</label>
+                      <input
+                        type="number"
+                        step="25"
+                        min="150"
+                        max="1200"
+                        value={rcColInputs.h}
+                        onChange={(e) => setRcColInputs({ ...rcColInputs, h: parseInt(e.target.value) || 400 })}
+                        className="w-full mt-1 bg-slate-800 border border-slate-700 rounded p-1.5 text-white font-mono"
+                      />
+                    </div>
+
+                    <div className="col-span-2 sm:col-span-3 text-[11px] font-bold text-sky-400 uppercase tracking-wider border-b border-slate-800 pb-1 mt-2">
+                      2. Column Loading & Design Moment
+                    </div>
+                    <div>
+                      <label className="text-slate-400 block font-semibold">
+                        Permanent Axial NG,k (kN):
+                        {bayConfig.autoLoadTakedown && <span className="text-sky-400 font-mono text-[10px] ml-1">(auto: {takedown.column_NG_k.toFixed(0)})</span>}
+                      </label>
+                      <input
+                        type="number"
+                        step="25"
+                        value={rcColInputs.NG_k}
+                        onChange={(e) => setRcColInputs({ ...rcColInputs, NG_k: parseFloat(e.target.value) || 0 })}
+                        className="w-full mt-1 bg-slate-800 border border-slate-700 rounded p-1.5 text-white font-mono"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-slate-400 block font-semibold">
+                        Variable Axial NQ,k (kN):
+                        {bayConfig.autoLoadTakedown && <span className="text-sky-400 font-mono text-[10px] ml-1">(auto: {takedown.column_NQ_k.toFixed(0)})</span>}
+                      </label>
+                      <input
+                        type="number"
+                        step="25"
+                        value={rcColInputs.NQ_k}
+                        onChange={(e) => setRcColInputs({ ...rcColInputs, NQ_k: parseFloat(e.target.value) || 0 })}
+                        className="w-full mt-1 bg-slate-800 border border-slate-700 rounded p-1.5 text-white font-mono"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-slate-400 block font-semibold">1st-Order Moment M0,Ed (kNm):</label>
+                      <input
+                        type="number"
+                        step="5"
+                        value={rcColInputs.M0_Ed}
+                        onChange={(e) => setRcColInputs({ ...rcColInputs, M0_Ed: parseFloat(e.target.value) || 0 })}
+                        className="w-full mt-1 bg-slate-800 border border-slate-700 rounded p-1.5 text-white font-mono"
+                      />
+                    </div>
+
+                    <div className="col-span-2 sm:col-span-3 text-[11px] font-bold text-sky-400 uppercase tracking-wider border-b border-slate-800 pb-1 mt-2">
+                      3. Symmetric Reinforcement & Materials
+                    </div>
+                    <div>
+                      <label className="text-slate-400 block font-semibold">Concrete Class:</label>
+                      <select
+                        value={rcColInputs.concreteClass}
+                        onChange={(e) => setRcColInputs({ ...rcColInputs, concreteClass: e.target.value })}
+                        className="w-full mt-1 bg-slate-800 border border-slate-700 rounded p-1.5 text-white font-semibold"
+                      >
+                        {Object.keys(CONCRETE_CLASSES).map((c) => (
+                          <option key={c} value={c}>{c}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="text-slate-400 block font-semibold">Bar Diameter φ (mm):</label>
+                      <input
+                        type="number"
+                        step="2"
+                        min="12"
+                        max="32"
+                        value={rcColInputs.phi}
+                        onChange={(e) => setRcColInputs({ ...rcColInputs, phi: parseInt(e.target.value) || 20 })}
+                        className="w-full mt-1 bg-slate-800 border border-slate-700 rounded p-1.5 text-white font-mono"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-slate-400 block font-semibold">Bars per Face n,bars:</label>
+                      <input
+                        type="number"
+                        min="2"
+                        max="10"
+                        value={rcColInputs.n_bars}
+                        onChange={(e) => setRcColInputs({ ...rcColInputs, n_bars: parseInt(e.target.value) || 3 })}
+                        className="w-full mt-1 bg-slate-800 border border-slate-700 rounded p-1.5 text-white font-mono"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-slate-400 block font-semibold">Bar Centre from Face a (mm):</label>
+                      <input
+                        type="number"
+                        step="5"
+                        min="25"
+                        max="80"
+                        value={rcColInputs.a}
+                        onChange={(e) => setRcColInputs({ ...rcColInputs, a: parseInt(e.target.value) || 50 })}
+                        className="w-full mt-1 bg-slate-800 border border-slate-700 rounded p-1.5 text-white font-mono"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-slate-400 block font-semibold">Rebar Yield fyk (MPa):</label>
+                      <input
+                        type="number"
+                        value={rcColInputs.fyk}
+                        onChange={(e) => setRcColInputs({ ...rcColInputs, fyk: parseInt(e.target.value) || 500 })}
+                        className="w-full mt-1 bg-slate-800 border border-slate-700 rounded p-1.5 text-white font-mono"
+                      />
+                    </div>
+
+                    <div className="col-span-2 sm:col-span-3 text-[11px] font-bold text-sky-400 uppercase tracking-wider border-b border-slate-800 pb-1 mt-2">
+                      4. Second-Order Curvature Parameters
+                    </div>
+                    <div>
+                      <label className="text-slate-400 block font-semibold">Effective Creep φef:</label>
+                      <input
+                        type="number"
+                        step="0.1"
+                        min="0.5"
+                        max="4.0"
+                        value={rcColInputs.phi_ef}
+                        onChange={(e) => setRcColInputs({ ...rcColInputs, phi_ef: parseFloat(e.target.value) || 2.0 })}
+                        className="w-full mt-1 bg-slate-800 border border-slate-700 rounded p-1.5 text-white font-mono"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-slate-400 block font-semibold">Curvature Factor c (8-10):</label>
+                      <input
+                        type="number"
+                        step="1"
+                        min="8"
+                        max="10"
+                        value={rcColInputs.c}
+                        onChange={(e) => setRcColInputs({ ...rcColInputs, c: parseFloat(e.target.value) || 8.0 })}
+                        className="w-full mt-1 bg-slate-800 border border-slate-700 rounded p-1.5 text-white font-mono"
+                      />
+                    </div>
+                  </>
+                )}
+
+                {/* =========================================================
+                    5. STEEL BEAM INPUTS
+                   ========================================================= */}
+                {activeMember === 'steel_beam' && (
+                  <>
+                    <div className="col-span-2 sm:col-span-3 text-[11px] font-bold text-sky-400 uppercase tracking-wider border-b border-slate-800 pb-1 mt-1">
+                      1. Steel Section Profile & Grade (52 Profiles)
+                    </div>
+                    <div className="col-span-2">
+                      <label className="text-slate-400 block font-semibold">Steel Section Profile:</label>
+                      <select
+                        value={steelBeamInputs.profileName}
+                        onChange={(e) => setSteelBeamInputs({ ...steelBeamInputs, profileName: e.target.value })}
                         className="w-full mt-1 bg-slate-800 border border-slate-700 rounded p-1.5 text-white font-mono text-xs font-semibold"
                       >
                         {Object.keys(STEEL_PROFILES).map((p) => (
@@ -1193,12 +1828,8 @@ export const StructuralEurocodeStudio: React.FC = () => {
                     <div>
                       <label className="text-slate-400 block font-semibold">Steel Grade:</label>
                       <select
-                        value={activeMember === 'steel_beam' ? steelBeamInputs.grade : steelColInputs.grade}
-                        onChange={(e) => {
-                          const g = e.target.value as any;
-                          if (activeMember === 'steel_beam') setSteelBeamInputs({ ...steelBeamInputs, grade: g });
-                          else setSteelColInputs({ ...steelColInputs, grade: g });
-                        }}
+                        value={steelBeamInputs.grade}
+                        onChange={(e) => setSteelBeamInputs({ ...steelBeamInputs, grade: e.target.value as any })}
                         className="w-full mt-1 bg-slate-800 border border-slate-700 rounded p-1.5 text-white font-semibold"
                       >
                         <option value="S235">S235 (235 MPa)</option>
@@ -1206,21 +1837,411 @@ export const StructuralEurocodeStudio: React.FC = () => {
                         <option value="S355">S355 (355 MPa)</option>
                       </select>
                     </div>
+
+                    <div className="col-span-2 sm:col-span-3 text-[11px] font-bold text-sky-400 uppercase tracking-wider border-b border-slate-800 pb-1 mt-2">
+                      2. Geometry & SLS Deflection Limits
+                    </div>
+                    <div>
+                      <label className="text-slate-400 block font-semibold">
+                        Span L (m):
+                        {bayConfig.autoLoadTakedown && <span className="text-sky-400 font-mono text-[10px] ml-1">(bay: {bayConfig.spanL.toFixed(1)})</span>}
+                      </label>
+                      <input
+                        type="number"
+                        step="0.5"
+                        value={steelBeamInputs.L}
+                        onChange={(e) => setSteelBeamInputs({ ...steelBeamInputs, L: parseFloat(e.target.value) || 6.0 })}
+                        className="w-full mt-1 bg-slate-800 border border-slate-700 rounded p-1.5 text-white font-mono"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-slate-400 block font-semibold">
+                        Tributary Width Btr (m):
+                        {bayConfig.autoLoadTakedown && <span className="text-sky-400 font-mono text-[10px] ml-1">(bay: {bayConfig.tributaryWidthBtr.toFixed(1)})</span>}
+                      </label>
+                      <input
+                        type="number"
+                        step="0.5"
+                        value={steelBeamInputs.Btr}
+                        onChange={(e) => setSteelBeamInputs({ ...steelBeamInputs, Btr: parseFloat(e.target.value) || 3.0 })}
+                        className="w-full mt-1 bg-slate-800 border border-slate-700 rounded p-1.5 text-white font-mono"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-slate-400 block font-semibold">Lateral Restraint:</label>
+                      <select
+                        value={steelBeamInputs.restraint}
+                        onChange={(e) => setSteelBeamInputs({ ...steelBeamInputs, restraint: e.target.value as any })}
+                        className="w-full mt-1 bg-slate-800 border border-slate-700 rounded p-1.5 text-white font-semibold"
+                      >
+                        <option value="Assumed">Assumed (Continuous)</option>
+                        <option value="None">None (Unrestrained)</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="text-slate-400 block font-semibold">Imposed Deflection Limit:</label>
+                      <select
+                        value={steelBeamInputs.div_Q}
+                        onChange={(e) => setSteelBeamInputs({ ...steelBeamInputs, div_Q: parseInt(e.target.value) || 300 })}
+                        className="w-full mt-1 bg-slate-800 border border-slate-700 rounded p-1.5 text-white font-mono"
+                      >
+                        <option value={200}>L / 200</option>
+                        <option value={250}>L / 250</option>
+                        <option value={300}>L / 300 (Standard)</option>
+                        <option value={350}>L / 350</option>
+                        <option value={500}>L / 500</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="text-slate-400 block font-semibold">Total Deflection Limit:</label>
+                      <select
+                        value={steelBeamInputs.div_total}
+                        onChange={(e) => setSteelBeamInputs({ ...steelBeamInputs, div_total: parseInt(e.target.value) || 250 })}
+                        className="w-full mt-1 bg-slate-800 border border-slate-700 rounded p-1.5 text-white font-mono"
+                      >
+                        <option value={200}>L / 200</option>
+                        <option value={250}>L / 250 (Standard)</option>
+                        <option value={300}>L / 300</option>
+                      </select>
+                    </div>
                   </>
                 )}
 
-                {/* TIMBER BEAM & COLUMN INPUTS */}
-                {(activeMember === 'wood_beam' || activeMember === 'wood_column') && (
+                {/* =========================================================
+                    6. STEEL COLUMN INPUTS
+                   ========================================================= */}
+                {activeMember === 'steel_column' && (
                   <>
+                    <div className="col-span-2 sm:col-span-3 text-[11px] font-bold text-sky-400 uppercase tracking-wider border-b border-slate-800 pb-1 mt-1">
+                      1. Steel Section Profile & Grade (52 Profiles)
+                    </div>
+                    <div className="col-span-2">
+                      <label className="text-slate-400 block font-semibold">Steel Section Profile:</label>
+                      <select
+                        value={steelColInputs.profileName}
+                        onChange={(e) => setSteelColInputs({ ...steelColInputs, profileName: e.target.value })}
+                        className="w-full mt-1 bg-slate-800 border border-slate-700 rounded p-1.5 text-white font-mono text-xs font-semibold"
+                      >
+                        {Object.keys(STEEL_PROFILES).map((p) => (
+                          <option key={p} value={p}>{p}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="text-slate-400 block font-semibold">Steel Grade:</label>
+                      <select
+                        value={steelColInputs.grade}
+                        onChange={(e) => setSteelColInputs({ ...steelColInputs, grade: e.target.value as any })}
+                        className="w-full mt-1 bg-slate-800 border border-slate-700 rounded p-1.5 text-white font-semibold"
+                      >
+                        <option value="S235">S235 (235 MPa)</option>
+                        <option value="S275">S275 (275 MPa)</option>
+                        <option value="S355">S355 (355 MPa)</option>
+                      </select>
+                    </div>
+
+                    <div className="col-span-2 sm:col-span-3 text-[11px] font-bold text-sky-400 uppercase tracking-wider border-b border-slate-800 pb-1 mt-2">
+                      2. Geometry & Buckling Lengths
+                    </div>
+                    <div>
+                      <label className="text-slate-400 block font-semibold">
+                        Column Height H (m):
+                        {bayConfig.autoLoadTakedown && <span className="text-sky-400 font-mono text-[10px] ml-1">(storey: {bayConfig.storeyHeightH.toFixed(1)})</span>}
+                      </label>
+                      <input
+                        type="number"
+                        step="0.1"
+                        value={steelColInputs.H}
+                        onChange={(e) => setSteelColInputs({ ...steelColInputs, H: parseFloat(e.target.value) || 3.0 })}
+                        className="w-full mt-1 bg-slate-800 border border-slate-700 rounded p-1.5 text-white font-mono"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-slate-400 block font-semibold">Buckling lcr,y (m):</label>
+                      <input
+                        type="number"
+                        step="0.1"
+                        value={steelColInputs.lcr_y}
+                        onChange={(e) => setSteelColInputs({ ...steelColInputs, lcr_y: parseFloat(e.target.value) || 3.0 })}
+                        className="w-full mt-1 bg-slate-800 border border-slate-700 rounded p-1.5 text-white font-mono"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-slate-400 block font-semibold">Buckling lcr,z (m):</label>
+                      <input
+                        type="number"
+                        step="0.1"
+                        value={steelColInputs.lcr_z}
+                        onChange={(e) => setSteelColInputs({ ...steelColInputs, lcr_z: parseFloat(e.target.value) || 3.0 })}
+                        className="w-full mt-1 bg-slate-800 border border-slate-700 rounded p-1.5 text-white font-mono"
+                      />
+                    </div>
+
+                    <div className="col-span-2 sm:col-span-3 text-[11px] font-bold text-sky-400 uppercase tracking-wider border-b border-slate-800 pb-1 mt-2">
+                      3. Concentric Axial Compression
+                    </div>
+                    <div>
+                      <label className="text-slate-400 block font-semibold">
+                        Permanent Axial NG,k (kN):
+                        {bayConfig.autoLoadTakedown && <span className="text-sky-400 font-mono text-[10px] ml-1">(auto: {takedown.column_NG_k.toFixed(0)})</span>}
+                      </label>
+                      <input
+                        type="number"
+                        step="25"
+                        value={steelColInputs.NG_k}
+                        onChange={(e) => setSteelColInputs({ ...steelColInputs, NG_k: parseFloat(e.target.value) || 0 })}
+                        className="w-full mt-1 bg-slate-800 border border-slate-700 rounded p-1.5 text-white font-mono"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-slate-400 block font-semibold">
+                        Variable Axial NQ,k (kN):
+                        {bayConfig.autoLoadTakedown && <span className="text-sky-400 font-mono text-[10px] ml-1">(auto: {takedown.column_NQ_k.toFixed(0)})</span>}
+                      </label>
+                      <input
+                        type="number"
+                        step="25"
+                        value={steelColInputs.NQ_k}
+                        onChange={(e) => setSteelColInputs({ ...steelColInputs, NQ_k: parseFloat(e.target.value) || 0 })}
+                        className="w-full mt-1 bg-slate-800 border border-slate-700 rounded p-1.5 text-white font-mono"
+                      />
+                    </div>
+                  </>
+                )}
+
+                {/* =========================================================
+                    7. CLT SLAB INPUTS
+                   ========================================================= */}
+                {activeMember === 'clt_slab' && (
+                  <>
+                    <div className="col-span-2 sm:col-span-3 text-[11px] font-bold text-sky-400 uppercase tracking-wider border-b border-slate-800 pb-1 mt-1">
+                      1. CLT Slab Geometry & Product Status
+                    </div>
+                    <div>
+                      <label className="text-slate-400 block font-semibold">
+                        Span L (m):
+                        {bayConfig.autoLoadTakedown && <span className="text-sky-400 font-mono text-[10px] ml-1">(bay: {bayConfig.spanL.toFixed(1)})</span>}
+                      </label>
+                      <input
+                        type="number"
+                        step="0.5"
+                        value={cltSlabInputs.L}
+                        onChange={(e) => setCltSlabInputs({ ...cltSlabInputs, L: parseFloat(e.target.value) || 5.0 })}
+                        className="w-full mt-1 bg-slate-800 border border-slate-700 rounded p-1.5 text-white font-mono"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-slate-400 block font-semibold">Tributary Width Btr (m):</label>
+                      <input
+                        type="number"
+                        step="0.5"
+                        value={cltSlabInputs.Btr}
+                        onChange={(e) => setCltSlabInputs({ ...cltSlabInputs, Btr: parseFloat(e.target.value) || 1.0 })}
+                        className="w-full mt-1 bg-slate-800 border border-slate-700 rounded p-1.5 text-white font-mono"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-slate-400 block font-semibold">Panel Thickness t (mm):</label>
+                      <input
+                        type="number"
+                        step="20"
+                        value={cltSlabInputs.t}
+                        onChange={(e) => setCltSlabInputs({ ...cltSlabInputs, t: parseInt(e.target.value) || 160 })}
+                        className="w-full mt-1 bg-slate-800 border border-slate-700 rounded p-1.5 text-white font-mono"
+                      />
+                    </div>
+                    <div className="col-span-2">
+                      <label className="text-slate-400 block font-semibold">Layup / Identification:</label>
+                      <input
+                        type="text"
+                        value={cltSlabInputs.productName}
+                        onChange={(e) => setCltSlabInputs({ ...cltSlabInputs, productName: e.target.value })}
+                        className="w-full mt-1 bg-slate-800 border border-slate-700 rounded p-1.5 text-white font-mono text-xs"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-slate-400 block font-semibold">Data Verification:</label>
+                      <button
+                        type="button"
+                        onClick={() => setCltSlabInputs({ ...cltSlabInputs, isDocumented: !cltSlabInputs.isDocumented })}
+                        className={`w-full mt-1 p-1.5 rounded font-bold text-xs transition ${
+                          cltSlabInputs.isDocumented ? 'bg-emerald-600 text-white' : 'bg-amber-600 text-white'
+                        }`}
+                      >
+                        {cltSlabInputs.isDocumented ? '✓ Verified ETA' : '⚠ Example Data'}
+                      </button>
+                    </div>
+
+                    <div className="col-span-2 sm:col-span-3 text-[11px] font-bold text-sky-400 uppercase tracking-wider border-b border-slate-800 pb-1 mt-2">
+                      2. Rigidity & Strength Capacities (per 1m strip)
+                    </div>
+                    <div>
+                      <label className="text-slate-400 block font-semibold">Bending Rigidity EI (Nmm²/m):</label>
+                      <input
+                        type="number"
+                        value={cltSlabInputs.EI_mean}
+                        onChange={(e) => setCltSlabInputs({ ...cltSlabInputs, EI_mean: parseFloat(e.target.value) || 3.0e12 })}
+                        className="w-full mt-1 bg-slate-800 border border-slate-700 rounded p-1.5 text-white font-mono text-[11px]"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-slate-400 block font-semibold">Shear Rigidity GA (N/m):</label>
+                      <input
+                        type="number"
+                        value={cltSlabInputs.GA_eff}
+                        onChange={(e) => setCltSlabInputs({ ...cltSlabInputs, GA_eff: parseFloat(e.target.value) || 8.0e6 })}
+                        className="w-full mt-1 bg-slate-800 border border-slate-700 rounded p-1.5 text-white font-mono text-[11px]"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-slate-400 block font-semibold">Bending MR,k (kNm/m):</label>
+                      <input
+                        type="number"
+                        value={cltSlabInputs.MR_k}
+                        onChange={(e) => setCltSlabInputs({ ...cltSlabInputs, MR_k: parseFloat(e.target.value) || 60 })}
+                        className="w-full mt-1 bg-slate-800 border border-slate-700 rounded p-1.5 text-white font-mono"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-slate-400 block font-semibold">Transverse Shear VR,k (kN/m):</label>
+                      <input
+                        type="number"
+                        value={cltSlabInputs.VR_k}
+                        onChange={(e) => setCltSlabInputs({ ...cltSlabInputs, VR_k: parseFloat(e.target.value) || 45 })}
+                        className="w-full mt-1 bg-slate-800 border border-slate-700 rounded p-1.5 text-white font-mono"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-slate-400 block font-semibold">Bearing Capacity Rc90,Rk (kN/m):</label>
+                      <input
+                        type="number"
+                        value={cltSlabInputs.Rc90_Rk}
+                        onChange={(e) => setCltSlabInputs({ ...cltSlabInputs, Rc90_Rk: parseFloat(e.target.value) || 150 })}
+                        className="w-full mt-1 bg-slate-800 border border-slate-700 rounded p-1.5 text-white font-mono"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-slate-400 block font-semibold">Creep Factor kdef:</label>
+                      <input
+                        type="number"
+                        step="0.1"
+                        value={cltSlabInputs.kdef}
+                        onChange={(e) => setCltSlabInputs({ ...cltSlabInputs, kdef: parseFloat(e.target.value) || 0.8 })}
+                        className="w-full mt-1 bg-slate-800 border border-slate-700 rounded p-1.5 text-white font-mono"
+                      />
+                    </div>
+                  </>
+                )}
+
+                {/* =========================================================
+                    8. CLT WALL STRIP INPUTS
+                   ========================================================= */}
+                {activeMember === 'clt_wall' && (
+                  <>
+                    <div className="col-span-2 sm:col-span-3 text-[11px] font-bold text-sky-400 uppercase tracking-wider border-b border-slate-800 pb-1 mt-1">
+                      1. CLT Wall Geometry & Loading
+                    </div>
+                    <div>
+                      <label className="text-slate-400 block font-semibold">
+                        Storey Height H (m):
+                        {bayConfig.autoLoadTakedown && <span className="text-sky-400 font-mono text-[10px] ml-1">(storey: {bayConfig.storeyHeightH.toFixed(1)})</span>}
+                      </label>
+                      <input
+                        type="number"
+                        step="0.1"
+                        value={cltWallInputs.H}
+                        onChange={(e) => setCltWallInputs({ ...cltWallInputs, H: parseFloat(e.target.value) || 3.0 })}
+                        className="w-full mt-1 bg-slate-800 border border-slate-700 rounded p-1.5 text-white font-mono"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-slate-400 block font-semibold">Buckling Length l0 (m):</label>
+                      <input
+                        type="number"
+                        step="0.1"
+                        value={cltWallInputs.l0}
+                        onChange={(e) => setCltWallInputs({ ...cltWallInputs, l0: parseFloat(e.target.value) || 3.0 })}
+                        className="w-full mt-1 bg-slate-800 border border-slate-700 rounded p-1.5 text-white font-mono"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-slate-400 block font-semibold">Panel Thickness t (mm):</label>
+                      <input
+                        type="number"
+                        step="20"
+                        value={cltWallInputs.t}
+                        onChange={(e) => setCltWallInputs({ ...cltWallInputs, t: parseInt(e.target.value) || 160 })}
+                        className="w-full mt-1 bg-slate-800 border border-slate-700 rounded p-1.5 text-white font-mono"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-slate-400 block font-semibold">
+                        Permanent NG,k (kN/m):
+                        {bayConfig.autoLoadTakedown && <span className="text-sky-400 font-mono text-[10px] ml-1">(auto: {takedown.wall_NG_k.toFixed(0)})</span>}
+                      </label>
+                      <input
+                        type="number"
+                        value={cltWallInputs.NG_k}
+                        onChange={(e) => setCltWallInputs({ ...cltWallInputs, NG_k: parseFloat(e.target.value) || 0 })}
+                        className="w-full mt-1 bg-slate-800 border border-slate-700 rounded p-1.5 text-white font-mono"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-slate-400 block font-semibold">
+                        Variable NQ,k (kN/m):
+                        {bayConfig.autoLoadTakedown && <span className="text-sky-400 font-mono text-[10px] ml-1">(auto: {takedown.wall_NQ_k.toFixed(0)})</span>}
+                      </label>
+                      <input
+                        type="number"
+                        value={cltWallInputs.NQ_k}
+                        onChange={(e) => setCltWallInputs({ ...cltWallInputs, NQ_k: parseFloat(e.target.value) || 0 })}
+                        className="w-full mt-1 bg-slate-800 border border-slate-700 rounded p-1.5 text-white font-mono"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-slate-400 block font-semibold">Eccentricity e (mm):</label>
+                      <input
+                        type="number"
+                        value={cltWallInputs.e}
+                        onChange={(e) => setCltWallInputs({ ...cltWallInputs, e: parseFloat(e.target.value) || 10 })}
+                        className="w-full mt-1 bg-slate-800 border border-slate-700 rounded p-1.5 text-white font-mono"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-slate-400 block font-semibold">Lateral Wind pk (kN/m²):</label>
+                      <input
+                        type="number"
+                        step="0.1"
+                        value={cltWallInputs.pk}
+                        onChange={(e) => setCltWallInputs({ ...cltWallInputs, pk: parseFloat(e.target.value) || 0.5 })}
+                        className="w-full mt-1 bg-slate-800 border border-slate-700 rounded p-1.5 text-white font-mono"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-slate-400 block font-semibold">Compression Nc,Rk (kN/m):</label>
+                      <input
+                        type="number"
+                        value={cltWallInputs.Nc_Rk}
+                        onChange={(e) => setCltWallInputs({ ...cltWallInputs, Nc_Rk: parseFloat(e.target.value) || 2000 })}
+                        className="w-full mt-1 bg-slate-800 border border-slate-700 rounded p-1.5 text-white font-mono"
+                      />
+                    </div>
+                  </>
+                )}
+
+                {/* =========================================================
+                    9. WOOD BEAM INPUTS
+                   ========================================================= */}
+                {activeMember === 'wood_beam' && (
+                  <>
+                    <div className="col-span-2 sm:col-span-3 text-[11px] font-bold text-sky-400 uppercase tracking-wider border-b border-slate-800 pb-1 mt-1">
+                      1. Timber Grade & Service Duration
+                    </div>
                     <div>
                       <label className="text-slate-400 block font-semibold">Timber / Glulam Grade:</label>
                       <select
-                        value={activeMember === 'wood_beam' ? woodBeamInputs.timberClass : woodColInputs.timberClass}
-                        onChange={(e) => {
-                          const tc = e.target.value;
-                          if (activeMember === 'wood_beam') setWoodBeamInputs({ ...woodBeamInputs, timberClass: tc });
-                          else setWoodColInputs({ ...woodColInputs, timberClass: tc });
-                        }}
+                        value={woodBeamInputs.timberClass}
+                        onChange={(e) => setWoodBeamInputs({ ...woodBeamInputs, timberClass: e.target.value })}
                         className="w-full mt-1 bg-slate-800 border border-slate-700 rounded p-1.5 text-white font-semibold"
                       >
                         {Object.keys(TIMBER_CLASSES).map((tc) => (
@@ -1229,16 +2250,68 @@ export const StructuralEurocodeStudio: React.FC = () => {
                       </select>
                     </div>
                     <div>
+                      <label className="text-slate-400 block font-semibold">Service Class (SC):</label>
+                      <select
+                        value={woodBeamInputs.serviceClass}
+                        onChange={(e) => setWoodBeamInputs({ ...woodBeamInputs, serviceClass: parseInt(e.target.value) as any })}
+                        className="w-full mt-1 bg-slate-800 border border-slate-700 rounded p-1.5 text-white font-semibold"
+                      >
+                        <option value={1}>SC 1 (Heated Interior)</option>
+                        <option value={2}>SC 2 (Covered Exterior)</option>
+                        <option value={3}>SC 3 (Fully Exposed)</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="text-slate-400 block font-semibold">Action Duration:</label>
+                      <select
+                        value={woodBeamInputs.duration}
+                        onChange={(e) => setWoodBeamInputs({ ...woodBeamInputs, duration: e.target.value as TimberLoadDuration })}
+                        className="w-full mt-1 bg-slate-800 border border-slate-700 rounded p-1.5 text-white font-semibold"
+                      >
+                        <option value="Permanent">Permanent</option>
+                        <option value="Long-term">Long-term</option>
+                        <option value="Medium-term">Medium-term</option>
+                        <option value="Short-term">Short-term</option>
+                        <option value="Instantaneous">Instantaneous</option>
+                      </select>
+                    </div>
+
+                    <div className="col-span-2 sm:col-span-3 text-[11px] font-bold text-sky-400 uppercase tracking-wider border-b border-slate-800 pb-1 mt-2">
+                      2. Beam Cross-Section & Geometry
+                    </div>
+                    <div>
+                      <label className="text-slate-400 block font-semibold">
+                        Span L (m):
+                        {bayConfig.autoLoadTakedown && <span className="text-sky-400 font-mono text-[10px] ml-1">(bay: {bayConfig.spanL.toFixed(1)})</span>}
+                      </label>
+                      <input
+                        type="number"
+                        step="0.5"
+                        value={woodBeamInputs.L}
+                        onChange={(e) => setWoodBeamInputs({ ...woodBeamInputs, L: parseFloat(e.target.value) || 6.0 })}
+                        className="w-full mt-1 bg-slate-800 border border-slate-700 rounded p-1.5 text-white font-mono"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-slate-400 block font-semibold">
+                        Tributary Width Btr (m):
+                        {bayConfig.autoLoadTakedown && <span className="text-sky-400 font-mono text-[10px] ml-1">(bay: {bayConfig.tributaryWidthBtr.toFixed(1)})</span>}
+                      </label>
+                      <input
+                        type="number"
+                        step="0.1"
+                        value={woodBeamInputs.Btr}
+                        onChange={(e) => setWoodBeamInputs({ ...woodBeamInputs, Btr: parseFloat(e.target.value) || 0.6 })}
+                        className="w-full mt-1 bg-slate-800 border border-slate-700 rounded p-1.5 text-white font-mono"
+                      />
+                    </div>
+                    <div>
                       <label className="text-slate-400 block font-semibold">Section Width b (mm):</label>
                       <input
                         type="number"
                         step="20"
-                        value={activeMember === 'wood_beam' ? woodBeamInputs.b : woodColInputs.b}
-                        onChange={(e) => {
-                          const val = parseInt(e.target.value) || 120;
-                          if (activeMember === 'wood_beam') setWoodBeamInputs({ ...woodBeamInputs, b: val });
-                          else setWoodColInputs({ ...woodColInputs, b: val });
-                        }}
+                        value={woodBeamInputs.b}
+                        onChange={(e) => setWoodBeamInputs({ ...woodBeamInputs, b: parseInt(e.target.value) || 120 })}
                         className="w-full mt-1 bg-slate-800 border border-slate-700 rounded p-1.5 text-white font-mono"
                       />
                     </div>
@@ -1247,23 +2320,199 @@ export const StructuralEurocodeStudio: React.FC = () => {
                       <input
                         type="number"
                         step="20"
-                        value={activeMember === 'wood_beam' ? woodBeamInputs.h : woodColInputs.h}
-                        onChange={(e) => {
-                          const val = parseInt(e.target.value) || 320;
-                          if (activeMember === 'wood_beam') setWoodBeamInputs({ ...woodBeamInputs, h: val });
-                          else setWoodColInputs({ ...woodColInputs, h: val });
-                        }}
+                        value={woodBeamInputs.h}
+                        onChange={(e) => setWoodBeamInputs({ ...woodBeamInputs, h: parseInt(e.target.value) || 320 })}
+                        className="w-full mt-1 bg-slate-800 border border-slate-700 rounded p-1.5 text-white font-mono"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-slate-400 block font-semibold">Bearing Length a (mm):</label>
+                      <input
+                        type="number"
+                        step="10"
+                        value={woodBeamInputs.a}
+                        onChange={(e) => setWoodBeamInputs({ ...woodBeamInputs, a: parseInt(e.target.value) || 120 })}
+                        className="w-full mt-1 bg-slate-800 border border-slate-700 rounded p-1.5 text-white font-mono"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-slate-400 block font-semibold">Lateral Restraint:</label>
+                      <select
+                        value={woodBeamInputs.restraint}
+                        onChange={(e) => setWoodBeamInputs({ ...woodBeamInputs, restraint: e.target.value as any })}
+                        className="w-full mt-1 bg-slate-800 border border-slate-700 rounded p-1.5 text-white font-semibold"
+                      >
+                        <option value="Assumed">Assumed (Restrained)</option>
+                        <option value="None">None</option>
+                      </select>
+                    </div>
+                  </>
+                )}
+
+                {/* =========================================================
+                    10. WOOD COLUMN INPUTS
+                   ========================================================= */}
+                {activeMember === 'wood_column' && (
+                  <>
+                    <div className="col-span-2 sm:col-span-3 text-[11px] font-bold text-sky-400 uppercase tracking-wider border-b border-slate-800 pb-1 mt-1">
+                      1. Timber Grade & Service Duration
+                    </div>
+                    <div>
+                      <label className="text-slate-400 block font-semibold">Timber / Glulam Grade:</label>
+                      <select
+                        value={woodColInputs.timberClass}
+                        onChange={(e) => setWoodColInputs({ ...woodColInputs, timberClass: e.target.value })}
+                        className="w-full mt-1 bg-slate-800 border border-slate-700 rounded p-1.5 text-white font-semibold"
+                      >
+                        {Object.keys(TIMBER_CLASSES).map((tc) => (
+                          <option key={tc} value={tc}>{tc} ({TIMBER_CLASSES[tc].type})</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="text-slate-400 block font-semibold">Service Class (SC):</label>
+                      <select
+                        value={woodColInputs.serviceClass}
+                        onChange={(e) => setWoodColInputs({ ...woodColInputs, serviceClass: parseInt(e.target.value) as any })}
+                        className="w-full mt-1 bg-slate-800 border border-slate-700 rounded p-1.5 text-white font-semibold"
+                      >
+                        <option value={1}>SC 1 (Heated Interior)</option>
+                        <option value={2}>SC 2 (Covered Exterior)</option>
+                        <option value={3}>SC 3 (Fully Exposed)</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="text-slate-400 block font-semibold">Action Duration:</label>
+                      <select
+                        value={woodColInputs.duration}
+                        onChange={(e) => setWoodColInputs({ ...woodColInputs, duration: e.target.value as TimberLoadDuration })}
+                        className="w-full mt-1 bg-slate-800 border border-slate-700 rounded p-1.5 text-white font-semibold"
+                      >
+                        <option value="Permanent">Permanent</option>
+                        <option value="Long-term">Long-term</option>
+                        <option value="Medium-term">Medium-term</option>
+                        <option value="Short-term">Short-term</option>
+                        <option value="Instantaneous">Instantaneous</option>
+                      </select>
+                    </div>
+
+                    <div className="col-span-2 sm:col-span-3 text-[11px] font-bold text-sky-400 uppercase tracking-wider border-b border-slate-800 pb-1 mt-2">
+                      2. Column Geometry & Buckling
+                    </div>
+                    <div>
+                      <label className="text-slate-400 block font-semibold">
+                        Column Height H (m):
+                        {bayConfig.autoLoadTakedown && <span className="text-sky-400 font-mono text-[10px] ml-1">(storey: {bayConfig.storeyHeightH.toFixed(1)})</span>}
+                      </label>
+                      <input
+                        type="number"
+                        step="0.1"
+                        value={woodColInputs.H}
+                        onChange={(e) => setWoodColInputs({ ...woodColInputs, H: parseFloat(e.target.value) || 3.0 })}
+                        className="w-full mt-1 bg-slate-800 border border-slate-700 rounded p-1.5 text-white font-mono"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-slate-400 block font-semibold">Section Width b (mm):</label>
+                      <input
+                        type="number"
+                        step="20"
+                        value={woodColInputs.b}
+                        onChange={(e) => setWoodColInputs({ ...woodColInputs, b: parseInt(e.target.value) || 200 })}
+                        className="w-full mt-1 bg-slate-800 border border-slate-700 rounded p-1.5 text-white font-mono"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-slate-400 block font-semibold">Section Depth h (mm):</label>
+                      <input
+                        type="number"
+                        step="20"
+                        value={woodColInputs.h}
+                        onChange={(e) => setWoodColInputs({ ...woodColInputs, h: parseInt(e.target.value) || 240 })}
+                        className="w-full mt-1 bg-slate-800 border border-slate-700 rounded p-1.5 text-white font-mono"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-slate-400 block font-semibold">Buckling l0,y (m):</label>
+                      <input
+                        type="number"
+                        step="0.1"
+                        value={woodColInputs.l0_y}
+                        onChange={(e) => setWoodColInputs({ ...woodColInputs, l0_y: parseFloat(e.target.value) || 3.0 })}
+                        className="w-full mt-1 bg-slate-800 border border-slate-700 rounded p-1.5 text-white font-mono"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-slate-400 block font-semibold">Buckling l0,z (m):</label>
+                      <input
+                        type="number"
+                        step="0.1"
+                        value={woodColInputs.l0_z}
+                        onChange={(e) => setWoodColInputs({ ...woodColInputs, l0_z: parseFloat(e.target.value) || 3.0 })}
+                        className="w-full mt-1 bg-slate-800 border border-slate-700 rounded p-1.5 text-white font-mono"
+                      />
+                    </div>
+
+                    <div className="col-span-2 sm:col-span-3 text-[11px] font-bold text-sky-400 uppercase tracking-wider border-b border-slate-800 pb-1 mt-2">
+                      3. Axial Compression & Moments
+                    </div>
+                    <div>
+                      <label className="text-slate-400 block font-semibold">
+                        Permanent Axial NG,k (kN):
+                        {bayConfig.autoLoadTakedown && <span className="text-sky-400 font-mono text-[10px] ml-1">(auto: {takedown.column_NG_k.toFixed(0)})</span>}
+                      </label>
+                      <input
+                        type="number"
+                        value={woodColInputs.NG_k}
+                        onChange={(e) => setWoodColInputs({ ...woodColInputs, NG_k: parseFloat(e.target.value) || 0 })}
+                        className="w-full mt-1 bg-slate-800 border border-slate-700 rounded p-1.5 text-white font-mono"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-slate-400 block font-semibold">
+                        Variable Axial NQ,k (kN):
+                        {bayConfig.autoLoadTakedown && <span className="text-sky-400 font-mono text-[10px] ml-1">(auto: {takedown.column_NQ_k.toFixed(0)})</span>}
+                      </label>
+                      <input
+                        type="number"
+                        value={woodColInputs.NQ_k}
+                        onChange={(e) => setWoodColInputs({ ...woodColInputs, NQ_k: parseFloat(e.target.value) || 0 })}
+                        className="w-full mt-1 bg-slate-800 border border-slate-700 rounded p-1.5 text-white font-mono"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-slate-400 block font-semibold">Moment MGy,k (kNm):</label>
+                      <input
+                        type="number"
+                        step="0.5"
+                        value={woodColInputs.MGy_k}
+                        onChange={(e) => setWoodColInputs({ ...woodColInputs, MGy_k: parseFloat(e.target.value) || 0 })}
+                        className="w-full mt-1 bg-slate-800 border border-slate-700 rounded p-1.5 text-white font-mono"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-slate-400 block font-semibold">Moment MQy,k (kNm):</label>
+                      <input
+                        type="number"
+                        step="0.5"
+                        value={woodColInputs.MQy_k}
+                        onChange={(e) => setWoodColInputs({ ...woodColInputs, MQy_k: parseFloat(e.target.value) || 0 })}
                         className="w-full mt-1 bg-slate-800 border border-slate-700 rounded p-1.5 text-white font-mono"
                       />
                     </div>
                   </>
                 )}
 
-                {/* MASONRY WALL INPUTS */}
+                {/* =========================================================
+                    11. MASONRY WALL STRIP INPUTS
+                   ========================================================= */}
                 {activeMember === 'masonry_wall' && (
                   <>
+                    <div className="col-span-2 sm:col-span-3 text-[11px] font-bold text-sky-400 uppercase tracking-wider border-b border-slate-800 pb-1 mt-1">
+                      1. Unit Type / Group & Strength Data (EN 1996 Table 3.3)
+                    </div>
                     <div className="col-span-2">
-                      <label className="text-slate-400 block font-semibold">Unit Type / Group (EN 1996 Table 3.3):</label>
+                      <label className="text-slate-400 block font-semibold">Unit Type / Group:</label>
                       <select
                         value={masonryInputs.unitGroup}
                         onChange={(e) => setMasonryInputs({ ...masonryInputs, unitGroup: e.target.value })}
@@ -1275,14 +2524,15 @@ export const StructuralEurocodeStudio: React.FC = () => {
                       </select>
                     </div>
                     <div>
-                      <label className="text-slate-400 block font-semibold">Wall Thickness t (mm):</label>
-                      <input
-                        type="number"
-                        step="25"
-                        value={masonryInputs.t}
-                        onChange={(e) => setMasonryInputs({ ...masonryInputs, t: parseInt(e.target.value) || 250 })}
-                        className="w-full mt-1 bg-slate-800 border border-slate-700 rounded p-1.5 text-white font-mono"
-                      />
+                      <label className="text-slate-400 block font-semibold">Strength Route:</label>
+                      <select
+                        value={masonryInputs.fkRoute}
+                        onChange={(e) => setMasonryInputs({ ...masonryInputs, fkRoute: e.target.value as any })}
+                        className="w-full mt-1 bg-slate-800 border border-slate-700 rounded p-1.5 text-white font-semibold"
+                      >
+                        <option value="From fb and fm">From fb and fm</option>
+                        <option value="Declared / Tested fk">Declared fk,test</option>
+                      </select>
                     </div>
                     <div>
                       <label className="text-slate-400 block font-semibold">Unit Strength fb (MPa):</label>
@@ -1299,6 +2549,93 @@ export const StructuralEurocodeStudio: React.FC = () => {
                         type="number"
                         value={masonryInputs.fm}
                         onChange={(e) => setMasonryInputs({ ...masonryInputs, fm: parseFloat(e.target.value) || 5 })}
+                        className="w-full mt-1 bg-slate-800 border border-slate-700 rounded p-1.5 text-white font-mono"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-slate-400 block font-semibold">Data Status:</label>
+                      <button
+                        type="button"
+                        onClick={() => setMasonryInputs({ ...masonryInputs, isExampleData: !masonryInputs.isExampleData })}
+                        className={`w-full mt-1 p-1.5 rounded font-bold text-xs transition ${
+                          !masonryInputs.isExampleData ? 'bg-emerald-600 text-white' : 'bg-amber-600 text-white'
+                        }`}
+                      >
+                        {!masonryInputs.isExampleData ? '✓ Checked Data' : '⚠ Example Data'}
+                      </button>
+                    </div>
+
+                    <div className="col-span-2 sm:col-span-3 text-[11px] font-bold text-sky-400 uppercase tracking-wider border-b border-slate-800 pb-1 mt-2">
+                      2. Geometry & Clear Height
+                    </div>
+                    <div>
+                      <label className="text-slate-400 block font-semibold">Wall Segment l (m):</label>
+                      <input
+                        type="number"
+                        step="0.5"
+                        value={masonryInputs.l}
+                        onChange={(e) => setMasonryInputs({ ...masonryInputs, l: parseFloat(e.target.value) || 1.0 })}
+                        className="w-full mt-1 bg-slate-800 border border-slate-700 rounded p-1.5 text-white font-mono"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-slate-400 block font-semibold">
+                        Clear Height H (m):
+                        {bayConfig.autoLoadTakedown && <span className="text-sky-400 font-mono text-[10px] ml-1">(storey: {bayConfig.storeyHeightH.toFixed(1)})</span>}
+                      </label>
+                      <input
+                        type="number"
+                        step="0.1"
+                        value={masonryInputs.H}
+                        onChange={(e) => setMasonryInputs({ ...masonryInputs, H: parseFloat(e.target.value) || 3.0 })}
+                        className="w-full mt-1 bg-slate-800 border border-slate-700 rounded p-1.5 text-white font-mono"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-slate-400 block font-semibold">Thickness t (mm):</label>
+                      <input
+                        type="number"
+                        step="25"
+                        value={masonryInputs.t}
+                        onChange={(e) => setMasonryInputs({ ...masonryInputs, t: parseInt(e.target.value) || 250 })}
+                        className="w-full mt-1 bg-slate-800 border border-slate-700 rounded p-1.5 text-white font-mono"
+                      />
+                    </div>
+
+                    <div className="col-span-2 sm:col-span-3 text-[11px] font-bold text-sky-400 uppercase tracking-wider border-b border-slate-800 pb-1 mt-2">
+                      3. Vertical Loads & Moments
+                    </div>
+                    <div>
+                      <label className="text-slate-400 block font-semibold">
+                        Permanent Axial NG,k (kN):
+                        {bayConfig.autoLoadTakedown && <span className="text-sky-400 font-mono text-[10px] ml-1">(auto: {takedown.wall_NG_k.toFixed(0)})</span>}
+                      </label>
+                      <input
+                        type="number"
+                        value={masonryInputs.NG_k}
+                        onChange={(e) => setMasonryInputs({ ...masonryInputs, NG_k: parseFloat(e.target.value) || 0 })}
+                        className="w-full mt-1 bg-slate-800 border border-slate-700 rounded p-1.5 text-white font-mono"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-slate-400 block font-semibold">
+                        Variable Axial NQ,k (kN):
+                        {bayConfig.autoLoadTakedown && <span className="text-sky-400 font-mono text-[10px] ml-1">(auto: {takedown.wall_NQ_k.toFixed(0)})</span>}
+                      </label>
+                      <input
+                        type="number"
+                        value={masonryInputs.NQ_k}
+                        onChange={(e) => setMasonryInputs({ ...masonryInputs, NQ_k: parseFloat(e.target.value) || 0 })}
+                        className="w-full mt-1 bg-slate-800 border border-slate-700 rounded p-1.5 text-white font-mono"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-slate-400 block font-semibold">Mid-Height Moment MEd,m (kNm):</label>
+                      <input
+                        type="number"
+                        step="0.5"
+                        value={masonryInputs.MEd_m}
+                        onChange={(e) => setMasonryInputs({ ...masonryInputs, MEd_m: parseFloat(e.target.value) || 0 })}
                         className="w-full mt-1 bg-slate-800 border border-slate-700 rounded p-1.5 text-white font-mono"
                       />
                     </div>
@@ -1539,6 +2876,17 @@ export const StructuralEurocodeStudio: React.FC = () => {
         config={bayConfig}
         memberResults={allMemberResults}
         optioneeringMatrix={optioneeringMatrix}
+      />
+
+      {/* =====================================================================
+          EUROCODE GUIDE: WORKFLOW, INTERPRETATION & SCOPE MODAL
+         ===================================================================== */}
+      <EurocodeGuideModal
+        isOpen={showGuideModal}
+        onClose={() => setShowGuideModal(false)}
+        activeMember={activeMember}
+        allMemberResults={allMemberResults}
+        onSelectMember={(m) => setActiveMember(m as SelectedMemberType)}
       />
     </div>
   );
