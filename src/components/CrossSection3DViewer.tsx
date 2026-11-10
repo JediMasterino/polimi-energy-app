@@ -113,6 +113,7 @@ export const CrossSection3DViewer: React.FC<CrossSection3DViewerProps> = ({
   // THREE.JS 3D EXTRUDED CUTAWAY SCENE INITIALIZATION & INTERACTION
   // ==========================================================================
   useEffect(() => {
+    if (memberType === 'none') return;
     const domEl = mountRef.current;
     if (!domEl || viewMode === '2d') return;
 
@@ -1221,6 +1222,20 @@ export const CrossSection3DViewer: React.FC<CrossSection3DViewerProps> = ({
       </svg>
     );
   };
+
+  if (memberType === 'none') {
+    return (
+      <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl flex flex-col items-center justify-center text-center space-y-3 min-h-[420px]">
+        <div className="p-3 rounded-2xl bg-sky-500/10 text-sky-400 border border-sky-500/20 shadow-inner">
+          <Info className="w-8 h-8" />
+        </div>
+        <div className="text-white font-extrabold text-sm">No Member Selected</div>
+        <p className="text-slate-400 text-xs max-w-sm leading-relaxed">
+          Select a structural member sheet from the navigation bar above to inspect its 3D cutaway and Eurocode stress/strain distribution.
+        </p>
+      </div>
+    );
+  }
 
   return (
     <div className={`bg-slate-900 border border-slate-800 rounded-2xl p-4 space-y-3 shadow-xl transition-all duration-300 ${

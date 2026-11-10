@@ -83,6 +83,12 @@ const MEMBER_SCOPE_NOTES: Record<SelectedMemberType, {
   domain: string;
   excluded: string;
 }> = {
+  none: {
+    standard: 'EN 1990 Basis of Structural Design',
+    scope: 'Multi-storey 3D structural bay framing, load path tributary cascade, and building geometry.',
+    domain: 'Building multi-storey structural systems.',
+    excluded: 'Select an individual structural member for code compliance checks.'
+  },
   rc_slab: {
     standard: 'EN 1992-1-1 §6.1, §6.2, §7.4, §9.2',
     scope: 'Singly reinforced one-way flexure, concrete shear resistance without shear rebar VRd,c, minimum & maximum longitudinal steel, and span-to-depth deflection screen (L/d)adj.',
@@ -585,7 +591,20 @@ export const StructuralEurocodeStudio: React.FC = () => {
 
           <button
             type="button"
-            onClick={() => setActiveStep(3)}
+            onClick={() => {
+              if (activeMember === 'none') {
+                const defaultMember =
+                  bayConfig.materialSystem === 'RC'
+                    ? 'rc_slab'
+                    : bayConfig.materialSystem === 'Steel'
+                    ? 'steel_beam'
+                    : bayConfig.materialSystem === 'Timber'
+                    ? 'clt_slab'
+                    : 'masonry_wall';
+                setActiveMember(defaultMember);
+              }
+              setActiveStep(3);
+            }}
             className={`p-2.5 rounded-xl border text-left transition flex items-start gap-2 ${
               activeStep === 3
                 ? 'bg-sky-950/60 border-sky-500/80 text-sky-200'
@@ -1175,8 +1194,10 @@ export const StructuralEurocodeStudio: React.FC = () => {
               setActiveMember(m);
             }}
             onNavigateToStep3={(m) => {
-              setActiveMember(m);
-              setActiveStep(3);
+              if (m !== 'none') {
+                setActiveMember(m);
+                setActiveStep(3);
+              }
             }}
           />
 

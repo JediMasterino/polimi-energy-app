@@ -16,6 +16,7 @@ import {
 import { StructuralBayConfig } from '../utils/eurocodeCalculators';
 
 export type SelectedMemberType =
+  | 'none'
   | 'rc_slab'
   | 'rc_beam'
   | 'rc_wall'
@@ -30,6 +31,8 @@ export type SelectedMemberType =
 
 const getMemberDisplayName = (id: string, materialSystem?: string): string => {
   switch (id) {
+    case 'none':
+      return 'Structural Bay Frame (No Selection)';
     case 'rc_slab':
       return 'Reinforced Concrete Slab (EN 1992)';
     case 'rc_beam':
@@ -494,6 +497,18 @@ export const StructuralBay3DViewer: React.FC<StructuralBay3DViewerProps> = ({
         {/* Quick Component Selector Pills */}
         <div className="bg-slate-900/90 backdrop-blur-md px-2 py-1 rounded-xl border border-slate-700/80 shadow-lg flex items-center gap-1 text-xs">
           <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider px-1">Select:</span>
+          <button
+            type="button"
+            onClick={() => onSelectMemberRef.current?.('none')}
+            className={`px-2 py-0.5 rounded-lg text-[11px] font-bold transition flex items-center gap-1 border ${
+              activeMember === 'none'
+                ? 'bg-slate-700 text-white border-slate-400 shadow'
+                : 'bg-slate-800/80 text-slate-400 border-slate-700 hover:bg-slate-700 hover:text-slate-200'
+            }`}
+            title="Deselect element to view the full structural bay frame"
+          >
+            None
+          </button>
           {availableMembers.map((m) => {
             const isSel = m.id === activeMember;
             const eta = memberUtilisations[m.id]?.eta_max || 0.5;
@@ -501,12 +516,13 @@ export const StructuralBay3DViewer: React.FC<StructuralBay3DViewerProps> = ({
               <button
                 key={m.id}
                 type="button"
-                onClick={() => onSelectMemberRef.current?.(m.id)}
+                onClick={() => onSelectMemberRef.current?.(isSel ? 'none' : m.id)}
                 className={`px-2 py-0.5 rounded-lg text-[11px] font-bold transition flex items-center gap-1 border ${
                   isSel
                     ? 'bg-sky-600 text-white border-sky-400 shadow'
                     : 'bg-slate-800/80 text-slate-300 border-slate-700 hover:bg-slate-700'
                 }`}
+                title={isSel ? 'Click to deselect (None)' : `Select ${m.label}`}
               >
                 <span
                   className="w-1.5 h-1.5 rounded-full"
@@ -561,53 +577,72 @@ export const StructuralBay3DViewer: React.FC<StructuralBay3DViewerProps> = ({
       </div>
 
       {/* Permanently Pinned Member Inspector Card with Step 3 Direct Button */}
-      <div className="absolute bottom-4 left-4 z-10 bg-slate-900/95 backdrop-blur-md p-3.5 rounded-2xl border border-sky-500/70 shadow-2xl text-xs space-y-2.5 max-w-xs transition-all">
+      <div className={`absolute bottom-4 left-4 z-10 bg-slate-900/95 backdrop-blur-md p-3.5 rounded-2xl border shadow-2xl text-xs space-y-2.5 max-w-xs transition-all ${
+        activeMember === 'none' ? 'border-slate-800' : 'border-sky-500/70'
+      }`}>
         <div className="flex items-center justify-between gap-2 border-b border-slate-800 pb-1.5">
           <span className="text-[10px] uppercase font-bold text-sky-400 tracking-wider flex items-center gap-1.5">
             <Box className="w-3.5 h-3.5 text-sky-400" />
-            Selected 3D Component
+            3D Component Inspector
           </span>
           <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-slate-800 text-teal-300 font-bold border border-slate-700">
-            {activeMember}
+            {activeMember === 'none' ? 'None' : activeMember}
           </span>
         </div>
 
-        <div className="space-y-1.5">
-          <div className="font-extrabold text-white flex items-center gap-2 text-sm">
-            <span
-              className="w-3 h-3 rounded-full shrink-0 shadow"
-              style={{
-                backgroundColor: currentEta <= 0.8 ? '#10b981' : currentEta <= 1.0 ? '#f59e0b' : '#ef4444'
-              }}
-            />
-            <span className="truncate">{getMemberDisplayName(activeMember, config.materialSystem)}</span>
+        {activeMember === 'none' ? (
+          <div className="space-y-2">
+            <div className="font-extrabold text-white flex items-center gap-2 text-sm">
+              <span className="w-2.5 h-2.5 rounded-full shrink-0 bg-sky-400 shadow" />
+              <span>Full Bay Overview</span>
+            </div>
+            <p className="text-[11px] text-slate-400 leading-relaxed bg-slate-950/60 p-2 rounded-xl border border-slate-800">
+              No component selected. The full multi-storey bay is visible without focus highlights.
+            </p>
+            <div className="text-[10.5px] text-slate-500 text-center flex items-center justify-center gap-1 pt-0.5">
+              <span>Select a pill above to inspect & design in Step 3</span>
+            </div>
           </div>
+        ) : (
+          <>
+            <div className="space-y-1.5">
+              <div className="font-extrabold text-white flex items-center gap-2 text-sm">
+                <span
+                  className="w-3 h-3 rounded-full shrink-0 shadow"
+                  style={{
+                    backgroundColor: currentEta <= 0.8 ? '#10b981' : currentEta <= 1.0 ? '#f59e0b' : '#ef4444'
+                  }}
+                />
+                <span className="truncate">{getMemberDisplayName(activeMember, config.materialSystem)}</span>
+              </div>
 
-          <div className="flex items-center justify-between text-[11px] bg-slate-950/80 px-2.5 py-1.5 rounded-xl border border-slate-800">
-            <span className="text-slate-400 font-semibold">Eurocode Utilisation:</span>
-            <span
-              className={`font-mono font-bold text-xs ${
-                currentEta <= 0.8 ? 'text-emerald-400' : currentEta <= 1.0 ? 'text-amber-400' : 'text-rose-400'
-              }`}
+              <div className="flex items-center justify-between text-[11px] bg-slate-950/80 px-2.5 py-1.5 rounded-xl border border-slate-800">
+                <span className="text-slate-400 font-semibold">Eurocode Utilisation:</span>
+                <span
+                  className={`font-mono font-bold text-xs ${
+                    currentEta <= 0.8 ? 'text-emerald-400' : currentEta <= 1.0 ? 'text-amber-400' : 'text-rose-400'
+                  }`}
+                >
+                  ηmax = {currentEta.toFixed(3)} ({Math.round(currentEta * 100)}%)
+                </span>
+              </div>
+            </div>
+
+            {/* Dedicated card button to direct the user to Step 3 for this element */}
+            <button
+              type="button"
+              onClick={() => onNavigateToStep3Ref.current?.(activeMember)}
+              className="w-full px-3.5 py-2 rounded-xl bg-teal-500 hover:bg-teal-400 active:scale-[0.98] text-slate-950 font-extrabold text-xs flex items-center justify-center gap-2 shadow-lg transition group cursor-pointer"
             >
-              ηmax = {currentEta.toFixed(3)} ({Math.round(currentEta * 100)}%)
-            </span>
-          </div>
-        </div>
+              <span>Open in Step 3 Studio</span>
+              <ArrowRight className="w-4 h-4 transition-transform group-hover:translate-x-1" />
+            </button>
 
-        {/* Dedicated card button to direct the user to Step 3 for this element */}
-        <button
-          type="button"
-          onClick={() => onNavigateToStep3Ref.current?.(activeMember)}
-          className="w-full px-3.5 py-2 rounded-xl bg-teal-500 hover:bg-teal-400 active:scale-[0.98] text-slate-950 font-extrabold text-xs flex items-center justify-center gap-2 shadow-lg transition group cursor-pointer"
-        >
-          <span>Open in Step 3 Studio</span>
-          <ArrowRight className="w-4 h-4 transition-transform group-hover:translate-x-1" />
-        </button>
-
-        <div className="text-[10.5px] text-slate-400 text-center flex items-center justify-center gap-1">
-          <span>Select component using pills above • Button opens Step 3</span>
-        </div>
+            <div className="text-[10.5px] text-slate-400 text-center flex items-center justify-center gap-1">
+              <span>Select component using pills above • Button opens Step 3</span>
+            </div>
+          </>
+        )}
       </div>
 
       {/* Bottom Right Legend */}
