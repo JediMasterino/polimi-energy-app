@@ -1101,9 +1101,9 @@ export const StructuralEurocodeStudio: React.FC = () => {
             {/* Dimensional Sliders for the 3D Bay */}
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 pt-3 text-xs">
               <div>
-                <div className="flex justify-between font-semibold text-slate-300 mb-1">
+                <div className="flex justify-between items-center font-semibold text-slate-300 mb-1">
                   <span>Bay Span (L):</span>
-                  <span className="font-mono text-sky-400 font-bold">{bayConfig.spanL.toFixed(1)} m</span>
+                  <span className="font-mono text-sky-400 font-bold tabular-nums inline-block text-right w-16">{bayConfig.spanL.toFixed(1)} m</span>
                 </div>
                 <input
                   type="range"
@@ -1112,14 +1112,14 @@ export const StructuralEurocodeStudio: React.FC = () => {
                   step="0.5"
                   value={bayConfig.spanL}
                   onChange={(e) => setBayConfig({ ...bayConfig, spanL: parseFloat(e.target.value) })}
-                  className="w-full accent-sky-400"
+                  className="w-full accent-sky-400 cursor-pointer"
                 />
               </div>
 
               <div>
-                <div className="flex justify-between font-semibold text-slate-300 mb-1">
+                <div className="flex justify-between items-center font-semibold text-slate-300 mb-1">
                   <span>Tributary Width (Btr):</span>
-                  <span className="font-mono text-sky-400 font-bold">{bayConfig.tributaryWidthBtr.toFixed(1)} m</span>
+                  <span className="font-mono text-sky-400 font-bold tabular-nums inline-block text-right w-16">{bayConfig.tributaryWidthBtr.toFixed(1)} m</span>
                 </div>
                 <input
                   type="range"
@@ -1128,14 +1128,14 @@ export const StructuralEurocodeStudio: React.FC = () => {
                   step="0.5"
                   value={bayConfig.tributaryWidthBtr}
                   onChange={(e) => setBayConfig({ ...bayConfig, tributaryWidthBtr: parseFloat(e.target.value) })}
-                  className="w-full accent-sky-400"
+                  className="w-full accent-sky-400 cursor-pointer"
                 />
               </div>
 
               <div>
-                <div className="flex justify-between font-semibold text-slate-300 mb-1">
+                <div className="flex justify-between items-center font-semibold text-slate-300 mb-1">
                   <span>Storey Height (H):</span>
-                  <span className="font-mono text-sky-400 font-bold">{bayConfig.storeyHeightH.toFixed(1)} m</span>
+                  <span className="font-mono text-sky-400 font-bold tabular-nums inline-block text-right w-16">{bayConfig.storeyHeightH.toFixed(1)} m</span>
                 </div>
                 <input
                   type="range"
@@ -1144,14 +1144,14 @@ export const StructuralEurocodeStudio: React.FC = () => {
                   step="0.25"
                   value={bayConfig.storeyHeightH}
                   onChange={(e) => setBayConfig({ ...bayConfig, storeyHeightH: parseFloat(e.target.value) })}
-                  className="w-full accent-sky-400"
+                  className="w-full accent-sky-400 cursor-pointer"
                 />
               </div>
 
               <div>
-                <div className="flex justify-between font-semibold text-slate-300 mb-1">
+                <div className="flex justify-between items-center font-semibold text-slate-300 mb-1">
                   <span>Supported Storeys (N):</span>
-                  <span className="font-mono text-sky-400 font-bold">{bayConfig.numberOfStoreys} Floors</span>
+                  <span className="font-mono text-sky-400 font-bold tabular-nums inline-block text-right w-20">{bayConfig.numberOfStoreys} Floors</span>
                 </div>
                 <input
                   type="range"
@@ -1160,7 +1160,7 @@ export const StructuralEurocodeStudio: React.FC = () => {
                   step="1"
                   value={bayConfig.numberOfStoreys}
                   onChange={(e) => setBayConfig({ ...bayConfig, numberOfStoreys: parseInt(e.target.value) })}
-                  className="w-full accent-sky-400"
+                  className="w-full accent-sky-400 cursor-pointer"
                 />
               </div>
             </div>

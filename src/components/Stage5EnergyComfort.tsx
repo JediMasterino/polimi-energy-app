@@ -311,9 +311,9 @@ export const Stage5EnergyComfort: React.FC = () => {
 
           <div className="grid grid-cols-2 gap-3 bg-slate-50 p-3 rounded-xl border border-slate-200 text-xs">
             <label>
-              <div className="flex justify-between text-[11px] text-slate-600">
+              <div className="flex justify-between items-center text-[11px] text-slate-600 mb-0.5">
                 <span>Heating COP / η</span>
-                <span className="font-bold text-slate-900">{heatingCop.toFixed(2)}</span>
+                <span className="font-bold text-slate-900 font-mono tabular-nums inline-block text-right w-12">{heatingCop.toFixed(2)}</span>
               </div>
               <input
                 type="range"
@@ -322,13 +322,13 @@ export const Stage5EnergyComfort: React.FC = () => {
                 step={0.1}
                 value={heatingCop}
                 onChange={(e) => setHeatingCop(Number(e.target.value))}
-                className="w-full accent-rose-600"
+                className="w-full accent-rose-600 cursor-pointer"
               />
             </label>
             <label>
-              <div className="flex justify-between text-[11px] text-slate-600">
+              <div className="flex justify-between items-center text-[11px] text-slate-600 mb-0.5">
                 <span>Cooling EER</span>
-                <span className="font-bold text-slate-900">{coolingEer.toFixed(2)}</span>
+                <span className="font-bold text-slate-900 font-mono tabular-nums inline-block text-right w-12">{coolingEer.toFixed(2)}</span>
               </div>
               <input
                 type="range"
@@ -337,13 +337,13 @@ export const Stage5EnergyComfort: React.FC = () => {
                 step={0.1}
                 value={coolingEer}
                 onChange={(e) => setCoolingEer(Number(e.target.value))}
-                className="w-full accent-sky-600"
+                className="w-full accent-sky-600 cursor-pointer"
               />
             </label>
             <label>
-              <div className="flex justify-between text-[11px] text-slate-600">
+              <div className="flex justify-between items-center text-[11px] text-slate-600 mb-0.5">
                 <span>HRV Heat Recovery</span>
-                <span className="font-bold text-teal-700">{Math.round(hrvEff * 100)}%</span>
+                <span className="font-bold text-teal-700 font-mono tabular-nums inline-block text-right w-12">{Math.round(hrvEff * 100)}%</span>
               </div>
               <input
                 type="range"
@@ -352,13 +352,13 @@ export const Stage5EnergyComfort: React.FC = () => {
                 step={0.05}
                 value={hrvEff}
                 onChange={(e) => setHrvEff(Number(e.target.value))}
-                className="w-full accent-teal-600"
+                className="w-full accent-teal-600 cursor-pointer"
               />
             </label>
             <label>
-              <div className="flex justify-between text-[11px] text-slate-600">
+              <div className="flex justify-between items-center text-[11px] text-slate-600 mb-0.5">
                 <span>Infiltration ACH</span>
-                <span className="font-bold text-slate-900">{achInf.toFixed(2)} h⁻¹</span>
+                <span className="font-bold text-slate-900 font-mono tabular-nums inline-block text-right w-16">{achInf.toFixed(2)} h⁻¹</span>
               </div>
               <input
                 type="range"
@@ -367,13 +367,13 @@ export const Stage5EnergyComfort: React.FC = () => {
                 step={0.05}
                 value={achInf}
                 onChange={(e) => setAchInf(Number(e.target.value))}
-                className="w-full accent-indigo-600"
+                className="w-full accent-indigo-600 cursor-pointer"
               />
             </label>
             <label>
-              <div className="flex justify-between text-[11px] text-slate-600">
+              <div className="flex justify-between items-center text-[11px] text-slate-600 mb-0.5">
                 <span>Roof PV Coverage</span>
-                <span className="font-bold text-emerald-700">{roofPvRatio}%</span>
+                <span className="font-bold text-emerald-700 font-mono tabular-nums inline-block text-right w-12">{roofPvRatio}%</span>
               </div>
               <input
                 type="range"
@@ -382,13 +382,13 @@ export const Stage5EnergyComfort: React.FC = () => {
                 step={5}
                 value={roofPvRatio}
                 onChange={(e) => setRoofPvRatio(Number(e.target.value))}
-                className="w-full accent-emerald-600"
+                className="w-full accent-emerald-600 cursor-pointer"
               />
             </label>
             <label>
-              <div className="flex justify-between text-[11px] text-slate-600">
+              <div className="flex justify-between items-center text-[11px] text-slate-600 mb-0.5">
                 <span>Spandrel BIPV</span>
-                <span className="font-bold text-amber-700">{facadeBipvRatio}%</span>
+                <span className="font-bold text-amber-700 font-mono tabular-nums inline-block text-right w-12">{facadeBipvRatio}%</span>
               </div>
               <input
                 type="range"
@@ -397,7 +397,7 @@ export const Stage5EnergyComfort: React.FC = () => {
                 step={5}
                 value={facadeBipvRatio}
                 onChange={(e) => setFacadeBipvRatio(Number(e.target.value))}
-                className="w-full accent-amber-500"
+                className="w-full accent-amber-500 cursor-pointer"
               />
             </label>
           </div>

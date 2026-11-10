@@ -420,9 +420,9 @@ export const Stage2Urban: React.FC = () => {
                   { label: 'West Neighbor h_W', val: neighborHeightW, set: setNeighborHeightW }
                 ].map((item) => (
                   <label key={item.label} className="block">
-                    <div className="flex justify-between text-[11px] text-slate-600">
+                    <div className="flex justify-between items-center text-[11px] text-slate-600 mb-0.5">
                       <span>{item.label}</span>
-                      <span className="font-bold text-slate-800">{item.val} m</span>
+                      <span className="font-bold text-slate-800 font-mono tabular-nums inline-block text-right w-12">{item.val} m</span>
                     </div>
                     <input
                       type="range"
@@ -431,7 +431,7 @@ export const Stage2Urban: React.FC = () => {
                       step={1}
                       value={item.val}
                       onChange={(e) => item.set(Number(e.target.value))}
-                      className="w-full accent-indigo-600"
+                      className="w-full accent-indigo-600 cursor-pointer"
                     />
                   </label>
                 ))}
@@ -446,9 +446,9 @@ export const Stage2Urban: React.FC = () => {
                   { label: 'Green Canopy (%)', val: urbanGreenRatio, set: setUrbanGreenRatio, min: 0, max: 60, step: 5 }
                 ].map((item) => (
                   <label key={item.label} className="block">
-                    <div className="flex justify-between text-[11px] text-slate-600">
+                    <div className="flex justify-between items-center text-[11px] text-slate-600 mb-0.5">
                       <span>{item.label}</span>
-                      <span className="font-bold text-slate-800">{item.val}</span>
+                      <span className="font-bold text-slate-800 font-mono tabular-nums inline-block text-right w-12">{item.val}</span>
                     </div>
                     <input
                       type="range"
@@ -457,7 +457,7 @@ export const Stage2Urban: React.FC = () => {
                       step={item.step}
                       value={item.val}
                       onChange={(e) => item.set(Number(e.target.value))}
-                      className="w-full accent-teal-600"
+                      className="w-full accent-teal-600 cursor-pointer"
                     />
                   </label>
                 ))}

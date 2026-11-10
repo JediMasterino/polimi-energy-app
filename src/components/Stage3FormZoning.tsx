@@ -409,9 +409,9 @@ export const Stage3FormZoning: React.FC = () => {
           {/* Footprint Dimension Sliders */}
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs bg-slate-50 p-3 rounded-xl border border-slate-200">
             <label>
-              <div className="flex justify-between text-[11px] text-slate-600">
+              <div className="flex justify-between items-center text-[11px] text-slate-600 mb-0.5">
                 <span>E–W Length L</span>
-                <span className="font-bold text-slate-900">{lengthX} m</span>
+                <span className="font-bold text-slate-900 font-mono tabular-nums inline-block text-right w-12">{lengthX} m</span>
               </div>
               <input
                 type="range"
@@ -420,13 +420,13 @@ export const Stage3FormZoning: React.FC = () => {
                 step={2}
                 value={lengthX}
                 onChange={(e) => setLengthX(Number(e.target.value))}
-                className="w-full accent-teal-600"
+                className="w-full accent-teal-600 cursor-pointer"
               />
             </label>
             <label>
-              <div className="flex justify-between text-[11px] text-slate-600">
+              <div className="flex justify-between items-center text-[11px] text-slate-600 mb-0.5">
                 <span>N–S Depth W</span>
-                <span className="font-bold text-slate-900">{widthY} m</span>
+                <span className="font-bold text-slate-900 font-mono tabular-nums inline-block text-right w-12">{widthY} m</span>
               </div>
               <input
                 type="range"
@@ -435,13 +435,13 @@ export const Stage3FormZoning: React.FC = () => {
                 step={2}
                 value={widthY}
                 onChange={(e) => setWidthY(Number(e.target.value))}
-                className="w-full accent-teal-600"
+                className="w-full accent-teal-600 cursor-pointer"
               />
             </label>
             <label>
-              <div className="flex justify-between text-[11px] text-slate-600">
+              <div className="flex justify-between items-center text-[11px] text-slate-600 mb-0.5">
                 <span>Storeys</span>
-                <span className="font-bold text-slate-900">{floors} fl</span>
+                <span className="font-bold text-slate-900 font-mono tabular-nums inline-block text-right w-12">{floors} fl</span>
               </div>
               <input
                 type="range"
@@ -450,13 +450,13 @@ export const Stage3FormZoning: React.FC = () => {
                 step={1}
                 value={floors}
                 onChange={(e) => setFloors(Number(e.target.value))}
-                className="w-full accent-teal-600"
+                className="w-full accent-teal-600 cursor-pointer"
               />
             </label>
             <label>
-              <div className="flex justify-between text-[11px] text-slate-600">
+              <div className="flex justify-between items-center text-[11px] text-slate-600 mb-0.5">
                 <span>Floor-to-Floor</span>
-                <span className="font-bold text-slate-900">{floorHeight.toFixed(1)} m</span>
+                <span className="font-bold text-slate-900 font-mono tabular-nums inline-block text-right w-12">{floorHeight.toFixed(1)} m</span>
               </div>
               <input
                 type="range"
@@ -465,7 +465,7 @@ export const Stage3FormZoning: React.FC = () => {
                 step={0.1}
                 value={floorHeight}
                 onChange={(e) => setFloorHeight(Number(e.target.value))}
-                className="w-full accent-teal-600"
+                className="w-full accent-teal-600 cursor-pointer"
               />
             </label>
           </div>

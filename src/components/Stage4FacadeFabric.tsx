@@ -376,9 +376,9 @@ export const Stage4FacadeFabric: React.FC = () => {
 
           <div className="grid grid-cols-2 gap-3 bg-slate-50 p-3 rounded-xl border border-slate-200 text-xs">
             <label>
-              <div className="flex justify-between text-[11px] text-slate-600">
+              <div className="flex justify-between items-center text-[11px] text-slate-600 mb-0.5">
                 <span>Glazing U_win</span>
-                <span className="font-bold text-slate-900">{uWin.toFixed(2)} W/m²K</span>
+                <span className="font-bold text-slate-900 font-mono tabular-nums inline-block text-right w-20">{uWin.toFixed(2)} W/m²K</span>
               </div>
               <input
                 type="range"
@@ -387,13 +387,13 @@ export const Stage4FacadeFabric: React.FC = () => {
                 step={0.1}
                 value={uWin}
                 onChange={(e) => setUWin(Number(e.target.value))}
-                className="w-full accent-teal-600"
+                className="w-full accent-teal-600 cursor-pointer"
               />
             </label>
             <label>
-              <div className="flex justify-between text-[11px] text-slate-600">
+              <div className="flex justify-between items-center text-[11px] text-slate-600 mb-0.5">
                 <span>Solar Factor (SHGC g)</span>
-                <span className="font-bold text-slate-900">{shgc.toFixed(2)}</span>
+                <span className="font-bold text-slate-900 font-mono tabular-nums inline-block text-right w-12">{shgc.toFixed(2)}</span>
               </div>
               <input
                 type="range"
@@ -402,13 +402,13 @@ export const Stage4FacadeFabric: React.FC = () => {
                 step={0.02}
                 value={shgc}
                 onChange={(e) => setShgc(Number(e.target.value))}
-                className="w-full accent-amber-500"
+                className="w-full accent-amber-500 cursor-pointer"
               />
             </label>
             <label>
-              <div className="flex justify-between text-[11px] text-slate-600">
+              <div className="flex justify-between items-center text-[11px] text-slate-600 mb-0.5">
                 <span>Visible Transmittance τ_v</span>
-                <span className="font-bold text-slate-900">{visTrans.toFixed(2)}</span>
+                <span className="font-bold text-slate-900 font-mono tabular-nums inline-block text-right w-12">{visTrans.toFixed(2)}</span>
               </div>
               <input
                 type="range"
@@ -417,13 +417,13 @@ export const Stage4FacadeFabric: React.FC = () => {
                 step={0.02}
                 value={visTrans}
                 onChange={(e) => setVisTrans(Number(e.target.value))}
-                className="w-full accent-sky-600"
+                className="w-full accent-sky-600 cursor-pointer"
               />
             </label>
             <label>
-              <div className="flex justify-between text-[11px] text-slate-600">
+              <div className="flex justify-between items-center text-[11px] text-slate-600 mb-0.5">
                 <span>Overhang Depth (m)</span>
-                <span className="font-bold text-slate-900">{overhangDepth.toFixed(1)} m</span>
+                <span className="font-bold text-slate-900 font-mono tabular-nums inline-block text-right w-14">{overhangDepth.toFixed(1)} m</span>
               </div>
               <input
                 type="range"
@@ -432,7 +432,7 @@ export const Stage4FacadeFabric: React.FC = () => {
                 step={0.1}
                 value={overhangDepth}
                 onChange={(e) => setOverhangDepth(Number(e.target.value))}
-                className="w-full accent-indigo-600"
+                className="w-full accent-indigo-600 cursor-pointer"
               />
             </label>
           </div>

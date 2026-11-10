@@ -248,17 +248,21 @@ export const Stage1Climate: React.FC<Stage1ClimateProps> = ({
               </span>
             </div>
 
-            <h2 className="text-lg font-bold mt-1 flex flex-wrap items-center gap-2">
-              {climate.name}
-              <span className="text-xs px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-400/40 font-semibold">
+            <div className="flex items-center gap-2 mt-1 min-h-[30px] flex-wrap">
+              <h2 className="text-lg font-bold text-white truncate max-w-sm xl:max-w-md" title={climate.name}>
+                {climate.name}
+              </h2>
+              <span className="text-xs px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-400/40 font-semibold shrink-0">
                 Köppen {climate.koppen}
               </span>
-              {isMorphed && (
-                <span className="text-xs px-2 py-0.5 rounded-full bg-rose-500/25 text-rose-200 border border-rose-400/50 font-bold">
-                  Morphed ({morphTempOffsetC >= 0 ? `+${morphTempOffsetC}` : morphTempOffsetC}°C, ×{morphWindMult.toFixed(1)} Wind)
-                </span>
-              )}
-            </h2>
+              <span
+                className={`text-xs px-2 py-0.5 rounded-full bg-rose-500/25 text-rose-200 border border-rose-400/50 font-bold shrink-0 transition-opacity duration-150 ${
+                  isMorphed ? 'opacity-100' : 'opacity-0 pointer-events-none'
+                }`}
+              >
+                Morphed ({morphTempOffsetC >= 0 ? `+${morphTempOffsetC.toFixed(1)}` : morphTempOffsetC.toFixed(1)}°C, ×{morphWindMult.toFixed(1)} Wind)
+              </span>
+            </div>
             <p className="text-xs text-slate-300 mt-0.5">{climate.koppenDesc}</p>
           </div>
 
@@ -331,8 +335,8 @@ export const Stage1Climate: React.FC<Stage1ClimateProps> = ({
           </div>
 
           {/* Weather Morphing Sliders (9 cols) */}
-          <div className="lg:col-span-9 bg-slate-950/60 px-3.5 py-2 rounded-xl border border-slate-700 flex flex-wrap items-center justify-between gap-3">
-            <div className="flex items-center gap-2">
+          <div className="lg:col-span-9 bg-slate-950/60 px-3.5 py-2 rounded-xl border border-slate-700 flex flex-wrap xl:flex-nowrap items-center justify-between gap-3">
+            <div className="flex items-center gap-2 shrink-0">
               <Sliders className="w-4 h-4 text-amber-400 shrink-0" />
               <div>
                 <span className="text-[10px] uppercase tracking-wider text-amber-300 font-bold block">
@@ -362,11 +366,11 @@ export const Stage1Climate: React.FC<Stage1ClimateProps> = ({
               </div>
             </div>
 
-            <div className="flex flex-wrap items-center gap-4">
-              <label className="w-36">
-                <div className="flex justify-between text-[10px] text-slate-300">
+            <div className="flex items-center gap-3 shrink-0">
+              <label className="w-32 xl:w-36 shrink-0">
+                <div className="flex justify-between text-[10px] text-slate-300 mb-0.5">
                   <span>Temp Offset ΔT</span>
-                  <span className="font-bold text-amber-300">
+                  <span className="font-bold text-amber-300 font-mono tabular-nums inline-block text-right w-14">
                     {morphTempOffsetC >= 0 ? `+${morphTempOffsetC.toFixed(1)}` : morphTempOffsetC.toFixed(1)}°C
                   </span>
                 </div>
@@ -377,14 +381,16 @@ export const Stage1Climate: React.FC<Stage1ClimateProps> = ({
                   step={0.5}
                   value={morphTempOffsetC}
                   onChange={(e) => setMorphTempOffsetC(Number(e.target.value))}
-                  className="w-full accent-amber-400"
+                  className="w-full accent-amber-400 cursor-pointer"
                 />
               </label>
 
-              <label className="w-32">
-                <div className="flex justify-between text-[10px] text-slate-300">
+              <label className="w-28 xl:w-32 shrink-0">
+                <div className="flex justify-between text-[10px] text-slate-300 mb-0.5">
                   <span>Wind Speed ×</span>
-                  <span className="font-bold text-sky-300">×{morphWindMult.toFixed(1)}</span>
+                  <span className="font-bold text-sky-300 font-mono tabular-nums inline-block text-right w-12">
+                    ×{morphWindMult.toFixed(1)}
+                  </span>
                 </div>
                 <input
                   type="range"
@@ -393,14 +399,14 @@ export const Stage1Climate: React.FC<Stage1ClimateProps> = ({
                   step={0.1}
                   value={morphWindMult}
                   onChange={(e) => setMorphWindMult(Number(e.target.value))}
-                  className="w-full accent-sky-400"
+                  className="w-full accent-sky-400 cursor-pointer"
                 />
               </label>
 
-              <label className="w-32">
-                <div className="flex justify-between text-[10px] text-slate-300">
+              <label className="w-28 xl:w-32 shrink-0">
+                <div className="flex justify-between text-[10px] text-slate-300 mb-0.5">
                   <span>Humidity Shift</span>
-                  <span className="font-bold text-teal-300">
+                  <span className="font-bold text-teal-300 font-mono tabular-nums inline-block text-right w-12">
                     {morphRhOffsetPct >= 0 ? `+${morphRhOffsetPct}` : morphRhOffsetPct}%
                   </span>
                 </div>
@@ -411,24 +417,31 @@ export const Stage1Climate: React.FC<Stage1ClimateProps> = ({
                   step={5}
                   value={morphRhOffsetPct}
                   onChange={(e) => setMorphRhOffsetPct(Number(e.target.value))}
-                  className="w-full accent-teal-400"
+                  className="w-full accent-teal-400 cursor-pointer"
                 />
               </label>
 
-              {isMorphed && (
+              {/* Reset button: ALWAYS present in DOM to prevent layout shift */}
+              <div className="w-16 shrink-0 flex items-center justify-center">
                 <button
                   type="button"
+                  disabled={!isMorphed}
                   onClick={() => {
                     setMorphTempOffsetC(0);
                     setMorphWindMult(1.0);
                     setMorphRhOffsetPct(0);
                   }}
-                  className="px-2 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-600 text-[10px] font-bold flex items-center gap-1"
+                  className={`px-2 py-1 rounded-lg border text-[10px] font-bold flex items-center gap-1 transition-all ${
+                    isMorphed
+                      ? 'bg-slate-800 hover:bg-slate-700 text-slate-200 border-slate-600 opacity-100 cursor-pointer shadow-sm'
+                      : 'opacity-0 pointer-events-none border-transparent'
+                  }`}
+                  title="Reset morphing offsets"
                 >
                   <RotateCcw className="w-3 h-3" />
                   Reset
                 </button>
-              )}
+              </div>
             </div>
           </div>
         </div>
@@ -731,7 +744,10 @@ export const Stage1Climate: React.FC<Stage1ClimateProps> = ({
               <div className="flex flex-wrap items-center justify-between gap-4 bg-slate-50 px-3 py-2 rounded-xl border border-slate-200 text-xs">
                 <div className="flex flex-wrap items-center gap-5">
                   <label className="flex items-center gap-2 font-semibold text-sky-800">
-                    <span>Heating Base Temp: <strong>{hddBaseC}°C</strong></span>
+                    <span className="w-36 flex justify-between items-center">
+                      <span>Heating Base:</span>
+                      <strong className="font-mono tabular-nums w-10 text-right inline-block">{hddBaseC}°C</strong>
+                    </span>
                     <input
                       type="range"
                       min={10}
@@ -739,11 +755,14 @@ export const Stage1Climate: React.FC<Stage1ClimateProps> = ({
                       step={1}
                       value={hddBaseC}
                       onChange={(e) => setHddBaseC(Number(e.target.value))}
-                      className="w-28 accent-sky-600"
+                      className="w-28 accent-sky-600 cursor-pointer"
                     />
                   </label>
                   <label className="flex items-center gap-2 font-semibold text-rose-800">
-                    <span>Cooling Base Temp: <strong>{cddBaseC}°C</strong></span>
+                    <span className="w-36 flex justify-between items-center">
+                      <span>Cooling Base:</span>
+                      <strong className="font-mono tabular-nums w-10 text-right inline-block">{cddBaseC}°C</strong>
+                    </span>
                     <input
                       type="range"
                       min={10}
@@ -751,7 +770,7 @@ export const Stage1Climate: React.FC<Stage1ClimateProps> = ({
                       step={1}
                       value={cddBaseC}
                       onChange={(e) => setCddBaseC(Number(e.target.value))}
-                      className="w-28 accent-rose-600"
+                      className="w-28 accent-rose-600 cursor-pointer"
                     />
                   </label>
                 </div>
@@ -1665,9 +1684,9 @@ export const Stage1Climate: React.FC<Stage1ClimateProps> = ({
                         Stage 2 Urban Mask
                       </label>
                       <label>
-                        <div className="flex justify-between font-semibold text-slate-700">
+                        <div className="flex justify-between items-center font-semibold text-slate-700">
                           <span>Overhang Angle θ_v</span>
-                          <span className="font-bold text-amber-800">{overhangAngleDeg}°</span>
+                          <span className="font-bold text-amber-800 font-mono tabular-nums inline-block w-10 text-right">{overhangAngleDeg}°</span>
                         </div>
                         <input
                           type="range"
@@ -1682,13 +1701,13 @@ export const Stage1Climate: React.FC<Stage1ClimateProps> = ({
                             setOverhangDepth(Math.max(0.1, Math.min(2.0, depthM)));
                             setShadingMode('fixed_overhang');
                           }}
-                          className="w-full accent-amber-600"
+                          className="w-full accent-amber-600 cursor-pointer"
                         />
                       </label>
                       <label>
-                        <div className="flex justify-between font-semibold text-slate-700">
+                        <div className="flex justify-between items-center font-semibold text-slate-700">
                           <span>Fin Cutoff ±θ_h</span>
-                          <span className="font-bold text-indigo-800">±{finAngleDeg}°</span>
+                          <span className="font-bold text-indigo-800 font-mono tabular-nums inline-block w-12 text-right">±{finAngleDeg}°</span>
                         </div>
                         <input
                           type="range"
@@ -1696,7 +1715,7 @@ export const Stage1Climate: React.FC<Stage1ClimateProps> = ({
                           max={75}
                           value={finAngleDeg}
                           onChange={(e) => setFinAngleDeg(Number(e.target.value))}
-                          className="w-full accent-indigo-600"
+                          className="w-full accent-indigo-600 cursor-pointer"
                         />
                       </label>
                     </div>
