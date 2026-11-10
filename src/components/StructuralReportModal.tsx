@@ -33,6 +33,10 @@ export interface ProjectMetadata {
   location: string;
   client: string;
   authorName: string;
+  architect: string;
+  year: string;
+  studentName: string;
+  studentLastName: string;
   studentMatricula: string;
   designStage: 'Concept' | 'Schematic' | 'Technical';
   revision: string;
@@ -214,33 +218,37 @@ export const StructuralReportModal: React.FC<StructuralReportModalProps> = ({
                     </span>
                   </div>
                   <div>
-                    <span className="text-slate-500 block text-[10px] uppercase font-bold">Student Name & ID:</span>
+                    <span className="text-slate-500 block text-[10px] uppercase font-bold">Student Name & Matricula:</span>
                     <span className="font-semibold text-slate-200 print:text-slate-800">
-                      {metadata.authorName || 'Student Name'} (Matr. {metadata.studentMatricula || '------'})
+                      {metadata.studentName || metadata.authorName} {metadata.studentLastName || ''} (Matr. {metadata.studentMatricula || '------'})
                     </span>
                   </div>
                   <div>
-                    <span className="text-slate-500 block text-[10px] uppercase font-bold">Project & Location:</span>
+                    <span className="text-slate-500 block text-[10px] uppercase font-bold">Project, Architect & Year:</span>
                     <span className="font-semibold text-slate-200 print:text-slate-800">
-                      {metadata.projectTitle} • {metadata.location}
+                      {metadata.projectTitle} • {metadata.architect || 'Studio'} ({metadata.year || '2026'})
                     </span>
                   </div>
                 </div>
               </div>
             ) : (
               // Professional Practice Title Block
-              <div className="grid grid-cols-2 sm:grid-cols-5 gap-4 text-xs">
+              <div className="grid grid-cols-2 sm:grid-cols-6 gap-4 text-xs">
                 <div>
                   <span className="text-slate-500 block text-[10px] uppercase font-bold">Project Title:</span>
                   <span className="font-extrabold text-white print:text-black">{metadata.projectTitle}</span>
                 </div>
                 <div>
-                  <span className="text-slate-500 block text-[10px] uppercase font-bold">Job Code & Client:</span>
-                  <span className="font-semibold text-slate-300 print:text-slate-800">{metadata.jobCode} • {metadata.client}</span>
+                  <span className="text-slate-500 block text-[10px] uppercase font-bold">Location & Year:</span>
+                  <span className="font-semibold text-slate-300 print:text-slate-800">{metadata.location} • {metadata.year || '2026'}</span>
                 </div>
                 <div>
-                  <span className="text-slate-500 block text-[10px] uppercase font-bold">Author & Practice:</span>
-                  <span className="font-semibold text-slate-300 print:text-slate-800">{metadata.authorName}</span>
+                  <span className="text-slate-500 block text-[10px] uppercase font-bold">Architect / Practice:</span>
+                  <span className="font-semibold text-slate-300 print:text-slate-800">{metadata.architect || metadata.authorName}</span>
+                </div>
+                <div>
+                  <span className="text-slate-500 block text-[10px] uppercase font-bold">Client & Ref:</span>
+                  <span className="font-semibold text-slate-300 print:text-slate-800">{metadata.client} • {metadata.jobCode}</span>
                 </div>
                 <div>
                   <span className="text-slate-500 block text-[10px] uppercase font-bold">Design Stage / Rev:</span>

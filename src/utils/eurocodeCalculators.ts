@@ -95,6 +95,7 @@ export interface RcSlabInputs {
   h: number;          // mm (overall slab depth)
   cnom: number;       // mm (nominal cover)
   phi: number;        // mm (main tension bar diameter)
+  phi_link?: number;   // mm (link diameter, default 0 for slab)
   s: number;          // mm (main bar spacing)
   phi_t: number;      // mm (transverse bar diameter)
   s_t: number;        // mm (transverse bar spacing)
@@ -121,11 +122,11 @@ export interface RcSlabResult {
 }
 
 export function calcRcSlab(inputs: RcSlabInputs, basis: SharedDesignBasis): RcSlabResult {
-  const { L, Btr, b, h, cnom, phi, s, phi_t, s_t, concreteClass, fyk } = inputs;
+  const { L, Btr, b, h, cnom, phi, phi_link = 0, s, phi_t, s_t, concreteClass, fyk } = inputs;
   const rows: CalculationRow[] = [];
 
   // Check inputs
-  if (h <= cnom + phi || s <= 0 || L <= 0 || b <= 0) {
+  if (h <= cnom + phi_link + phi || s <= 0 || L <= 0 || b <= 0) {
     return {
       eta_max: 999,
       status: 'CHECK INPUTS',
@@ -141,7 +142,7 @@ export function calcRcSlab(inputs: RcSlabInputs, basis: SharedDesignBasis): RcSl
   const fcd = (basis.alphaCC * fck) / basis.gammaC;
   const fyd = fyk / basis.gammaS;
 
-  const d = h - cnom - phi / 2;
+  const d = h - cnom - phi_link - phi / 2;
   const As_prov = (Math.PI * Math.pow(phi, 2) / 4) * (1000 / s);
   const gk_self = (b * h / 1000000) * basis.weight_rc;
   const Gk = basis.gk_add * Btr + gk_self;
@@ -255,7 +256,8 @@ export interface RcBeamInputs {
   n: number;          // number of tension bars in 1 layer
   nleg: number;       // number of link legs (usually 2)
   sw: number;         // mm (link spacing)
-  cot_theta: number;  // variable strut angle 1.0 to 2.5
+  cot_theta?: number;  // variable strut angle 1.0 to 2.5
+  cotTheta?: number;   // alias for cot_theta
   concreteClass: string;
   fyk: number;
 }
@@ -274,7 +276,8 @@ export interface RcBeamResult {
 }
 
 export function calcRcBeam(inputs: RcBeamInputs, basis: SharedDesignBasis): RcBeamResult {
-  const { L, Btr, b, h, cnom, phi, phi_link, n, nleg, sw, cot_theta, concreteClass, fyk } = inputs;
+  const { L, Btr, b, h, cnom, phi, phi_link, n, nleg, sw, concreteClass, fyk } = inputs;
+  const cot_theta = inputs.cot_theta ?? inputs.cotTheta ?? 2.0;
   const rows: CalculationRow[] = [];
 
   const conc = CONCRETE_CLASSES[concreteClass] || CONCRETE_CLASSES['C30/37'];
@@ -843,6 +846,8 @@ export interface SteelColumnInputs {
   lcr_T: number;
   NG_k: number;
   NQ_k: number;
+  My_Ed?: number;     // kNm (default 0)
+  Mz_Ed?: number;     // kNm (default 0)
   profileName: string;
   grade: 'S235' | 'S275' | 'S355';
 }
@@ -856,11 +861,12 @@ export interface SteelColumnResult {
   Nb_Rd_z: number;
   Nb_Rd_T: number;
   governingAxis: 'y-y' | 'z-z' | 'Torsional' | 'Cross-section';
+  sectionClass: number;
   rows: CalculationRow[];
 }
 
 export function calcSteelColumn(inputs: SteelColumnInputs, basis: SharedDesignBasis): SteelColumnResult {
-  const { H, lcr_y, lcr_z, lcr_T, NG_k, NQ_k, profileName, grade } = inputs;
+  const { H, lcr_y, lcr_z, lcr_T, NG_k, NQ_k, My_Ed = 0, Mz_Ed = 0, profileName, grade } = inputs;
   const rows: CalculationRow[] = [];
 
   const prof = STEEL_PROFILES[profileName] || STEEL_PROFILES['HE 240 B'];
@@ -869,6 +875,49 @@ export function calcSteelColumn(inputs: SteelColumnInputs, basis: SharedDesignBa
   if (grade === 'S235') fy = maxT <= 40 ? 235 : 215;
   else if (grade === 'S275') fy = maxT <= 40 ? 275 : 255;
   else fy = maxT <= 40 ? 355 : 335;
+
+  const epsilon = Math.sqrt(235 / fy);
+  let class_f = 1;
+  let class_w = 1;
+  if (prof.type === 'CHS') {
+    const d_t = prof.h / prof.tf;
+    if (d_t <= 50 * Math.pow(epsilon, 2)) class_f = 1;
+    else if (d_t <= 70 * Math.pow(epsilon, 2)) class_f = 2;
+    else if (d_t <= 90 * Math.pow(epsilon, 2)) class_f = 3;
+    else class_f = 4;
+    class_w = class_f;
+  } else if (prof.type === 'SHS') {
+    const cf = prof.b - 3 * prof.tf;
+    const cw = prof.h - 3 * prof.tw;
+    const r_f = cf / prof.tf;
+    if (r_f <= 33 * epsilon) class_f = 1;
+    else if (r_f <= 38 * epsilon) class_f = 2;
+    else if (r_f <= 42 * epsilon) class_f = 3;
+    else class_f = 4;
+
+    const r_w = cw / prof.tw;
+    if (r_w <= 33 * epsilon) class_w = 1;
+    else if (r_w <= 38 * epsilon) class_w = 2;
+    else if (r_w <= 42 * epsilon) class_w = 3;
+    else class_w = 4;
+  } else {
+    // I/H
+    const root = prof.root ?? 15;
+    const cf = (prof.b - prof.tw - 2 * root) / 2;
+    const cw = prof.h - 2 * prof.tf - 2 * root;
+    const r_f = cf / prof.tf;
+    if (r_f <= 9 * epsilon) class_f = 1;
+    else if (r_f <= 10 * epsilon) class_f = 2;
+    else if (r_f <= 14 * epsilon) class_f = 3;
+    else class_f = 4;
+
+    const r_w = cw / prof.tw;
+    if (r_w <= 33 * epsilon) class_w = 1;
+    else if (r_w <= 38 * epsilon) class_w = 2;
+    else if (r_w <= 42 * epsilon) class_w = 3;
+    else class_w = 4;
+  }
+  const sectionClass = Math.max(class_f, class_w);
 
   const A_mm2 = prof.A * 100;
   const Iy_mm4 = prof.Iy * 10000;
@@ -939,9 +988,15 @@ export function calcSteelColumn(inputs: SteelColumnInputs, basis: SharedDesignBa
   else if (minCapacity === Nb_Rd_T) governingAxis = 'Torsional';
   else governingAxis = 'Cross-section';
 
-  const status: EurocodeStatus = eta_max > 1.0 ? 'EXCEEDS SCREEN' : 'SCREEN ONLY';
+  let status: EurocodeStatus = 'SCREEN ONLY';
+  if (sectionClass > 3 || My_Ed !== 0 || Mz_Ed !== 0) {
+    status = 'OUT OF SCOPE';
+  } else if (eta_max > 1.0) {
+    status = 'EXCEEDS SCREEN';
+  }
 
   rows.push(
+    { parameter: 'Section classification', symbol: 'Class', units: '-', value: sectionClass.toString(), formulaText: 'EN 1993-1-1 Table 5.2' },
     { parameter: 'Design axial force', symbol: 'NEd', units: 'kN', value: NEd.toFixed(2), formulaText: 'γG × (NG,k + Gk,self) + γQ × NQ,k' },
     { parameter: 'Cross-section capacity', symbol: 'Nc,Rd', units: 'kN', value: Nc_Rd.toFixed(2), formulaText: 'A × fy / γM0' },
     { parameter: 'Buckling resistance y-y', symbol: 'Nb,Rd,y', units: 'kN', value: Nb_Rd_y.toFixed(2), formulaText: 'χy × A × fy / γM1' },
@@ -959,6 +1014,7 @@ export function calcSteelColumn(inputs: SteelColumnInputs, basis: SharedDesignBa
     Nb_Rd_z,
     Nb_Rd_T,
     governingAxis,
+    sectionClass,
     rows
   };
 }
@@ -970,6 +1026,7 @@ export interface CltSlabInputs {
   L: number;
   Btr: number;
   t: number;            // mm thickness
+  weight?: number;      // kN/m3 (default 5.0)
   EI_mean: number;      // Nmm²/m
   GA_eff: number;       // N/m
   MR_k: number;         // kNm/m
@@ -997,10 +1054,10 @@ export interface CltSlabResult {
 }
 
 export function calcCltSlab(inputs: CltSlabInputs, basis: SharedDesignBasis): CltSlabResult {
-  const { L, t, EI_mean, GA_eff, MR_k, VR_k, Rc90_Rk, gammaM, kmod_G, kmod_GQ, kdef, div_Q, div_fin, isDocumented } = inputs;
+  const { L, t, EI_mean, GA_eff, MR_k, VR_k, Rc90_Rk, gammaM, kmod_G, kmod_GQ, kdef, div_Q, div_fin, isDocumented, weight = 5.0 } = inputs;
   const rows: CalculationRow[] = [];
 
-  const weight_timber = 5.0; // kN/m³
+  const weight_timber = weight; // kN/m³
   const gk_self = (t / 1000) * weight_timber;
   const Gk = basis.gk_add + gk_self;
   const Qk = basis.qk;
@@ -1062,19 +1119,24 @@ export interface CltWallInputs {
   NQ_k: number;
   e: number;          // mm eccentricity
   pk: number;         // kN/m² transverse wind
+  H_divisor?: number; // default 300
+  isMethodConfirmed: boolean;
+  productName: string;
+  isDocumented: boolean;
   t: number;
-  Nc_Rk: number;      // kN/m
-  EI_05: number;      // Nmm²/m
-  GA_05: number;      // N/m
+  weight?: number;    // kN/m3 (default 5.0)
+  EI_mean?: number;   // Nmm2/m (default 3e12)
+  GA_eff?: number;    // N/m (default 8e6)
   MR_k: number;       // kNm/m
   VR_k: number;       // kN/m
   gammaM: number;
   kmod_G: number;
   kmod_GQ: number;
+  kdef?: number;      // default 0.8
+  Nc_Rk: number;      // kN/m
+  EI_05: number;      // Nmm²/m
+  GA_05: number;      // N/m
   beta_c: number;     // 0.2
-  productName: string;
-  isDocumented: boolean;
-  isMethodConfirmed: boolean;
 }
 
 export interface CltWallResult {
@@ -1089,10 +1151,17 @@ export interface CltWallResult {
 }
 
 export function calcCltWall(inputs: CltWallInputs, basis: SharedDesignBasis): CltWallResult {
-  const { H, l0, NG_k, NQ_k, e, pk, t, Nc_Rk, EI_05, GA_05, MR_k, VR_k, gammaM, kmod_G, kmod_GQ, beta_c, isDocumented, isMethodConfirmed } = inputs;
+  const {
+    H, l0, NG_k, NQ_k, e, pk, t, Nc_Rk, EI_05, GA_05, MR_k, VR_k,
+    gammaM, kmod_G, kmod_GQ, beta_c, isDocumented, isMethodConfirmed,
+    H_divisor = 300,
+    weight = 5.0,
+    EI_mean = 3000000000000,
+    GA_eff = 8000000
+  } = inputs;
   const rows: CalculationRow[] = [];
 
-  const weight_timber = 5.0;
+  const weight_timber = weight;
   const Gk_self = (t / 1000) * H * weight_timber;
   const NEd_G = basis.gammaG * (NG_k + Gk_self);
   const NEd_GQ = NEd_G + basis.gammaQ * NQ_k;
@@ -1115,10 +1184,10 @@ export function calcCltWall(inputs: CltWallInputs, basis: SharedDesignBasis): Cl
   const eta_V = (VEd * gammaM) / (kmod_GQ * VR_k);
 
   const Nk = NG_k + NQ_k + Gk_self;
-  const u1 = pk * ((5 * Math.pow(H * 1000, 4)) / (384 * EI_05 * 1.5) + Math.pow(H * 1000, 2) / (8 * GA_05 * 1.6)) + (Nk * 1000 * e * Math.pow(H * 1000, 2)) / (8 * EI_05 * 1.5);
+  const u1 = pk * ((5 * Math.pow(H * 1000, 4)) / (384 * EI_mean) + Math.pow(H * 1000, 2) / (8 * GA_eff)) + (Nk * 1000 * e * Math.pow(H * 1000, 2)) / (8 * EI_mean);
   const amp = Nk < Ncr ? 1 / (1 - Nk / Ncr) : 999;
   const u = u1 * amp;
-  const eta_u = u / ((H * 1000) / 300);
+  const eta_u = u / ((H * 1000) / H_divisor);
 
   const eta_max = Math.max(eta_G, eta_GQ, eta_V, eta_u);
 
@@ -1156,12 +1225,14 @@ export interface WoodBeamInputs {
   b: number;          // mm
   h: number;          // mm
   a: number;          // mm (bearing length)
+  kcr?: number;       // shear crack factor (default 0.67)
+  weight?: number;    // kN/m3 (default 5.0)
   timberClass: string;// e.g. 'GL24h'
   serviceClass: 1 | 2 | 3;
   duration: TimberLoadDuration;
   div_Q: number;
   div_fin: number;
-  restraint: 'Assumed' | 'Not restrained';
+  restraint: 'Assumed' | 'Confirmed' | 'Not restrained';
 }
 
 export interface WoodBeamResult {
@@ -1176,7 +1247,7 @@ export interface WoodBeamResult {
 }
 
 export function calcWoodBeam(inputs: WoodBeamInputs, basis: SharedDesignBasis): WoodBeamResult {
-  const { L, Btr, b, h, a, timberClass, serviceClass, duration, div_Q, div_fin, restraint } = inputs;
+  const { L, Btr, b, h, a, timberClass, serviceClass, duration, div_Q, div_fin, restraint, kcr = 0.67, weight = 5.0 } = inputs;
   const rows: CalculationRow[] = [];
 
   const tc = TIMBER_CLASSES[timberClass] || TIMBER_CLASSES['GL24h'];
@@ -1197,7 +1268,7 @@ export function calcWoodBeam(inputs: WoodBeamInputs, basis: SharedDesignBasis): 
     kh = Math.min(1.1, Math.pow(600 / Math.min(h, 600), 0.1));
   }
 
-  const gk_self = (A / 1000000) * tc.density;
+  const gk_self = (A / 1000000) * weight;
   const Gk = basis.gk_add * Btr + gk_self;
   const Qk = basis.qk * Btr;
 
@@ -1206,7 +1277,6 @@ export function calcWoodBeam(inputs: WoodBeamInputs, basis: SharedDesignBasis): 
   const max_qd_kmod = Math.max(qd_G / kmod_G, qd_GQ / kmod_GQ);
 
   const eta_m = (max_qd_kmod * Math.pow(L, 2) / 8) * 1000000 / Wy * gammaM / (kh * tc.fmk);
-  const kcr = 0.67; // shear crack factor
   const eta_v = (1.5 * max_qd_kmod * L / 2) * 1000 / (kcr * A) * gammaM / tc.fvk;
   const eta_c90 = (max_qd_kmod * L / 2) * 1000 / (b * a) * gammaM / tc.fc90k;
 
@@ -1262,10 +1332,11 @@ export interface WoodColumnInputs {
   MQy_k: number;
   MGz_k: number;
   MQz_k: number;
+  weight?: number;    // kN/m3 (default 5.0)
   timberClass: string;
   serviceClass: 1 | 2 | 3;
   duration: TimberLoadDuration;
-  restraint: 'Assumed' | 'Not restrained';
+  restraint: 'Assumed' | 'Confirmed' | 'Not restrained';
 }
 
 export interface WoodColumnResult {
@@ -1279,7 +1350,7 @@ export interface WoodColumnResult {
 }
 
 export function calcWoodColumn(inputs: WoodColumnInputs, basis: SharedDesignBasis): WoodColumnResult {
-  const { H, b, h, l0_y, l0_z, NG_k, NQ_k, MGy_k, MQy_k, MGz_k, MQz_k, timberClass, serviceClass, duration, restraint } = inputs;
+  const { H, b, h, l0_y, l0_z, NG_k, NQ_k, MGy_k, MQy_k, MGz_k, MQz_k, timberClass, serviceClass, duration, restraint, weight = 5.0 } = inputs;
   const rows: CalculationRow[] = [];
 
   const tc = TIMBER_CLASSES[timberClass] || TIMBER_CLASSES['GL24h'];
@@ -1305,7 +1376,7 @@ export function calcWoodColumn(inputs: WoodColumnInputs, basis: SharedDesignBasi
   const k_z = 0.5 * (1 + beta_c * (lambda_rel_z - 0.3) + Math.pow(lambda_rel_z, 2));
   const kc_z = lambda_rel_z <= 0.3 ? 1.0 : 1 / (k_z + Math.sqrt(Math.max(0, Math.pow(k_z, 2) - Math.pow(lambda_rel_z, 2))));
 
-  const Gk_self = (A / 1000000) * H * tc.density;
+  const Gk_self = (A / 1000000) * H * weight;
   const NEd_G = basis.gammaG * (NG_k + Gk_self);
   const NEd_GQ = NEd_G + basis.gammaQ * NQ_k;
 
@@ -1327,10 +1398,12 @@ export function calcWoodColumn(inputs: WoodColumnInputs, basis: SharedDesignBasi
   if (eta_max > 1.0 && status !== 'OUT OF SCOPE') status = 'EXCEEDS SCREEN';
 
   rows.push(
-    { parameter: 'Buckling reduction y-y', symbol: 'kc,y', units: '-', value: kc_y.toFixed(3), formulaText: '1 / (k,y + √(k,y² - λy²))' },
-    { parameter: 'Buckling reduction z-z', symbol: 'kc,z', units: '-', value: kc_z.toFixed(3), formulaText: '1 / (k,z + √(k,z² - λz²))' },
-    { parameter: 'y buckling/bending (GQ)', symbol: 'ηy,GQ', units: '-', value: eta_y_GQ.toFixed(3), formulaText: 'NEd/(kc,y fc,d) + My/MRd + 0.7 Mz/MRd', isRatio: true, isExceeded: eta_y_GQ > 1 },
-    { parameter: 'z buckling/bending (GQ)', symbol: 'ηz,GQ', units: '-', value: eta_z_GQ.toFixed(3), formulaText: 'NEd/(kc,z fc,d) + 0.7 My/MRd + Mz/MRd', isRatio: true, isExceeded: eta_z_GQ > 1 },
+    { parameter: 'Buckling reduction y-y', symbol: 'kc,y', units: '-', value: kc_y.toFixed(3), formulaText: '1 / (ky + √(ky² - λrel,y²))' },
+    { parameter: 'Buckling reduction z-z', symbol: 'kc,z', units: '-', value: kc_z.toFixed(3), formulaText: '1 / (kz + √(kz² - λrel,z²))' },
+    { parameter: 'Permanent biaxial utilisation y-y', symbol: 'ηy,G', units: '-', value: eta_y_G.toFixed(3), formulaText: 'σc,0,d / (kc,y fc,0,d) + σm,y,d / fm,y,d + 0.7 σm,z,d / fm,z,d', isRatio: true, isExceeded: eta_y_G > 1 },
+    { parameter: 'Permanent biaxial utilisation z-z', symbol: 'ηz,G', units: '-', value: eta_z_G.toFixed(3), formulaText: 'σc,0,d / (kc,z fc,0,d) + 0.7 σm,y,d / fm,y,d + σm,z,d / fm,z,d', isRatio: true, isExceeded: eta_z_G > 1 },
+    { parameter: 'Combined biaxial utilisation y-y', symbol: 'ηy,GQ', units: '-', value: eta_y_GQ.toFixed(3), formulaText: 'σc,0,d / (kc,y fc,0,d) + σm,y,d / fm,y,d + 0.7 σm,z,d / fm,z,d', isRatio: true, isExceeded: eta_y_GQ > 1 },
+    { parameter: 'Combined biaxial utilisation z-z', symbol: 'ηz,GQ', units: '-', value: eta_z_GQ.toFixed(3), formulaText: 'σc,0,d / (kc,z fc,0,d) + 0.7 σm,y,d / fm,y,d + σm,z,d / fm,z,d', isRatio: true, isExceeded: eta_z_GQ > 1 },
     { parameter: 'Governing utilisation', symbol: 'ηmax', units: '-', value: eta_max.toFixed(3), formulaText: 'max(ηy,G; ηz,G; ηy,GQ; ηz,GQ)', isRatio: true, isExceeded: eta_max > 1 }
   );
 
