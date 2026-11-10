@@ -1173,6 +1173,9 @@ export const StructuralEurocodeStudio: React.FC = () => {
             activeMember={activeMember}
             onSelectMember={(m) => {
               setActiveMember(m);
+            }}
+            onNavigateToStep3={(m) => {
+              setActiveMember(m);
               setActiveStep(3);
             }}
           />
