@@ -84,8 +84,6 @@ export const ParetoExplorerModal: React.FC<ParetoExplorerModalProps> = ({
   const [hvacFilter, setHvacFilter] = useState<string>('all');
   const [selectedCandidate, setSelectedCandidate] = useState<DesignVariantCandidate | null>(null);
 
-  if (!isOpen) return null;
-
   // Generate 48 combinatorial variants
   const candidates: DesignVariantCandidate[] = useMemo(() => {
     const wwrOptions = [25, 40, 55];
@@ -109,6 +107,23 @@ export const ParetoExplorerModal: React.FC<ParetoExplorerModalProps> = ({
     const results: DesignVariantCandidate[] = [];
     let count = 0;
 
+    const solarSouthArr = Array.isArray(climate?.solarSouth) && climate.solarSouth.length === 12
+      ? climate.solarSouth
+      : [74, 87, 113, 100, 88, 88, 92, 100, 101, 91, 71, 73];
+    const solarEastArr = Array.isArray(climate?.solarEast) && climate.solarEast.length === 12
+      ? climate.solarEast
+      : [60, 75, 95, 90, 80, 75, 80, 90, 90, 80, 60, 60];
+    const annualSolarIncident = (solarSouthArr.reduce((a, b) => a + b, 0) + solarEastArr.reduce((a, b) => a + b, 0)) / 2;
+
+    const hdd = climate?.hdd ?? 2400;
+    const cdd = climate?.cdd ?? 250;
+    const deltaT_heat = hdd * 0.024;
+    const deltaT_cool = cdd * 0.018;
+
+    const svRatio = sim?.svRatio ?? 0.35;
+    const facadeTotal = sim?.facadeAreas?.total ?? 1000;
+    const gfa = Math.max(1, sim?.gfa ?? 500);
+
     for (const wwr of wwrOptions) {
       for (const ins of insulationOptions) {
         for (const gz of glazingOptions) {
@@ -120,18 +135,14 @@ export const ParetoExplorerModal: React.FC<ParetoExplorerModalProps> = ({
             const shd = wwr > 40 ? SHADING_LIBRARY[1] : SHADING_LIBRARY[0];
 
             // 1. Estimate Heating & Cooling Need based on physics
-            const deltaT_heat = climate.hdd * 0.024;
-            const deltaT_cool = climate.cdd * 0.018;
-
             const uWallEff = ins.u;
             const uWinEff = gz.uValue;
             const uAvg = (1 - wwr / 100) * uWallEff + (wwr / 100) * uWinEff;
 
             // Solar Gains (kWh/m2)
-            const annualSolarIncident = (climate.solarSouth.reduce((a, b) => a + b, 0) + climate.solarEast.reduce((a, b) => a + b, 0)) / 2;
             const usefulSolarGain = (annualSolarIncident * gz.shgc * shd.shadingFactor * (wwr / 100) * 0.38);
 
-            const heatingNeed = Math.max(8, (sim.svRatio * uAvg * deltaT_heat * 0.85) - usefulSolarGain * 0.45);
+            const heatingNeed = Math.max(8, (svRatio * uAvg * deltaT_heat * 0.85) - usefulSolarGain * 0.45);
             const coolingNeed = Math.max(6, (usefulSolarGain * 0.75 + 14 * 0.9 + deltaT_cool * 0.5));
 
             // Delivered Energy
@@ -143,8 +154,8 @@ export const ParetoExplorerModal: React.FC<ParetoExplorerModalProps> = ({
             // 2. Embodied Carbon (Structure baseline ~220 kgCO2e/m2 + Envelope + MEP)
             const structureCo2 = 220;
             const envelopeCo2 = Math.round(
-              ins.co2 * (1 - wwr / 100) * (sim.facadeAreas.total / sim.gfa) +
-              gz.embodiedCarbonKgM2 * (wwr / 100) * (sim.facadeAreas.total / sim.gfa) +
+              ins.co2 * (1 - wwr / 100) * (facadeTotal / gfa) +
+              gz.embodiedCarbonKgM2 * (wwr / 100) * (facadeTotal / gfa) +
               shd.embodiedCo2KgM2 * (wwr / 100)
             );
             const mepCo2 = hv.type === 'gshp' ? 45 : hv.type === 'ashp' ? 35 : 25;
@@ -157,7 +168,7 @@ export const ParetoExplorerModal: React.FC<ParetoExplorerModalProps> = ({
             // 4. Capital Cost (€/m2 GFA)
             const capitalCost = Math.round(
               450 + // base structure & interior
-              (ins.cost * (1 - wwr / 100) + gz.costEurM2 * (wwr / 100)) * (sim.facadeAreas.total / sim.gfa) +
+              (ins.cost * (1 - wwr / 100) + gz.costEurM2 * (wwr / 100)) * (facadeTotal / gfa) +
               (hv.type === 'gshp' ? 120 : hv.type === 'ashp' ? 80 : 50)
             );
 
@@ -241,8 +252,8 @@ export const ParetoExplorerModal: React.FC<ParetoExplorerModalProps> = ({
   const maxY = 90;
 
   const projectCurrentPoint = {
-    x: sim.lca.a1a3Total,
-    y: sim.netSiteEui
+    x: sim?.lca?.a1a3Total ?? 250,
+    y: sim?.netSiteEui ?? 35
   };
 
   const applyCandidateToProject = (c: DesignVariantCandidate) => {
@@ -264,8 +275,10 @@ export const ParetoExplorerModal: React.FC<ParetoExplorerModalProps> = ({
     onClose();
   };
 
+  if (!isOpen) return null;
+
   return (
-    <div className="fixed inset-0 z-50 bg-slate-950/75 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto">
+    <div className="fixed inset-0 z-[100] bg-slate-950/75 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto">
       <div className="bg-white rounded-2xl max-w-5xl w-full border border-slate-200 shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-200 flex flex-col max-h-[90vh]">
         {/* Header */}
         <div className="bg-slate-900 text-white px-6 py-4 flex items-center justify-between border-b border-slate-800 shrink-0">

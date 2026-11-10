@@ -1029,16 +1029,20 @@ const StudioWorkspace: React.FC = () => {
       )}
 
       {/* Advanced HVAC & Renewables Studio Modal */}
-      <AdvancedHvacRenewableModal
-        isOpen={showHvacModal}
-        onClose={() => setShowHvacModal(false)}
-      />
+      {showHvacModal && (
+        <AdvancedHvacRenewableModal
+          isOpen={showHvacModal}
+          onClose={() => setShowHvacModal(false)}
+        />
+      )}
 
       {/* Multi-Objective Parametric Explorer & Pareto Front Modal */}
-      <ParetoExplorerModal
-        isOpen={showParetoModal}
-        onClose={() => setShowParetoModal(false)}
-      />
+      {showParetoModal && (
+        <ParetoExplorerModal
+          isOpen={showParetoModal}
+          onClose={() => setShowParetoModal(false)}
+        />
+      )}
 
       {/* Export & Reports Modal */}
       {showExportModal && (
