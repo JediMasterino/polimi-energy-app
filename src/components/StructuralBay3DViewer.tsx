@@ -4,7 +4,7 @@
 // Supports Orbit, Pan, Zoom, Interactive Member Selection, and Live Eta Color Coding
 // ============================================================================
 
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState, useMemo } from 'react';
 import * as THREE from 'three';
 import {
   RotateCcw,
@@ -18,7 +18,7 @@ import {
   ExternalLink,
   MousePointerClick,
   ShieldCheck,
-  X
+  ArrowRight
 } from 'lucide-react';
 import { StructuralBayConfig } from '../utils/eurocodeCalculators';
 
@@ -64,6 +64,34 @@ const getMemberDisplayName = (id: string, materialSystem?: string): string => {
   }
 };
 
+const getAvailableMembersForSystem = (system: string): { id: SelectedMemberType; label: string }[] => {
+  if (system === 'RC') {
+    return [
+      { id: 'rc_slab', label: 'RC Slab' },
+      { id: 'rc_beam', label: 'RC Beam' },
+      { id: 'rc_column', label: 'RC Column' },
+      { id: 'rc_wall', label: 'RC Wall' }
+    ];
+  }
+  if (system === 'Steel') {
+    return [
+      { id: 'steel_beam', label: 'Steel Beam' },
+      { id: 'steel_column', label: 'Steel Column' }
+    ];
+  }
+  if (system === 'Timber') {
+    return [
+      { id: 'clt_slab', label: 'CLT Slab' },
+      { id: 'clt_wall', label: 'CLT Wall' },
+      { id: 'wood_beam', label: 'Glulam Beam' },
+      { id: 'wood_column', label: 'Glulam Column' }
+    ];
+  }
+  return [
+    { id: 'masonry_wall', label: 'Masonry Wall Strip' }
+  ];
+};
+
 interface StructuralBay3DViewerProps {
   config: StructuralBayConfig;
   memberUtilisations: Record<string, { eta_max: number; status: string }>;
@@ -94,30 +122,22 @@ export const StructuralBay3DViewer: React.FC<StructuralBay3DViewerProps> = ({
     distance: null
   });
 
-  // Interactive UI toggles & navigation prevention modes
+  // Interactive UI toggles
   const [showLoads, setShowLoads] = useState(true);
   const [showDimensions, setShowDimensions] = useState(true);
   const [wireframe, setWireframe] = useState(false);
-  const [navMode, setNavMode] = useState<'safe' | 'single'>('safe');
   const [hoveredMember, setHoveredMember] = useState<{ id: string; name: string; eta: number } | null>(null);
-  const [selectedMemberId, setSelectedMemberId] = useState<SelectedMemberType>(activeMember);
-  const [isInspectorOpen, setIsInspectorOpen] = useState(true);
-
-  // Synchronize active member prop changes
-  useEffect(() => {
-    setSelectedMemberId(activeMember);
-  }, [activeMember]);
 
   // Keep refs for callback stability in event listeners
   const onSelectMemberRef = useRef(onSelectMember);
   const onNavigateToStep3Ref = useRef(onNavigateToStep3);
-  const navModeRef = useRef(navMode);
 
   useEffect(() => {
     onSelectMemberRef.current = onSelectMember;
     onNavigateToStep3Ref.current = onNavigateToStep3;
-    navModeRef.current = navMode;
   });
+
+  const availableMembers = useMemo(() => getAvailableMembersForSystem(config.materialSystem), [config.materialSystem]);
 
   // Helper function to pick color based on utilisation eta_max
   const getEtaColorHex = (eta: number): number => {
@@ -200,13 +220,6 @@ export const StructuralBay3DViewer: React.FC<StructuralBay3DViewerProps> = ({
     const H = config.storeyHeightH;
     const nFloors = config.numberOfStoreys;
 
-    // Material theme colors
-    let baseMatColor = 0x94a3b8;
-    if (config.materialSystem === 'RC') baseMatColor = 0x94a3b8;
-    else if (config.materialSystem === 'Steel') baseMatColor = 0x64748b;
-    else if (config.materialSystem === 'Timber') baseMatColor = 0xd97706;
-    else if (config.materialSystem === 'Masonry') baseMatColor = 0xb45309;
-
     // Build storeys
     for (let fl = 0; fl < nFloors; fl++) {
       const baseY = fl * H;
@@ -214,7 +227,7 @@ export const StructuralBay3DViewer: React.FC<StructuralBay3DViewerProps> = ({
 
       // COLUMNS or WALLS
       if (config.materialSystem === 'Masonry') {
-        // Load-bearing wall strip along Z=0 and Z=B
+        // Load-bearing wall strips along Z=0 and Z=B
         const wallGeo = new THREE.BoxGeometry(L, H, 0.25);
         const wallEta = memberUtilisations['masonry_wall']?.eta_max || 0.85;
         const wallMat = new THREE.MeshStandardMaterial({
@@ -223,6 +236,8 @@ export const StructuralBay3DViewer: React.FC<StructuralBay3DViewerProps> = ({
           roughness: 0.85,
           metalness: 0.1
         });
+
+        // Front Wall (Z = 0)
         const wallFront = new THREE.Mesh(wallGeo, wallMat);
         wallFront.position.set(L / 2, baseY + H / 2, 0);
         wallFront.castShadow = true;
@@ -231,6 +246,16 @@ export const StructuralBay3DViewer: React.FC<StructuralBay3DViewerProps> = ({
         attachActiveHighlight(wallFront, wallGeo, 'masonry_wall');
         scene.add(wallFront);
         interactiveMeshes.push(wallFront);
+
+        // Back Wall (Z = B)
+        const wallBack = new THREE.Mesh(wallGeo, wallMat);
+        wallBack.position.set(L / 2, baseY + H / 2, B);
+        wallBack.castShadow = true;
+        wallBack.receiveShadow = true;
+        wallBack.userData = { id: 'masonry_wall', name: 'Masonry Wall Strip (250mm)', eta: wallEta };
+        attachActiveHighlight(wallBack, wallGeo, 'masonry_wall');
+        scene.add(wallBack);
+        interactiveMeshes.push(wallBack);
       } else {
         // 4 Columns at bay corners: (0,0), (L,0), (0,B), (L,B)
         const colPositions = [
@@ -297,16 +322,21 @@ export const StructuralBay3DViewer: React.FC<StructuralBay3DViewerProps> = ({
       scene.add(b2);
       interactiveMeshes.push(b2);
 
-      // Transverse Edge Beams along Z
+      // Transverse Edge Beams along Z at X = 0 and X = L
       const secBeamGeo = new THREE.BoxGeometry(bWidth, bHeight, B);
       const b3 = new THREE.Mesh(secBeamGeo, beamMat);
       b3.position.set(0, topY - bHeight / 2, B / 2);
       b3.castShadow = true;
+      b3.userData = { id: beamId, name: `${config.materialSystem} Secondary Beam`, eta: beamEta };
+      attachActiveHighlight(b3, secBeamGeo, beamId);
       scene.add(b3);
+      interactiveMeshes.push(b3);
 
       const b4 = new THREE.Mesh(secBeamGeo, beamMat);
       b4.position.set(L, topY - bHeight / 2, B / 2);
       b4.castShadow = true;
+      b4.userData = { id: beamId, name: `${config.materialSystem} Secondary Beam`, eta: beamEta };
+      attachActiveHighlight(b4, secBeamGeo, beamId);
       scene.add(b4);
 
       // SLAB (One-Way Spanning Floor)
@@ -353,8 +383,8 @@ export const StructuralBay3DViewer: React.FC<StructuralBay3DViewerProps> = ({
 
     // 5. Mouse Orbit / Drag Controls (Persistent Across Param Updates)
     let isDragging = false;
-    let mouseDownPos = { x: 0, y: 0 };
-    let dragDistance = 0;
+    let startX = 0;
+    let startY = 0;
     let previousMousePosition = { x: 0, y: 0 };
     let cameraAngleTheta = cameraStateRef.current.theta;
     let cameraAnglePhi = cameraStateRef.current.phi;
@@ -383,9 +413,9 @@ export const StructuralBay3DViewer: React.FC<StructuralBay3DViewerProps> = ({
 
     const onMouseDown = (e: MouseEvent) => {
       isDragging = true;
-      mouseDownPos = { x: e.clientX, y: e.clientY };
+      startX = e.clientX;
+      startY = e.clientY;
       previousMousePosition = { x: e.clientX, y: e.clientY };
-      dragDistance = 0;
     };
 
     const onMouseMove = (e: MouseEvent) => {
@@ -396,7 +426,6 @@ export const StructuralBay3DViewer: React.FC<StructuralBay3DViewerProps> = ({
       if (isDragging) {
         const deltaX = e.clientX - previousMousePosition.x;
         const deltaY = e.clientY - previousMousePosition.y;
-        dragDistance += Math.hypot(deltaX, deltaY);
 
         cameraAngleTheta -= deltaX * 0.008;
         cameraAnglePhi = Math.max(0.1, Math.min(Math.PI / 2 - 0.05, cameraAnglePhi + deltaY * 0.008));
@@ -406,24 +435,52 @@ export const StructuralBay3DViewer: React.FC<StructuralBay3DViewerProps> = ({
         updateCameraPos();
         previousMousePosition = { x: e.clientX, y: e.clientY };
       } else {
-        // Raycasting for member hover
+        // Raycasting for member hover tooltip
         raycasterRef.current.setFromCamera(mouseRef.current, camera);
-        const intersects = raycasterRef.current.intersectObjects(interactiveMeshes);
+        const intersects = raycasterRef.current.intersectObjects(interactiveMeshes, true);
         if (intersects.length > 0) {
-          const u = intersects[0].object.userData;
+          let targetObj: THREE.Object3D | null = intersects[0].object;
+          while (targetObj && !targetObj.userData?.id && targetObj.parent) {
+            targetObj = targetObj.parent;
+          }
+          const u = targetObj?.userData;
           if (u?.id) {
             setHoveredMember({ id: u.id, name: u.name, eta: u.eta });
             renderer.domElement.style.cursor = 'pointer';
+            return;
           }
-        } else {
-          setHoveredMember(null);
-          renderer.domElement.style.cursor = 'grab';
         }
+        setHoveredMember(null);
+        renderer.domElement.style.cursor = 'grab';
       }
     };
 
-    const onMouseUp = () => {
+    const onMouseUp = (e: MouseEvent) => {
       isDragging = false;
+      const moveDist = Math.hypot(e.clientX - startX, e.clientY - startY);
+
+      // Always select element on deliberate click (moveDist <= 12px)
+      // Never redirects to another tab on 3D click!
+      if (moveDist <= 12) {
+        const rect = renderer.domElement.getBoundingClientRect();
+        const clickMouse = new THREE.Vector2(
+          ((e.clientX - rect.left) / rect.width) * 2 - 1,
+          -((e.clientY - rect.top) / rect.height) * 2 + 1
+        );
+        raycasterRef.current.setFromCamera(clickMouse, camera);
+        const intersects = raycasterRef.current.intersectObjects(interactiveMeshes, true);
+        if (intersects.length > 0) {
+          let targetObj: THREE.Object3D | null = intersects[0].object;
+          while (targetObj && !targetObj.userData?.id && targetObj.parent) {
+            targetObj = targetObj.parent;
+          }
+          const u = targetObj?.userData;
+          if (u?.id) {
+            const memberId = u.id as SelectedMemberType;
+            onSelectMemberRef.current?.(memberId);
+          }
+        }
+      }
     };
 
     const onWheel = (e: WheelEvent) => {
@@ -433,51 +490,11 @@ export const StructuralBay3DViewer: React.FC<StructuralBay3DViewerProps> = ({
       updateCameraPos();
     };
 
-    const onClick = () => {
-      // Guard against drag / camera rotation: ignore click if user dragged the view
-      if (dragDistance > 6) {
-        return;
-      }
-
-      raycasterRef.current.setFromCamera(mouseRef.current, camera);
-      const intersects = raycasterRef.current.intersectObjects(interactiveMeshes);
-      if (intersects.length > 0) {
-        const u = intersects[0].object.userData;
-        if (u?.id) {
-          const memberId = u.id as SelectedMemberType;
-          setSelectedMemberId(memberId);
-          setIsInspectorOpen(true);
-          onSelectMemberRef.current?.(memberId);
-
-          if (navModeRef.current === 'single') {
-            onNavigateToStep3Ref.current?.(memberId);
-          }
-        }
-      }
-    };
-
-    const onDblClick = () => {
-      raycasterRef.current.setFromCamera(mouseRef.current, camera);
-      const intersects = raycasterRef.current.intersectObjects(interactiveMeshes);
-      if (intersects.length > 0) {
-        const u = intersects[0].object.userData;
-        if (u?.id) {
-          const memberId = u.id as SelectedMemberType;
-          setSelectedMemberId(memberId);
-          setIsInspectorOpen(true);
-          onSelectMemberRef.current?.(memberId);
-          onNavigateToStep3Ref.current?.(memberId);
-        }
-      }
-    };
-
     const dom = renderer.domElement;
     dom.addEventListener('mousedown', onMouseDown);
     window.addEventListener('mousemove', onMouseMove);
     window.addEventListener('mouseup', onMouseUp);
     dom.addEventListener('wheel', onWheel, { passive: false });
-    dom.addEventListener('click', onClick);
-    dom.addEventListener('dblclick', onDblClick);
 
     // Animation Loop
     let animId = 0;
@@ -503,8 +520,6 @@ export const StructuralBay3DViewer: React.FC<StructuralBay3DViewerProps> = ({
       window.removeEventListener('mousemove', onMouseMove);
       window.removeEventListener('mouseup', onMouseUp);
       dom.removeEventListener('wheel', onWheel);
-      dom.removeEventListener('click', onClick);
-      dom.removeEventListener('dblclick', onDblClick);
       window.removeEventListener('resize', handleResize);
       renderer.dispose();
       while (container.firstChild) {
@@ -513,55 +528,66 @@ export const StructuralBay3DViewer: React.FC<StructuralBay3DViewerProps> = ({
     };
   }, [config, memberUtilisations, wireframe, showLoads, showDimensions, activeMember]);
 
-  const displayedMember = hoveredMember || (selectedMemberId ? {
-    id: selectedMemberId,
-    name: getMemberDisplayName(selectedMemberId, config.materialSystem),
-    eta: memberUtilisations[selectedMemberId]?.eta_max || 0.45
-  } : null);
+  const currentEta = memberUtilisations[activeMember]?.eta_max || 0.45;
 
   return (
-    <div className="relative w-full h-[460px] bg-slate-950 rounded-2xl overflow-hidden border border-slate-800 shadow-2xl">
+    <div className="relative w-full h-[470px] bg-slate-950 rounded-2xl overflow-hidden border border-slate-800 shadow-2xl">
       {/* 3D WebGL Canvas */}
       <div ref={mountRef} className="w-full h-full cursor-grab active:cursor-grabbing" />
 
-      {/* Top Floating Control Bar */}
-      <div className="absolute top-3 left-3 z-10 flex items-center gap-1.5 bg-slate-900/90 backdrop-blur-md px-3 py-1.5 rounded-xl border border-slate-700/80 shadow-lg text-xs">
-        <span className="font-extrabold text-sky-400 flex items-center gap-1.5 uppercase tracking-wider text-[11px]">
-          <Box className="w-3.5 h-3.5 text-sky-400" />
-          3D Multi-Storey Bay: {config.spanL}m × {config.tributaryWidthBtr}m
-        </span>
-        <span className="text-slate-600">|</span>
-        <span className="text-slate-300 font-semibold">
-          {config.numberOfStoreys} Storeys ({config.storeyHeightH}m)
-        </span>
+      {/* Top Left Floating Bar: Dimensions + Component Quick Selection Pills */}
+      <div className="absolute top-3 left-3 z-10 flex flex-wrap items-center gap-2 max-w-[70%]">
+        <div className="bg-slate-900/90 backdrop-blur-md px-3 py-1.5 rounded-xl border border-slate-700/80 shadow-lg text-xs flex items-center gap-2">
+          <span className="font-extrabold text-sky-400 flex items-center gap-1.5 uppercase tracking-wider text-[11px]">
+            <Box className="w-3.5 h-3.5 text-sky-400" />
+            3D Multi-Storey Bay: {config.spanL}m × {config.tributaryWidthBtr}m
+          </span>
+          <span className="text-slate-600">|</span>
+          <span className="text-slate-300 font-semibold text-[11px]">
+            {config.numberOfStoreys} Fl ({config.storeyHeightH}m)
+          </span>
+        </div>
+
+        {/* Quick Component Selector Pills */}
+        <div className="bg-slate-900/90 backdrop-blur-md px-2 py-1 rounded-xl border border-slate-700/80 shadow-lg flex items-center gap-1 text-xs">
+          <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider px-1">Select:</span>
+          {availableMembers.map((m) => {
+            const isSel = m.id === activeMember;
+            const eta = memberUtilisations[m.id]?.eta_max || 0.5;
+            return (
+              <button
+                key={m.id}
+                type="button"
+                onClick={() => onSelectMemberRef.current?.(m.id)}
+                className={`px-2 py-0.5 rounded-lg text-[11px] font-bold transition flex items-center gap-1 border ${
+                  isSel
+                    ? 'bg-sky-600 text-white border-sky-400 shadow'
+                    : 'bg-slate-800/80 text-slate-300 border-slate-700 hover:bg-slate-700'
+                }`}
+              >
+                <span
+                  className="w-1.5 h-1.5 rounded-full"
+                  style={{
+                    backgroundColor: eta <= 0.8 ? '#10b981' : eta <= 1.0 ? '#f59e0b' : '#ef4444'
+                  }}
+                />
+                {m.label}
+              </button>
+            );
+          })}
+        </div>
       </div>
 
       {/* Top Right Quick Toggles */}
       <div className="absolute top-3 right-3 z-10 flex items-center gap-1.5">
         <button
           type="button"
-          onClick={() => setNavMode((m) => (m === 'safe' ? 'single' : 'safe'))}
-          className={`px-2.5 py-1 rounded-lg text-xs font-bold transition flex items-center gap-1.5 border shadow ${navMode === 'safe'
-              ? 'bg-emerald-600/25 text-emerald-300 border-emerald-500/50'
-              : 'bg-amber-600/25 text-amber-300 border-amber-500/50'
-            }`}
-          title={
-            navMode === 'safe'
-              ? 'Safe Mode Active: Single-click selects member in Step 2; Double-click or button opens Step 3'
-              : 'Direct Mode Active: Single-click immediately redirects to Step 3'
-          }
-        >
-          <MousePointerClick className="w-3.5 h-3.5" />
-          {navMode === 'safe' ? 'Mode: Double-Click (Safe)' : 'Mode: Single-Click (Direct)'}
-        </button>
-
-        <button
-          type="button"
           onClick={() => setShowLoads((v) => !v)}
-          className={`px-2.5 py-1 rounded-lg text-xs font-bold transition flex items-center gap-1 border ${showLoads
+          className={`px-2.5 py-1 rounded-lg text-xs font-bold transition flex items-center gap-1 border ${
+            showLoads
               ? 'bg-sky-600/30 text-sky-300 border-sky-500/50'
               : 'bg-slate-900/80 text-slate-400 border-slate-700'
-            }`}
+          }`}
           title="Toggle characteristic load takedown vectors"
         >
           <ArrowDown className="w-3.5 h-3.5" />
@@ -570,10 +596,11 @@ export const StructuralBay3DViewer: React.FC<StructuralBay3DViewerProps> = ({
         <button
           type="button"
           onClick={() => setWireframe((v) => !v)}
-          className={`px-2.5 py-1 rounded-lg text-xs font-bold transition flex items-center gap-1 border ${wireframe
+          className={`px-2.5 py-1 rounded-lg text-xs font-bold transition flex items-center gap-1 border ${
+            wireframe
               ? 'bg-amber-600/30 text-amber-300 border-amber-500/50'
               : 'bg-slate-900/80 text-slate-400 border-slate-700'
-            }`}
+          }`}
           title="Toggle wireframe mode"
         >
           <Layers className="w-3.5 h-3.5" />
@@ -590,67 +617,56 @@ export const StructuralBay3DViewer: React.FC<StructuralBay3DViewerProps> = ({
         </button>
       </div>
 
-      {/* Interactive Member Floating Inspector Card */}
-      {isInspectorOpen && displayedMember && (
-        <div className="absolute bottom-4 left-4 z-10 bg-slate-900/95 backdrop-blur-md p-3 rounded-2xl border border-sky-500/70 shadow-2xl text-xs space-y-2 max-w-xs transition-all">
-          <div className="flex items-center justify-between gap-2 border-b border-slate-800 pb-1.5">
-            <span className="text-[10px] uppercase font-bold text-slate-400 tracking-wider flex items-center gap-1">
-              <Box className="w-3 h-3 text-sky-400" />
-              {hoveredMember && hoveredMember.id !== selectedMemberId ? 'Hovering Element' : 'Active 3D Component'}
+      {/* Permanently Pinned Member Inspector Card with Step 3 Direct Button */}
+      <div className="absolute bottom-4 left-4 z-10 bg-slate-900/95 backdrop-blur-md p-3.5 rounded-2xl border border-sky-500/70 shadow-2xl text-xs space-y-2.5 max-w-xs transition-all">
+        <div className="flex items-center justify-between gap-2 border-b border-slate-800 pb-1.5">
+          <span className="text-[10px] uppercase font-bold text-sky-400 tracking-wider flex items-center gap-1.5">
+            <Box className="w-3.5 h-3.5 text-sky-400" />
+            Selected 3D Component
+          </span>
+          <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-slate-800 text-teal-300 font-bold border border-slate-700">
+            {activeMember}
+          </span>
+        </div>
+
+        <div className="space-y-1.5">
+          <div className="font-extrabold text-white flex items-center gap-2 text-sm">
+            <span
+              className="w-3 h-3 rounded-full shrink-0 shadow"
+              style={{
+                backgroundColor: currentEta <= 0.8 ? '#10b981' : currentEta <= 1.0 ? '#f59e0b' : '#ef4444'
+              }}
+            />
+            <span className="truncate">{getMemberDisplayName(activeMember, config.materialSystem)}</span>
+          </div>
+
+          <div className="flex items-center justify-between text-[11px] bg-slate-950/80 px-2.5 py-1.5 rounded-xl border border-slate-800">
+            <span className="text-slate-400 font-semibold">Eurocode Utilisation:</span>
+            <span
+              className={`font-mono font-bold text-xs ${
+                currentEta <= 0.8 ? 'text-emerald-400' : currentEta <= 1.0 ? 'text-amber-400' : 'text-rose-400'
+              }`}
+            >
+              ηmax = {currentEta.toFixed(3)} ({Math.round(currentEta * 100)}%)
             </span>
-            <div className="flex items-center gap-1.5">
-              <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-slate-800 text-slate-300">
-                {displayedMember.id}
-              </span>
-              <button
-                type="button"
-                onClick={() => setIsInspectorOpen(false)}
-                className="text-slate-400 hover:text-white p-0.5 rounded transition"
-                title="Dismiss inspector card"
-              >
-                <X className="w-3 h-3" />
-              </button>
-            </div>
-          </div>
-
-          <div className="space-y-1">
-            <div className="font-extrabold text-white flex items-center gap-1.5 text-sm">
-              <span
-                className="w-2.5 h-2.5 rounded-full shrink-0"
-                style={{
-                  backgroundColor: displayedMember.eta <= 0.8 ? '#10b981' : displayedMember.eta <= 1.0 ? '#f59e0b' : '#ef4444'
-                }}
-              />
-              <span className="truncate">{displayedMember.name}</span>
-            </div>
-            <div className="text-[11px] text-slate-300 flex items-center justify-between">
-              <span className="text-slate-400">Governing Utilisation:</span>
-              <span
-                className={`font-mono font-bold ${displayedMember.eta <= 0.8 ? 'text-emerald-400' : displayedMember.eta <= 1.0 ? 'text-amber-400' : 'text-rose-400'
-                  }`}
-              >
-                ηmax = {displayedMember.eta.toFixed(3)} ({Math.round(displayedMember.eta * 100)}%)
-              </span>
-            </div>
-          </div>
-
-          {/* Deliberate Open in Step 3 Studio Button */}
-          <button
-            type="button"
-            onClick={() => onNavigateToStep3Ref.current?.(displayedMember.id as SelectedMemberType)}
-            className="w-full px-3 py-1.5 rounded-xl bg-teal-500 hover:bg-teal-400 text-slate-950 font-bold text-xs flex items-center justify-center gap-1.5 shadow transition group"
-          >
-            <span>Open in Step 3 Studio</span>
-            <ExternalLink className="w-3.5 h-3.5 transition-transform group-hover:translate-x-0.5 group-hover:-translate-y-0.5" />
-          </button>
-
-          <div className="text-[10px] text-slate-400 text-center italic">
-            {navMode === 'safe'
-              ? 'Tip: Double-click 3D element to jump directly'
-              : 'Direct jump enabled on single-click'}
           </div>
         </div>
-      )}
+
+        {/* Dedicated card button to direct the user to Step 3 for this element */}
+        <button
+          type="button"
+          onClick={() => onNavigateToStep3Ref.current?.(activeMember)}
+          className="w-full px-3.5 py-2 rounded-xl bg-teal-500 hover:bg-teal-400 active:scale-[0.98] text-slate-950 font-extrabold text-xs flex items-center justify-center gap-2 shadow-lg transition group cursor-pointer"
+        >
+          <span>Open in Step 3 Studio</span>
+          <ArrowRight className="w-4 h-4 transition-transform group-hover:translate-x-1" />
+        </button>
+
+        <div className="text-[10.5px] text-slate-400 text-center flex items-center justify-center gap-1">
+          <MousePointerClick className="w-3 h-3 text-sky-400 shrink-0" />
+          <span>Click 3D model to select • Card button opens tab</span>
+        </div>
+      </div>
 
       {/* Bottom Right Legend */}
       <div className="absolute bottom-4 right-4 z-10 bg-slate-900/85 backdrop-blur-md px-3 py-2 rounded-xl border border-slate-800 text-[11px] space-y-1 text-slate-300 shadow">
@@ -670,4 +686,3 @@ export const StructuralBay3DViewer: React.FC<StructuralBay3DViewerProps> = ({
     </div>
   );
 };
-
