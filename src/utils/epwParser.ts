@@ -68,6 +68,9 @@ export interface DailyRunningMeanRecord {
   tMin: number;
   tMean: number;
   tMax: number;
+  rhMin: number;
+  rhMean: number;
+  rhMax: number;
   tRunningMean: number;
   ashraeNeutral: number;
   ashrae80Upper: number;
@@ -184,6 +187,7 @@ export function validateEpwDataset(
   rawAnomalyCounts?: { missingHours: number; tempSpikes: number; radAnomalies: number; rhOutliers: number }
 ): EpwQualityReport {
   const hourly = climate.hourly || [];
+  const headerLines = rawHeaderLines || climate.headerLines;
   let tempSpikes = rawAnomalyCounts?.tempSpikes ?? 0;
   let radAnomalies = rawAnomalyCounts?.radAnomalies ?? 0;
   let rhOutliers = rawAnomalyCounts?.rhOutliers ?? 0;
@@ -221,8 +225,22 @@ export function validateEpwDataset(
 
   // Parse ground temperatures from EPW Header Line 4 if present
   let groundTemps: GroundTempProfile[] = [];
-  if (rawHeaderLines) {
-    const gtLine = rawHeaderLines.find((l) => l.toUpperCase().startsWith('GROUND TEMPERATURES,'));
+  let dataSourceHeader: string = climate.sourceType.toUpperCase();
+  let commentsHeader = `Köppen ${climate.koppen} — ${climate.koppenDesc}`;
+
+  if (headerLines && headerLines.length > 0) {
+    const locLine = headerLines.find((l) => l.toUpperCase().startsWith('LOCATION,'));
+    if (locLine) {
+      const lp = locLine.split(',');
+      if (lp[4]?.trim()) dataSourceHeader = lp[4].trim();
+    }
+    const c1Line = headerLines.find((l) => l.toUpperCase().startsWith('COMMENTS 1,'));
+    if (c1Line) {
+      const cText = c1Line.replace(/^COMMENTS 1,/i, '').trim();
+      if (cText) commentsHeader = cText;
+    }
+
+    const gtLine = headerLines.find((l) => l.toUpperCase().startsWith('GROUND TEMPERATURES,'));
     if (gtLine) {
       const tokens = gtLine.split(',');
       const numDepths = parseInt(tokens[1], 10) || 0;
@@ -247,7 +265,9 @@ export function validateEpwDataset(
   if (climate.sourceType === 'preset') {
     notes.push('8,760h TMY dataset synthesized from verified regional meteorological normals.');
   } else {
-    notes.push(`Parsed ${hourly.length.toLocaleString()} hourly records with WMO ID ${climate.wmo || 'N/A'}.`);
+    notes.push(
+      `Verified ${hourly.length.toLocaleString()} hourly EPW records (${dataSourceHeader} • WMO ${climate.wmo || 'N/A'}).`
+    );
   }
   if (tempSpikes === 0 && radAnomalies === 0) {
     notes.push('Zero hourly sensor spikes (|ΔT| > 12°C) or extraterrestrial radiation anomalies detected.');
@@ -271,8 +291,8 @@ export function validateEpwDataset(
     radiationAnomalyCount: radAnomalies,
     rhOutlierCount: rhOutliers,
     wmoStation: climate.wmo || '160800',
-    dataSourceHeader: climate.sourceType.toUpperCase(),
-    commentsHeader: `Köppen ${climate.koppen} — ${climate.koppenDesc}`,
+    dataSourceHeader,
+    commentsHeader,
     designHeat996,
     designHeat99,
     designCool004,
@@ -355,11 +375,11 @@ export function morphClimateDataset(
   const morphedHourly: HourlyWeatherRecord[] = base.hourly.map((h) => {
     const dryBulb = +(h.dryBulb + tempOffsetC).toFixed(1);
     const relHum = Math.round(Math.max(8, Math.min(100, h.relHum + rhOffsetPct)));
-    const windSpeed = +(Math.max(0.1, h.windSpeed * windMult)).toFixed(1);
+    const windSpeed = h.windSpeed === 0 ? 0 : +(Math.max(0.1, h.windSpeed * windMult)).toFixed(1);
     const pressurePa = h.pressurePa ?? 101325;
     const dewPoint = calcDewPointC(dryBulb, relHum);
     const humRatio = +calcHumidityRatio(dryBulb, relHum, pressurePa).toFixed(2);
-    const utci = calcApproxUtci(dryBulb, relHum, windSpeed, h.ghi);
+    const utci = calcApproxUtci(dryBulb, relHum, windSpeed, h.ghi, h.solarAlt);
 
     return {
       ...h,
@@ -380,7 +400,9 @@ export function morphClimateDataset(
       wmo: base.wmo,
       lat: base.lat,
       lon: base.lon,
+      tz: base.tz,
       elev: base.elev,
+      headerLines: base.headerLines,
       sourceType: base.sourceType,
       overrideFacetSolar: {
         solarHoriz: base.solarHoriz,
@@ -399,6 +421,8 @@ export function morphClimateDataset(
 // ============================================================================
 // 3. DEGREE DAYS & DISTRIBUTION HISTOGRAMS (SUB-TAB 2: CLIMATE SUMMARY)
 // ============================================================================
+// Matches official CBE Clima Tool (tab_summary.py): computes daily mean dry-bulb temperature
+// for each of the 365 days and integrates HDD (below heatBaseC) and CDD (above coolBaseC)
 export function calcCustomDegreeDays(
   hourly: HourlyWeatherRecord[],
   heatBaseC: number,
@@ -412,12 +436,22 @@ export function calcCustomDegreeDays(
   const monthlyHdd = new Array(12).fill(0);
   const monthlyCdd = new Array(12).fill(0);
 
+  // Group hourly records by dayOfYear to compute true daily mean temperature T_mean,d
+  const byDay = new Map<number, { month: number; sumT: number; count: number }>();
   for (const h of hourly) {
-    if (h.dryBulb < heatBaseC) {
-      monthlyHdd[h.month] += (heatBaseC - h.dryBulb) / 24;
+    const entry = byDay.get(h.dayOfYear) || { month: h.month, sumT: 0, count: 0 };
+    entry.sumT += h.dryBulb;
+    entry.count++;
+    byDay.set(h.dayOfYear, entry);
+  }
+
+  for (const [, d] of byDay) {
+    const tDayMean = d.sumT / Math.max(1, d.count);
+    if (tDayMean < heatBaseC) {
+      monthlyHdd[d.month] += heatBaseC - tDayMean;
     }
-    if (h.dryBulb > coolBaseC) {
-      monthlyCdd[h.month] += (h.dryBulb - coolBaseC) / 24;
+    if (tDayMean > coolBaseC) {
+      monthlyCdd[d.month] += tDayMean - coolBaseC;
     }
   }
 
@@ -504,20 +538,37 @@ export function calcDailyTempAndRunningMean(hourly: HourlyWeatherRecord[]): Dail
   }
 
   const dailyMeans: number[] = [];
-  const rawDays: Array<{ dayOfYear: number; month: number; dayOfMonth: number; tMin: number; tMean: number; tMax: number }> = [];
+  const rawDays: Array<{
+    dayOfYear: number;
+    month: number;
+    dayOfMonth: number;
+    tMin: number;
+    tMean: number;
+    tMax: number;
+    rhMin: number;
+    rhMean: number;
+    rhMax: number;
+  }> = [];
 
   for (let d = 1; d <= 365; d++) {
     const recs = byDay.get(d) || [];
     if (recs.length === 0) continue;
     let tMin = 999;
     let tMax = -999;
-    let sum = 0;
+    let sumT = 0;
+    let rhMin = 100;
+    let rhMax = 0;
+    let sumRh = 0;
     for (const r of recs) {
       if (r.dryBulb < tMin) tMin = r.dryBulb;
       if (r.dryBulb > tMax) tMax = r.dryBulb;
-      sum += r.dryBulb;
+      sumT += r.dryBulb;
+      if (r.relHum < rhMin) rhMin = r.relHum;
+      if (r.relHum > rhMax) rhMax = r.relHum;
+      sumRh += r.relHum;
     }
-    const tMean = +(sum / recs.length).toFixed(1);
+    const tMean = +(sumT / recs.length).toFixed(1);
+    const rhMean = Math.round(sumRh / recs.length);
     dailyMeans.push(tMean);
     rawDays.push({
       dayOfYear: d,
@@ -525,16 +576,26 @@ export function calcDailyTempAndRunningMean(hourly: HourlyWeatherRecord[]): Dail
       dayOfMonth: recs[0].dayOfMonth,
       tMin: +tMin.toFixed(1),
       tMean,
-      tMax: +tMax.toFixed(1)
+      tMax: +tMax.toFixed(1),
+      rhMin: Math.round(rhMin),
+      rhMean,
+      rhMax: Math.round(rhMax)
     });
   }
 
   // ASHRAE 55 / EN 16798-1 Exponentially Weighted Running Mean Outdoor Temp (alpha = 0.9)
+  // Pre-warm with last 7 days of December so Jan 1 matches CBE Clima wrap-around running mean
   const alpha = 0.9;
   let tRm = dailyMeans[0] ?? 10;
+  if (dailyMeans.length >= 365) {
+    tRm = dailyMeans[358];
+    for (let k = 359; k < 365; k++) {
+      tRm = (1 - alpha) * dailyMeans[k] + alpha * tRm;
+    }
+  }
 
   return rawDays.map((day, idx) => {
-    const prevMean = idx > 0 ? dailyMeans[idx - 1] : day.tMean;
+    const prevMean = idx > 0 ? dailyMeans[idx - 1] : dailyMeans[dailyMeans.length - 1] ?? day.tMean;
     tRm = (1 - alpha) * prevMean + alpha * tRm;
     const clampedRm = Math.max(10, Math.min(33.5, tRm));
     const ashraeNeutral = +(0.31 * clampedRm + 17.8).toFixed(1);
@@ -621,11 +682,22 @@ export interface MonthlyRadiationBoxplot {
   ghiQ75: number;
   ghiMax: number;
   dniMean: number;
+  dniQ25: number;
+  dniMedian: number;
+  dniQ75: number;
+  dniMax: number;
   dhiMean: number;
+  dhiQ25: number;
+  dhiMedian: number;
+  dhiQ75: number;
+  dhiMax: number;
   ghiMonthlyKwh: number;
   dniMonthlyKwh: number;
   dhiMonthlyKwh: number;
   skyCoverMeanPct: number;
+  clearSkyPct: number;
+  partlyCloudyPct: number;
+  overcastPct: number;
 }
 
 export interface FacadeRadiationRoseItem {
@@ -643,7 +715,10 @@ export function calcSolarBoxplotsAndFacadeRose(hourly: HourlyWeatherRecord[]): {
   const monthlySolar: MonthlyRadiationBoxplot[] = MONTHS.map((month, m) => {
     const recs = hourly.filter((h) => h.month === m);
     const dayRecs = recs.filter((h) => h.solarAlt > 0);
-    const ghis = (dayRecs.length > 0 ? dayRecs : recs).map((h) => h.ghi).sort((a, b) => a - b);
+    const activeDay = dayRecs.length > 0 ? dayRecs : recs;
+    const ghis = activeDay.map((h) => h.ghi).sort((a, b) => a - b);
+    const dnis = activeDay.map((h) => h.dni).sort((a, b) => a - b);
+    const dhis = activeDay.map((h) => h.dhi).sort((a, b) => a - b);
     const n = Math.max(1, ghis.length);
 
     const ghiSumWh = recs.reduce((s, h) => s + h.ghi, 0);
@@ -652,6 +727,17 @@ export function calcSolarBoxplotsAndFacadeRose(hourly: HourlyWeatherRecord[]): {
     const skyMean =
       recs.reduce((s, h) => s + (h.skyCover ?? 5) * 10, 0) / Math.max(1, recs.length);
 
+    let clearCnt = 0;
+    let partlyCnt = 0;
+    let overcastCnt = 0;
+    for (const r of recs) {
+      const sc = r.skyCover ?? 5;
+      if (sc <= 3) clearCnt++;
+      else if (sc <= 7) partlyCnt++;
+      else overcastCnt++;
+    }
+    const totM = Math.max(1, recs.length);
+
     return {
       month,
       ghiMean: Math.round(ghis.reduce((a, b) => a + b, 0) / n),
@@ -659,12 +745,23 @@ export function calcSolarBoxplotsAndFacadeRose(hourly: HourlyWeatherRecord[]): {
       ghiMedian: Math.round(ghis[Math.floor(n * 0.5)] ?? 0),
       ghiQ75: Math.round(ghis[Math.floor(n * 0.75)] ?? 0),
       ghiMax: Math.round(ghis[n - 1] ?? 0),
-      dniMean: Math.round(dniSumWh / Math.max(1, dayRecs.length)),
-      dhiMean: Math.round(dhiSumWh / Math.max(1, dayRecs.length)),
+      dniMean: Math.round(dnis.reduce((a, b) => a + b, 0) / n),
+      dniQ25: Math.round(dnis[Math.floor(n * 0.25)] ?? 0),
+      dniMedian: Math.round(dnis[Math.floor(n * 0.5)] ?? 0),
+      dniQ75: Math.round(dnis[Math.floor(n * 0.75)] ?? 0),
+      dniMax: Math.round(dnis[n - 1] ?? 0),
+      dhiMean: Math.round(dhis.reduce((a, b) => a + b, 0) / n),
+      dhiQ25: Math.round(dhis[Math.floor(n * 0.25)] ?? 0),
+      dhiMedian: Math.round(dhis[Math.floor(n * 0.5)] ?? 0),
+      dhiQ75: Math.round(dhis[Math.floor(n * 0.75)] ?? 0),
+      dhiMax: Math.round(dhis[n - 1] ?? 0),
       ghiMonthlyKwh: Math.round(ghiSumWh / 1000),
       dniMonthlyKwh: Math.round(dniSumWh / 1000),
       dhiMonthlyKwh: Math.round(dhiSumWh / 1000),
-      skyCoverMeanPct: Math.round(skyMean)
+      skyCoverMeanPct: Math.round(skyMean),
+      clearSkyPct: Math.round((clearCnt / totM) * 100),
+      partlyCloudyPct: Math.round((partlyCnt / totM) * 100),
+      overcastPct: Math.round((overcastCnt / totM) * 100)
     };
   });
 
@@ -709,7 +806,7 @@ export function calcSolarBoxplotsAndFacadeRose(hourly: HourlyWeatherRecord[]): {
 }
 
 // ============================================================================
-// 6. MULTI-MODE WIND ROSE FILTER ENGINE (SUB-TAB 5)
+// 6. MULTI-MODE 16-SECTOR WIND ROSE FILTER ENGINE (SUB-TAB 5)
 // ============================================================================
 export type WindFilterMode =
   | 'annual'
@@ -725,7 +822,7 @@ export type WindFilterMode =
 export interface DetailedWindRoseSector {
   dir: string;
   deg: number;
-  b0_2Pct: number;   // < 2 m/s
+  b0_2Pct: number;   // 0.5 - 2 m/s
   b2_4Pct: number;   // 2 - 4 m/s
   b4_6Pct: number;   // 4 - 6 m/s
   b6_9Pct: number;   // 6 - 9 m/s
@@ -749,15 +846,17 @@ export function calcFilteredWindRose(
   meanSpeed: number;
   prevailingDir: string;
 } {
+  // Matches CBE Clima (tab_wind.py) seasonal (Dec-Feb, Mar-May, Jun-Aug, Sep-Nov)
+  // and diurnal (06-13h Morning, 14-21h Afternoon, 22-05h Night) filters
   const filtered = hourly.filter((h) => {
     const m1 = h.month + 1;
     if (mode === 'winter') return m1 === 12 || m1 === 1 || m1 === 2;
     if (mode === 'spring') return m1 >= 3 && m1 <= 5;
     if (mode === 'summer') return m1 >= 6 && m1 <= 8;
     if (mode === 'autumn') return m1 >= 9 && m1 <= 11;
-    if (mode === 'morning') return h.hour >= 6 && h.hour < 12;
-    if (mode === 'afternoon') return h.hour >= 12 && h.hour < 18;
-    if (mode === 'night') return h.hour >= 18 || h.hour < 6;
+    if (mode === 'morning') return h.hour >= 6 && h.hour <= 13;
+    if (mode === 'afternoon') return h.hour >= 14 && h.hour <= 21;
+    if (mode === 'night') return h.hour >= 22 || h.hour <= 5;
     if (mode === 'custom') {
       const mMatch = monthStart <= monthEnd ? m1 >= monthStart && m1 <= monthEnd : m1 >= monthStart || m1 <= monthEnd;
       const hMatch = hourStart <= hourEnd ? h.hour >= hourStart && h.hour <= hourEnd : h.hour >= hourStart || h.hour <= hourEnd;
@@ -766,15 +865,24 @@ export function calcFilteredWindRose(
     return true;
   });
 
+  // 16 WMO / CBE Clima compass sectors (22.5° each)
   const dirs = [
     { dir: 'N', deg: 0 },
+    { dir: 'NNE', deg: 22.5 },
     { dir: 'NE', deg: 45 },
+    { dir: 'ENE', deg: 67.5 },
     { dir: 'E', deg: 90 },
+    { dir: 'ESE', deg: 112.5 },
     { dir: 'SE', deg: 135 },
+    { dir: 'SSE', deg: 157.5 },
     { dir: 'S', deg: 180 },
+    { dir: 'SSW', deg: 202.5 },
     { dir: 'SW', deg: 225 },
+    { dir: 'WSW', deg: 247.5 },
     { dir: 'W', deg: 270 },
-    { dir: 'NW', deg: 315 }
+    { dir: 'WNW', deg: 292.5 },
+    { dir: 'NW', deg: 315 },
+    { dir: 'NNW', deg: 337.5 }
   ];
 
   const buckets = dirs.map(() => ({
@@ -793,8 +901,13 @@ export function calcFilteredWindRose(
 
   for (const h of filtered) {
     totalSpeed += h.windSpeed;
-    if (h.windSpeed < 0.8) calmCount++;
-    const idx = Math.floor(((h.windDir + 22.5) % 360) / 45) % 8;
+    // WMO & CBE Clima standard: calm hours (windSpeed <= 0.5 m/s) have undefined/zero wind vane direction
+    // and MUST be excluded from directional sector wedges so 0° (North) is not artificially inflated
+    if (h.windSpeed <= 0.5) {
+      calmCount++;
+      continue;
+    }
+    const idx = Math.floor(((h.windDir + 11.25) % 360) / 22.5) % 16;
     const b = buckets[idx];
     b.total++;
     b.speedSum += h.windSpeed;
@@ -806,18 +919,19 @@ export function calcFilteredWindRose(
     else b.b9Plus++;
   }
 
-  const n = Math.max(1, filtered.length);
+  const nTotal = Math.max(1, filtered.length);
+  const nWindy = Math.max(1, filtered.length - calmCount);
   const sectors: DetailedWindRoseSector[] = dirs.map((d, i) => {
     const b = buckets[i];
     return {
       dir: d.dir,
       deg: d.deg,
-      b0_2Pct: +((b.b0_2 / n) * 100).toFixed(1),
-      b2_4Pct: +((b.b2_4 / n) * 100).toFixed(1),
-      b4_6Pct: +((b.b4_6 / n) * 100).toFixed(1),
-      b6_9Pct: +((b.b6_9 / n) * 100).toFixed(1),
-      b9PlusPct: +((b.b9Plus / n) * 100).toFixed(1),
-      totalPct: +((b.total / n) * 100).toFixed(1),
+      b0_2Pct: +((b.b0_2 / nWindy) * 100).toFixed(1),
+      b2_4Pct: +((b.b2_4 / nWindy) * 100).toFixed(1),
+      b4_6Pct: +((b.b4_6 / nWindy) * 100).toFixed(1),
+      b6_9Pct: +((b.b6_9 / nWindy) * 100).toFixed(1),
+      b9PlusPct: +((b.b9Plus / nWindy) * 100).toFixed(1),
+      totalPct: +((b.total / nWindy) * 100).toFixed(1),
       avgSpeed: b.total > 0 ? +(b.speedSum / b.total).toFixed(1) : 0,
       avgTemp: b.total > 0 ? +(b.tempSum / b.total).toFixed(1) : 15
     };
@@ -827,8 +941,8 @@ export function calcFilteredWindRose(
   return {
     sectors,
     filteredCount: filtered.length,
-    calmHoursPct: +((calmCount / n) * 100).toFixed(1),
-    meanSpeed: +(totalSpeed / n).toFixed(1),
+    calmHoursPct: +((calmCount / nTotal) * 100).toFixed(1),
+    meanSpeed: +(totalSpeed / nTotal).toFixed(1),
     prevailingDir: topSector?.dir || 'S'
   };
 }
@@ -1108,11 +1222,12 @@ export function calcUtciForScenario(
   rhPct: number,
   windSpeed: number,
   ghi: number,
-  scenario: UtciScenarioId
+  scenario: UtciScenarioId,
+  solarAltDeg = 35
 ): number {
-  const effectiveGhi = scenario === 'sun_wind' || scenario === 'sun_nowind' ? ghi : ghi * 0.12;
+  const effectiveGhi = scenario === 'sun_wind' || scenario === 'sun_nowind' ? ghi : 0;
   const effectiveWind = scenario === 'sun_wind' || scenario === 'nosun_wind' ? windSpeed : 0.5;
-  return calcApproxUtci(tAir, rhPct, effectiveWind, effectiveGhi);
+  return calcApproxUtci(tAir, rhPct, effectiveWind, effectiveGhi, solarAltDeg);
 }
 
 export function getUtciStressBand(utciC: number): UtciStressBand {
@@ -1142,7 +1257,7 @@ export function calcUtciScenarioDataset(
   let heat = 0;
 
   const hourlyUtci = hourly.map((h) => {
-    const val = calcUtciForScenario(h.dryBulb, h.relHum, h.windSpeed, h.ghi, scenario);
+    const val = calcUtciForScenario(h.dryBulb, h.relHum, h.windSpeed, h.ghi, scenario, h.solarAlt);
     const band = getUtciStressBand(val);
     monthlyCounts[h.month]++;
     monthlyBands[h.month][band.id]++;

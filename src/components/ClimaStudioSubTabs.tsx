@@ -209,26 +209,61 @@ export const CarpetHeatmap24x365: React.FC<CarpetHeatmapProps> = ({
   );
 };
 
-// Color scale helpers
+// Smooth continuous RGB colormap interpolation helpers (matching CBE Clima Plotly palettes)
+function interpolatePalette(stops: Array<[number, number, number]>, tNorm: number): string {
+  const f = Math.max(0, Math.min(1, tNorm)) * (stops.length - 1);
+  const idx = Math.min(stops.length - 2, Math.floor(f));
+  const frac = f - idx;
+  const c0 = stops[idx];
+  const c1 = stops[idx + 1];
+  const r = Math.round(c0[0] + (c1[0] - c0[0]) * frac);
+  const g = Math.round(c0[1] + (c1[1] - c0[1]) * frac);
+  const b = Math.round(c0[2] + (c1[2] - c0[2]) * frac);
+  return `rgb(${r},${g},${b})`;
+}
+
+const RDYLBU_R_STOPS: Array<[number, number, number]> = [
+  [49, 54, 149],
+  [69, 117, 180],
+  [116, 173, 209],
+  [224, 243, 248],
+  [254, 224, 144],
+  [244, 109, 67],
+  [215, 48, 39],
+  [165, 0, 38]
+];
+
+const YLGNBU_STOPS: Array<[number, number, number]> = [
+  [255, 255, 204],
+  [199, 233, 180],
+  [127, 205, 187],
+  [65, 182, 196],
+  [29, 145, 192],
+  [34, 94, 168],
+  [12, 44, 132]
+];
+
+const YLORRD_WIND_STOPS: Array<[number, number, number]> = [
+  [15, 23, 42],
+  [3, 105, 161],
+  [13, 148, 136],
+  [245, 158, 11],
+  [225, 29, 72]
+];
+
 export function colorForTempC(t: number, globalRange: boolean): string {
   const min = globalRange ? -20 : -5;
   const max = globalRange ? 45 : 38;
-  const f = Math.max(0, Math.min(1, (t - min) / (max - min)));
-  if (f < 0.25) return '#1d4ed8';
-  if (f < 0.45) return '#0ea5e9';
-  if (f < 0.65) return '#10b981';
-  if (f < 0.82) return '#f59e0b';
-  return '#e11d48';
+  return interpolatePalette(RDYLBU_R_STOPS, (t - min) / (max - min));
+}
+
+export function colorForRhPct(rh: number): string {
+  return interpolatePalette(YLGNBU_STOPS, rh / 100);
 }
 
 export function colorForWindSpeed(v: number, globalRange: boolean): string {
   const max = globalRange ? 18 : 10;
-  const f = Math.max(0, Math.min(1, v / max));
-  if (f < 0.2) return '#0f172a';
-  if (f < 0.4) return '#0369a1';
-  if (f < 0.65) return '#0d9488';
-  if (f < 0.85) return '#f59e0b';
-  return '#f43f5e';
+  return interpolatePalette(YLORRD_WIND_STOPS, v / max);
 }
 
 export function colorForWindDir(deg: number): string {
@@ -262,8 +297,8 @@ export const SubTab5Wind: React.FC<{
         {/* Polar Wind Rose (6 cols) */}
         <div className="xl:col-span-6">
           <ClimaChartCard
-            title="Multi-Mode Polar Wind Rose (Frequency % & Velocity Bins)"
-            subtitle="Filter by season, diurnal period, or custom month/hour slices to design natural ventilation inlets"
+            title="Multi-Mode 16-Sector Polar Wind Rose (Frequency % & Velocity Bins)"
+            subtitle="Calm hours (≤0.5 m/s) excluded from directional sectors per CBE Clima WMO standard"
             icon={<Wind className="w-4 h-4 text-sky-600" />}
             svgFilename={`${climate.id}_wind_rose_${windMode}.svg`}
             csvFilename={`${climate.id}_wind_rose_${windMode}.csv`}
@@ -292,9 +327,9 @@ export const SubTab5Wind: React.FC<{
                       { id: 'spring', label: 'Spring (Mar–May)' },
                       { id: 'summer', label: 'Summer (Jun–Aug)' },
                       { id: 'autumn', label: 'Autumn (Sep–Nov)' },
-                      { id: 'morning', label: 'Morning (06–12h)' },
-                      { id: 'afternoon', label: 'Afternoon (12–18h)' },
-                      { id: 'night', label: 'Night (18–06h)' },
+                      { id: 'morning', label: 'Morning (06–13h)' },
+                      { id: 'afternoon', label: 'Afternoon (14–21h)' },
+                      { id: 'night', label: 'Night (22–05h)' },
                       { id: 'custom', label: 'Custom Slice' }
                     ] as Array<{ id: WindFilterMode; label: string }>
                   ).map((m) => (
@@ -377,7 +412,7 @@ export const SubTab5Wind: React.FC<{
                   Prevailing: <strong className="text-teal-700">{windStats.prevailingDir}</strong>
                 </span>
                 <span>
-                  Calm (&lt;0.8 m/s): <strong>{windStats.calmHoursPct}%</strong>
+                  Calm (≤0.5 m/s): <strong>{windStats.calmHoursPct}%</strong>
                 </span>
               </div>
             }
@@ -386,11 +421,11 @@ export const SubTab5Wind: React.FC<{
               const size = 320;
               const cx = size / 2;
               const cy = size / 2;
-              const R = 118;
-              const maxPct = Math.max(20, ...windStats.sectors.map((s) => s.totalPct));
+              const R = 116;
+              const maxPct = Math.max(12, ...windStats.sectors.map((s) => s.totalPct));
 
               const wedgePath = (deg: number, rInner: number, rOuter: number) => {
-                const halfSpan = 17;
+                const halfSpan = 9.5;
                 const a1 = ((deg - halfSpan - 90) * Math.PI) / 180;
                 const a2 = ((deg + halfSpan - 90) * Math.PI) / 180;
                 const x1 = cx + rInner * Math.cos(a1);
@@ -418,7 +453,7 @@ export const SubTab5Wind: React.FC<{
                           strokeDasharray="3 3"
                         />
                         <text x={cx + 4} y={cy - R * f + 9} fontSize="8" fill="#64748b">
-                          {Math.round(maxPct * f)}%
+                          {+(maxPct * f).toFixed(1)}%
                         </text>
                       </g>
                     ))}
@@ -441,7 +476,7 @@ export const SubTab5Wind: React.FC<{
                           {r3 > r2 && <path d={wedgePath(s.deg, r2, r3)} fill="#0284c7" />}
                           {r4 > r3 && <path d={wedgePath(s.deg, r3, r4)} fill="#f59e0b" />}
                           {r5 > r4 && <path d={wedgePath(s.deg, r4, r5)} fill="#e11d48" />}
-                          <text x={lx} y={ly + 3} textAnchor="middle" fontSize="10" fontWeight="700" fill="#1e293b">
+                          <text x={lx} y={ly + 3} textAnchor="middle" fontSize="8.5" fontWeight="700" fill="#1e293b">
                             {s.dir}
                           </text>
                         </g>
@@ -451,7 +486,7 @@ export const SubTab5Wind: React.FC<{
 
                   <div className="flex flex-wrap items-center justify-center gap-3 text-[10px] mt-1">
                     <span className="flex items-center gap-1">
-                      <span className="w-2.5 h-2.5 rounded-sm bg-sky-200 inline-block" /> &lt;2 m/s
+                      <span className="w-2.5 h-2.5 rounded-sm bg-sky-200 inline-block" /> 0.5–2 m/s
                     </span>
                     <span className="flex items-center gap-1">
                       <span className="w-2.5 h-2.5 rounded-sm bg-sky-400 inline-block" /> 2–4 m/s
@@ -475,7 +510,7 @@ export const SubTab5Wind: React.FC<{
         {/* Monthly Wind Speed Profile & Directional Summary Table (6 cols) */}
         <div className="xl:col-span-6">
           <ClimaChartCard
-            title="Monthly Wind Speed Profile & Sector Temperature Breakdown"
+            title="Monthly Wind Speed Profile & 16-Sector Breakdown"
             subtitle="Monthly average wind velocity (m/s) and directional sector temperature averages"
             icon={<Compass className="w-4 h-4 text-teal-600" />}
             svgFilename={`${climate.id}_monthly_wind.svg`}
@@ -487,7 +522,7 @@ export const SubTab5Wind: React.FC<{
           >
             {(svgRef) => {
               const W = 500;
-              const H = 190;
+              const H = 175;
               const padL = 36;
               const padR = 16;
               const padT = 16;
@@ -539,11 +574,11 @@ export const SubTab5Wind: React.FC<{
                     })}
                   </svg>
 
-                  <div className="grid grid-cols-4 gap-1.5 text-[10px]">
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5 text-[10px]">
                     {windStats.sectors.map((s) => (
-                      <div key={s.dir} className="bg-slate-50 p-2 rounded-lg border border-slate-200 flex justify-between">
+                      <div key={s.dir} className="bg-slate-50 px-2 py-1.5 rounded-lg border border-slate-200 flex justify-between items-center">
                         <span className="font-bold text-slate-800">{s.dir}: {s.totalPct}%</span>
-                        <span className="text-slate-500">{s.avgSpeed}m/s • {s.avgTemp}°C</span>
+                        <span className="text-slate-500 text-[9.5px]">{s.avgSpeed}m/s • {s.avgTemp}°C</span>
                       </div>
                     ))}
                   </div>
@@ -637,7 +672,7 @@ export const SubTab6Psychrometric: React.FC<{
   setActiveStrategiesList,
   strategyMods
 }) => {
-  const [colorBy, setColorBy] = useState<'frequency' | 'ghi' | 'utci'>('ghi');
+  const [colorBy, setColorBy] = useState<'frequency' | 'ghi' | 'utci'>('frequency');
   const [enabledPolygons, setEnabledPolygons] = useState<Record<BioclimaticPolygonId, boolean>>({
     comfort: true,
     passive_solar: true,
@@ -712,7 +747,7 @@ export const SubTab6Psychrometric: React.FC<{
         <div className="xl:col-span-7">
           <ClimaChartCard
             title="Interactive Psychrometric Chart (Dry-Bulb °C vs. Humidity Ratio g_w/kg_da)"
-            subtitle="8,760 hourly state points with curved constant-RH lines & Climate Consultant 6.0 strategy polygons"
+            subtitle="8,760h 2D frequency binning (ΔT = 1°C × ΔW = 0.5 g/kg), curved constant-RH lines & saturation-clipped polygons"
             icon={<Compass className="w-4 h-4 text-teal-600" />}
             svgFilename={`${climate.id}_psychrometric_chart.svg`}
             csvFilename={`${climate.id}_psychrometric_summary.csv`}
@@ -726,9 +761,9 @@ export const SubTab6Psychrometric: React.FC<{
                   <span className="text-slate-500 font-semibold">Color 8,760h Points By:</span>
                   {(
                     [
+                      { id: 'frequency', label: '2D Frequency Bin (hrs)' },
                       { id: 'ghi', label: 'Global Solar (GHI Wh/m²)' },
-                      { id: 'utci', label: 'UTCI Thermal Stress (°C)' },
-                      { id: 'frequency', label: 'Comfort / Regime Bin' }
+                      { id: 'utci', label: 'UTCI Thermal Stress (°C)' }
                     ] as const
                   ).map((mode) => (
                     <button
@@ -761,13 +796,14 @@ export const SubTab6Psychrometric: React.FC<{
               const tMin = -10;
               const tMax = 45;
               const wMax = 26;
+              const meanPressurePa = climate.hourly[0]?.pressurePa ?? 101325;
               const xForT = (t: number) => padL + ((t - tMin) / (tMax - tMin)) * plotW;
               const yForW = (w: number) => padT + plotH - (Math.min(wMax, Math.max(0, w)) / wMax) * plotH;
 
               const buildRhCurve = (rh: number) => {
                 const pts: string[] = [];
-                for (let t = tMin; t <= tMax; t += 1.5) {
-                  const w = calcHumidityRatio(t, rh);
+                for (let t = tMin; t <= tMax; t += 1.0) {
+                  const w = calcHumidityRatio(t, rh, meanPressurePa);
                   if (w <= wMax) {
                     pts.push(`${xForT(t).toFixed(1)},${yForW(w).toFixed(1)}`);
                   }
@@ -775,112 +811,163 @@ export const SubTab6Psychrometric: React.FC<{
                 return pts.join(' ');
               };
 
-              // Sample every 4th hour (2,190 points) for crisp interactive SVG rendering
-              const sampled = climate.hourly.filter((_, idx) => idx % 4 === 0);
+              // Build 2D frequency bins (ΔT = 1°C, ΔW = 0.5 g/kg) matching CBE Clima Psychrometric histogram2d
+              const freqBins: Array<{ tBin: number; wBin: number; count: number }> = [];
+              let maxBinCount = 1;
+              if (colorBy === 'frequency') {
+                const binMap = new Map<string, { tBin: number; wBin: number; count: number }>();
+                for (const h of climate.hourly) {
+                  const tBin = Math.floor(Math.max(tMin, Math.min(tMax - 1, h.dryBulb)));
+                  const wBin = Math.floor(Math.max(0, Math.min(wMax - 0.5, h.humRatio)) * 2) / 2;
+                  const key = `${tBin}_${wBin}`;
+                  const existing = binMap.get(key);
+                  if (existing) {
+                    existing.count++;
+                    if (existing.count > maxBinCount) maxBinCount = existing.count;
+                  } else {
+                    binMap.set(key, { tBin, wBin, count: 1 });
+                  }
+                }
+                freqBins.push(...binMap.values());
+              }
+
+              // Sample every 2nd hour (4,380 points) when coloring by GHI or UTCI
+              const sampled = colorBy === 'frequency' ? [] : climate.hourly.filter((_, idx) => idx % 2 === 0);
 
               return (
-                <svg ref={svgRef} viewBox={`0 0 ${W} ${H}`} className="w-full h-auto bg-slate-50 rounded-xl border border-slate-200">
-                  {/* Vertical Dry-Bulb Grid */}
-                  {[-10, -5, 0, 5, 10, 15, 20, 25, 30, 35, 40, 45].map((t) => (
-                    <g key={t}>
-                      <line x1={xForT(t)} y1={padT} x2={xForT(t)} y2={H - padB} stroke="#e2e8f0" strokeWidth={0.8} />
-                      <text x={xForT(t)} y={H - 10} textAnchor="middle" fontSize="8.5" fill="#475569" fontWeight="600">
-                        {t}°C
-                      </text>
-                    </g>
-                  ))}
-
-                  {/* Horizontal Humidity Ratio Grid (Right Y-Axis) */}
-                  {[0, 4, 8, 12, 16, 20, 24].map((w) => (
-                    <g key={w}>
-                      <line x1={padL} y1={yForW(w)} x2={W - padR} y2={yForW(w)} stroke="#e2e8f0" strokeWidth={0.8} />
-                      <text x={W - padR + 5} y={yForW(w) + 3} fontSize="8.5" fill="#475569" fontWeight="600">
-                        {w} g/kg
-                      </text>
-                    </g>
-                  ))}
-
-                  {/* Constant Relative Humidity Curves (20%, 40%, 60%, 80%, 100%) */}
-                  {[20, 40, 60, 80, 100].map((rh) => (
-                    <polyline
-                      key={rh}
-                      fill="none"
-                      stroke={rh === 100 ? '#0284c7' : '#94a3b8'}
-                      strokeWidth={rh === 100 ? 1.8 : 1}
-                      strokeDasharray={rh === 100 ? undefined : '3 3'}
-                      points={buildRhCurve(rh)}
-                    />
-                  ))}
-
-                  {/* Hourly Cloud Points */}
-                  {sampled.map((h, i) => {
-                    let fill = '#3b82f6';
-                    if (colorBy === 'ghi') {
-                      fill =
-                        h.ghi > 600
-                          ? '#e11d48'
-                          : h.ghi > 300
-                          ? '#f59e0b'
-                          : h.ghi > 50
-                          ? '#10b981'
-                          : '#3b82f6';
-                    } else if (colorBy === 'utci') {
-                      fill =
-                        h.utci > 32
-                          ? '#e11d48'
-                          : h.utci > 26
-                          ? '#f59e0b'
-                          : h.utci >= 9
-                          ? '#10b981'
-                          : '#0284c7';
-                    } else {
-                      fill =
-                        h.dryBulb >= comfortLower && h.dryBulb <= comfortUpper
-                          ? '#10b981'
-                          : h.dryBulb > comfortUpper
-                          ? '#f43f5e'
-                          : '#0284c7';
-                    }
-                    return (
-                      <circle
-                        key={i}
-                        cx={xForT(h.dryBulb)}
-                        cy={yForW(h.humRatio)}
-                        r={1.9}
-                        fill={fill}
-                        fillOpacity={0.45}
-                      />
-                    );
-                  })}
-
-                  {/* Overlay Enabled Bioclimatic Strategy Polygons */}
-                  {polygons.map((poly) => {
-                    if (!enabledPolygons[poly.id]) return null;
-                    const pts = poly.points.map(([t, w]) => `${xForT(t).toFixed(1)},${yForW(w).toFixed(1)}`).join(' ');
-                    const cx = poly.points.reduce((s, p) => s + xForT(p[0]), 0) / poly.points.length;
-                    const cy = poly.points.reduce((s, p) => s + yForW(p[1]), 0) / poly.points.length;
-                    return (
-                      <g key={poly.id}>
-                        <polygon
-                          points={pts}
-                          fill={poly.fillColor}
-                          stroke={poly.color}
-                          strokeWidth={2}
-                        />
-                        <text
-                          x={cx}
-                          y={cy}
-                          textAnchor="middle"
-                          fontSize="8.5"
-                          fontWeight="800"
-                          fill={poly.color}
-                        >
-                          {poly.shortName}
+                <div className="space-y-1.5">
+                  <svg ref={svgRef} viewBox={`0 0 ${W} ${H}`} className="w-full h-auto bg-slate-50 rounded-xl border border-slate-200">
+                    {/* Vertical Dry-Bulb Grid */}
+                    {[-10, -5, 0, 5, 10, 15, 20, 25, 30, 35, 40, 45].map((t) => (
+                      <g key={t}>
+                        <line x1={xForT(t)} y1={padT} x2={xForT(t)} y2={H - padB} stroke="#e2e8f0" strokeWidth={0.8} />
+                        <text x={xForT(t)} y={H - 10} textAnchor="middle" fontSize="8.5" fill="#475569" fontWeight="600">
+                          {t}°C
                         </text>
                       </g>
-                    );
-                  })}
-                </svg>
+                    ))}
+
+                    {/* Horizontal Humidity Ratio Grid (Right Y-Axis) */}
+                    {[0, 4, 8, 12, 16, 20, 24].map((w) => (
+                      <g key={w}>
+                        <line x1={padL} y1={yForW(w)} x2={W - padR} y2={yForW(w)} stroke="#e2e8f0" strokeWidth={0.8} />
+                        <text x={W - padR + 5} y={yForW(w) + 3} fontSize="8.5" fill="#475569" fontWeight="600">
+                          {w} g/kg
+                        </text>
+                      </g>
+                    ))}
+
+                    {/* Constant Relative Humidity Curves (20%, 40%, 60%, 80%, 100%) */}
+                    {[20, 40, 60, 80, 100].map((rh) => (
+                      <polyline
+                        key={rh}
+                        fill="none"
+                        stroke={rh === 100 ? '#0284c7' : '#94a3b8'}
+                        strokeWidth={rh === 100 ? 1.8 : 1}
+                        strokeDasharray={rh === 100 ? undefined : '3 3'}
+                        points={buildRhCurve(rh)}
+                      />
+                    ))}
+
+                    {/* 2D Frequency Bin Heatmap (CBE Clima Default Mode) */}
+                    {colorBy === 'frequency' &&
+                      freqBins.map((b, idx) => {
+                        const cellW = plotW / (tMax - tMin);
+                        const cellH = (0.5 / wMax) * plotH;
+                        const x = xForT(b.tBin);
+                        const y = yForW(b.wBin + 0.5);
+                        const norm = Math.sqrt(b.count / maxBinCount);
+                        const fill = interpolatePalette(YLORRD_WIND_STOPS, norm);
+                        return (
+                          <rect
+                            key={idx}
+                            x={x}
+                            y={y}
+                            width={cellW + 0.4}
+                            height={cellH + 0.4}
+                            fill={fill}
+                            fillOpacity={0.82}
+                          />
+                        );
+                      })}
+
+                    {/* Hourly Cloud Points (GHI / UTCI Mode) */}
+                    {sampled.map((h, i) => {
+                      let fill = '#3b82f6';
+                      if (colorBy === 'ghi') {
+                        fill =
+                          h.ghi > 600
+                            ? '#e11d48'
+                            : h.ghi > 300
+                            ? '#f59e0b'
+                            : h.ghi > 50
+                            ? '#10b981'
+                            : '#3b82f6';
+                      } else if (colorBy === 'utci') {
+                        fill =
+                          h.utci > 32
+                            ? '#e11d48'
+                            : h.utci > 26
+                            ? '#f59e0b'
+                            : h.utci >= 9
+                            ? '#10b981'
+                            : '#0284c7';
+                      }
+                      return (
+                        <circle
+                          key={i}
+                          cx={xForT(h.dryBulb)}
+                          cy={yForW(h.humRatio)}
+                          r={1.7}
+                          fill={fill}
+                          fillOpacity={0.45}
+                        />
+                      );
+                    })}
+
+                    {/* Overlay Enabled Bioclimatic Strategy Polygons (Clipped to 100% RH Saturation Curve) */}
+                    {polygons.map((poly) => {
+                      if (!enabledPolygons[poly.id]) return null;
+                      const clippedPts = poly.points.map(([t, w]) => {
+                        const wSat = calcHumidityRatio(t, 100, meanPressurePa);
+                        return [t, Math.min(w, wSat)] as [number, number];
+                      });
+                      const pts = clippedPts.map(([t, w]) => `${xForT(t).toFixed(1)},${yForW(w).toFixed(1)}`).join(' ');
+                      const cx = clippedPts.reduce((s, p) => s + xForT(p[0]), 0) / clippedPts.length;
+                      const cy = clippedPts.reduce((s, p) => s + yForW(p[1]), 0) / clippedPts.length;
+                      return (
+                        <g key={poly.id}>
+                          <polygon
+                            points={pts}
+                            fill={poly.fillColor}
+                            stroke={poly.color}
+                            strokeWidth={2}
+                          />
+                          <text
+                            x={cx}
+                            y={cy}
+                            textAnchor="middle"
+                            fontSize="8.5"
+                            fontWeight="800"
+                            fill={poly.color}
+                          >
+                            {poly.shortName}
+                          </text>
+                        </g>
+                      );
+                    })}
+                  </svg>
+                  <div className="flex flex-wrap items-center justify-between text-[10px] text-slate-600 px-1">
+                    <span>
+                      Station Pressure: <strong>{Math.round(meanPressurePa)} Pa</strong> • Saturation Curve: <strong className="text-sky-600">100% RH</strong>
+                    </span>
+                    {colorBy === 'frequency' && (
+                      <span>
+                        Max Bin Density: <strong className="text-rose-600">{maxBinCount} hrs / bin</strong> (ΔT=1°C × ΔW=0.5 g/kg)
+                      </span>
+                    )}
+                  </div>
+                </div>
               );
             }}
           </ClimaChartCard>

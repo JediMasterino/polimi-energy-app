@@ -1,5 +1,5 @@
-import React, { createContext, useContext, useState, useMemo } from 'react';
-import { ClimateDataset } from '../utils/epwEngine';
+import React, { createContext, useContext, useState, useMemo, useEffect } from 'react';
+import { ClimateDataset, fetchPresetOfficialEpw } from '../utils/epwEngine';
 import { morphClimateDataset } from '../utils/epwParser';
 import {
   INITIAL_CLIMATE_PRESETS,
@@ -345,6 +345,21 @@ export const DesignProjectProvider: React.FC<{ children: React.ReactNode }> = ({
     setCustomClimates((prev) => ({ ...prev, [ds.id]: ds }));
     setClimateId(ds.id);
   };
+
+  // Automatically hydrate built-in presets with their official 8,760-hour DOE EnergyPlus .epw weather files
+  useEffect(() => {
+    let cancelled = false;
+    if (INITIAL_CLIMATE_PRESETS[climateId] && !customClimates[climateId]) {
+      fetchPresetOfficialEpw(climateId).then((officialDs) => {
+        if (!cancelled && officialDs) {
+          setCustomClimates((prev) => ({ ...prev, [climateId]: officialDs }));
+        }
+      });
+    }
+    return () => {
+      cancelled = true;
+    };
+  }, [climateId, customClimates]);
 
   const toggleStrategy = (id: string) => {
     setActiveStrategies((prev) =>

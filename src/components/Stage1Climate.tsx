@@ -40,6 +40,7 @@ import {
   ClimaChartCard,
   CarpetHeatmap24x365,
   colorForTempC,
+  colorForRhPct,
   SubTab5Wind,
   SubTab6Psychrometric,
   SubTab7NatVent,
@@ -104,9 +105,12 @@ export const Stage1Climate: React.FC = () => {
   const [copiedAnnotation, setCopiedAnnotation] = useState(false);
   const dropInputRef = useRef<HTMLInputElement | null>(null);
 
-  // Sub-Tab 2: Degree Days Base Temp controls
+  // Sub-Tab 2: Degree Days Base Temp controls (CBE Clima defaults: Heating 18°C, Cooling 10°C)
   const [hddBaseC, setHddBaseC] = useState<number>(18);
-  const [cddBaseC, setCddBaseC] = useState<number>(18);
+  const [cddBaseC, setCddBaseC] = useState<number>(10);
+
+  // Sub-Tab 3: Diurnal Facet View Mode
+  const [diurnalMetric, setDiurnalMetric] = useState<'temp' | 'rh' | 'both'>('both');
 
   // Sub-Tab 4: Sun Path & Shading Protractor controls (Improvement #2)
   const [sunProjection, setSunProjection] = useState<'polar' | 'cartesian'>('polar');
@@ -689,10 +693,10 @@ export const Stage1Climate: React.FC = () => {
             </div>
           </div>
 
-          {/* Interactive Monthly HDD / CDD Stacked Bar Chart */}
+          {/* Interactive Monthly HDD / CDD Grouped Bar Chart (CBE Clima Standard) */}
           <ClimaChartCard
             title={`Interactive Monthly Heating & Cooling Degree Days (HDD_${hddBaseC} = ${customDd.annualHdd} • CDD_${cddBaseC} = ${customDd.annualCdd})`}
-            subtitle="Dynamically integrated across all 8,760 hourly records for user-selected Heating and Cooling base temperatures"
+            subtitle="Computed from daily mean dry-bulb temperatures across 365 days (CBE Clima default: Heating Base 18°C, Cooling Base 10°C)"
             icon={<BarChart3 className="w-4 h-4 text-rose-500" />}
             svgFilename={`${climate.id}_hdd_cdd.svg`}
             csvFilename={`${climate.id}_hdd_cdd.csv`}
@@ -701,105 +705,165 @@ export const Stage1Climate: React.FC = () => {
               rows: MONTHS.map((m, i) => [m, customDd.monthlyHdd[i], customDd.monthlyCdd[i]])
             })}
             controls={
-              <div className="flex flex-wrap items-center gap-6 bg-slate-50 px-3 py-2 rounded-xl border border-slate-200 text-xs">
-                <label className="flex items-center gap-2 font-semibold text-sky-800">
-                  <span>Heating Base Temp: <strong>{hddBaseC}°C</strong></span>
-                  <input
-                    type="range"
-                    min={10}
-                    max={22}
-                    step={1}
-                    value={hddBaseC}
-                    onChange={(e) => setHddBaseC(Number(e.target.value))}
-                    className="w-28 accent-sky-600"
-                  />
-                </label>
-                <label className="flex items-center gap-2 font-semibold text-rose-800">
-                  <span>Cooling Base Temp: <strong>{cddBaseC}°C</strong></span>
-                  <input
-                    type="range"
-                    min={16}
-                    max={28}
-                    step={1}
-                    value={cddBaseC}
-                    onChange={(e) => setCddBaseC(Number(e.target.value))}
-                    className="w-28 accent-rose-600"
-                  />
-                </label>
+              <div className="flex flex-wrap items-center justify-between gap-4 bg-slate-50 px-3 py-2 rounded-xl border border-slate-200 text-xs">
+                <div className="flex flex-wrap items-center gap-5">
+                  <label className="flex items-center gap-2 font-semibold text-sky-800">
+                    <span>Heating Base Temp: <strong>{hddBaseC}°C</strong></span>
+                    <input
+                      type="range"
+                      min={10}
+                      max={22}
+                      step={1}
+                      value={hddBaseC}
+                      onChange={(e) => setHddBaseC(Number(e.target.value))}
+                      className="w-28 accent-sky-600"
+                    />
+                  </label>
+                  <label className="flex items-center gap-2 font-semibold text-rose-800">
+                    <span>Cooling Base Temp: <strong>{cddBaseC}°C</strong></span>
+                    <input
+                      type="range"
+                      min={10}
+                      max={26}
+                      step={1}
+                      value={cddBaseC}
+                      onChange={(e) => setCddBaseC(Number(e.target.value))}
+                      className="w-28 accent-rose-600"
+                    />
+                  </label>
+                </div>
+                <div className="flex items-center gap-1.5 text-[11px]">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setHddBaseC(18);
+                      setCddBaseC(10);
+                    }}
+                    className={`px-2 py-1 rounded-lg font-bold border transition ${
+                      hddBaseC === 18 && cddBaseC === 10
+                        ? 'bg-slate-900 text-white border-slate-900'
+                        : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-100'
+                    }`}
+                  >
+                    CBE Clima (18°C / 10°C)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setHddBaseC(18);
+                      setCddBaseC(18);
+                    }}
+                    className={`px-2 py-1 rounded-lg font-bold border transition ${
+                      hddBaseC === 18 && cddBaseC === 18
+                        ? 'bg-slate-900 text-white border-slate-900'
+                        : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-100'
+                    }`}
+                  >
+                    ASHRAE (18°C / 18°C)
+                  </button>
+                </div>
               </div>
             }
           >
             {(svgRef) => {
               const W = 720;
-              const H = 205;
+              const H = 215;
               const padL = 42;
               const padR = 18;
-              const padT = 18;
-              const padB = 28;
+              const padT = 20;
+              const padB = 30;
               const plotW = W - padL - padR;
               const plotH = H - padT - padB;
               const maxVal = Math.max(
                 200,
-                ...MONTHS.map((_, i) => customDd.monthlyHdd[i] + customDd.monthlyCdd[i])
+                ...MONTHS.map((_, i) => Math.max(customDd.monthlyHdd[i], customDd.monthlyCdd[i]))
               );
               const xForM = (i: number) => padL + (i + 0.5) * (plotW / 12);
 
               return (
-                <svg ref={svgRef} viewBox={`0 0 ${W} ${H}`} className="w-full h-auto">
-                  {[0, 0.25, 0.5, 0.75, 1].map((f, idx) => {
-                    const v = Math.round(maxVal * f);
-                    const y = padT + plotH - f * plotH;
-                    return (
-                      <g key={idx}>
-                        <line x1={padL} y1={y} x2={W - padR} y2={y} stroke="#f1f5f9" />
-                        <text x={padL - 6} y={y + 3} textAnchor="end" fontSize="8.5" fill="#64748b">
-                          {v}
-                        </text>
-                      </g>
-                    );
-                  })}
+                <div className="space-y-1.5">
+                  <svg ref={svgRef} viewBox={`0 0 ${W} ${H}`} className="w-full h-auto">
+                    {[0, 0.25, 0.5, 0.75, 1].map((f, idx) => {
+                      const v = Math.round(maxVal * f);
+                      const y = padT + plotH - f * plotH;
+                      return (
+                        <g key={idx}>
+                          <line x1={padL} y1={y} x2={W - padR} y2={y} stroke="#f1f5f9" />
+                          <text x={padL - 6} y={y + 3} textAnchor="end" fontSize="8.5" fill="#64748b">
+                            {v}
+                          </text>
+                        </g>
+                      );
+                    })}
 
-                  {MONTHS.map((m, i) => {
-                    const hdd = customDd.monthlyHdd[i];
-                    const cdd = customDd.monthlyCdd[i];
-                    const hHdd = (hdd / maxVal) * plotH;
-                    const hCdd = (cdd / maxVal) * plotH;
-                    const x = xForM(i);
-                    return (
-                      <g key={m}>
-                        <rect
-                          x={x - 14}
-                          y={padT + plotH - hHdd}
-                          width={28}
-                          height={Math.max(1, hHdd)}
-                          fill="#0284c7"
-                          rx={2}
-                        />
-                        <rect
-                          x={x - 14}
-                          y={padT + plotH - hHdd - hCdd}
-                          width={28}
-                          height={Math.max(0, hCdd)}
-                          fill="#e11d48"
-                          rx={2}
-                        />
-                        <text
-                          x={x}
-                          y={padT + plotH - hHdd - hCdd - 4}
-                          textAnchor="middle"
-                          fontSize="8"
-                          fontWeight="700"
-                          fill="#334155"
-                        >
-                          {hdd + cdd}
-                        </text>
-                        <text x={x} y={H - 8} textAnchor="middle" fontSize="9" fontWeight="600" fill="#475569">
-                          {m}
-                        </text>
-                      </g>
-                    );
-                  })}
-                </svg>
+                    {MONTHS.map((m, i) => {
+                      const hdd = customDd.monthlyHdd[i];
+                      const cdd = customDd.monthlyCdd[i];
+                      const hHdd = (hdd / maxVal) * plotH;
+                      const hCdd = (cdd / maxVal) * plotH;
+                      const x = xForM(i);
+                      return (
+                        <g key={m}>
+                          {/* Grouped HDD Bar (Left, Blue) */}
+                          <rect
+                            x={x - 15}
+                            y={padT + plotH - hHdd}
+                            width={14}
+                            height={Math.max(1, hHdd)}
+                            fill="#0284c7"
+                            rx={2}
+                          />
+                          {hdd > 0 && (
+                            <text
+                              x={x - 8}
+                              y={padT + plotH - hHdd - 3}
+                              textAnchor="middle"
+                              fontSize="7.5"
+                              fontWeight="700"
+                              fill="#0369a1"
+                            >
+                              {hdd}
+                            </text>
+                          )}
+                          {/* Grouped CDD Bar (Right, Red) */}
+                          <rect
+                            x={x + 1}
+                            y={padT + plotH - hCdd}
+                            width={14}
+                            height={Math.max(1, hCdd)}
+                            fill="#e11d48"
+                            rx={2}
+                          />
+                          {cdd > 0 && (
+                            <text
+                              x={x + 8}
+                              y={padT + plotH - hCdd - 3}
+                              textAnchor="middle"
+                              fontSize="7.5"
+                              fontWeight="700"
+                              fill="#be123c"
+                            >
+                              {cdd}
+                            </text>
+                          )}
+                          <text x={x} y={H - 8} textAnchor="middle" fontSize="9" fontWeight="600" fill="#475569">
+                            {m}
+                          </text>
+                        </g>
+                      );
+                    })}
+                  </svg>
+                  <div className="flex items-center justify-center gap-6 text-[11px] font-bold">
+                    <span className="flex items-center gap-1.5 text-sky-700">
+                      <span className="w-3 h-3 rounded-sm bg-sky-600 inline-block" />
+                      Heating Degree Days (HDD_{hddBaseC}°C = {customDd.annualHdd} K·d)
+                    </span>
+                    <span className="flex items-center gap-1.5 text-rose-700">
+                      <span className="w-3 h-3 rounded-sm bg-rose-600 inline-block" />
+                      Cooling Degree Days (CDD_{cddBaseC}°C = {customDd.annualCdd} K·d)
+                    </span>
+                  </div>
+                </div>
               );
             }}
           </ClimaChartCard>
@@ -898,135 +962,224 @@ export const Stage1Climate: React.FC = () => {
       )}
 
       {/* =====================================================================
-          SUB-TAB 3: TEMPERATURE & HUMIDITY (365d ADAPTIVE BANDS + 12 DIURNALS + HEATMAPS + STATS TABLE)
+          SUB-TAB 3: TEMPERATURE & HUMIDITY (365d ADAPTIVE BANDS + 365d RH + 12 DIURNALS + HEATMAPS + STATS TABLE)
          ===================================================================== */}
       {activeSubTab === 'temp_rh' && (
         <div className="space-y-5">
-          {/* 1. Yearly Dry-Bulb Temp Chart with 7-Day Running Mean ASHRAE 80% & 90% Adaptive Bands */}
-          <ClimaChartCard
-            title="Yearly Dry-Bulb Temperature Range (365 Days) & ASHRAE 55 Adaptive Thermal Comfort Bands"
-            subtitle="Daily Min–Max bars, daily mean curve, and 7-day exponentially weighted running mean (α = 0.9) 80% (±3.5K) & 90% (±2.5K) acceptability bands"
-            icon={<Thermometer className="w-4 h-4 text-rose-500" />}
-            svgFilename={`${climate.id}_yearly_temp_adaptive.svg`}
-            csvFilename={`${climate.id}_daily_adaptive_365.csv`}
-            onBuildCsv={() => ({
-              headers: ['DayOfYear', 'Month', 'Day', 'T_min', 'T_mean', 'T_max', 'T_runningMean', 'ASHRAE_Neutral', 'ASHRAE_80_Upper', 'ASHRAE_80_Lower', 'ASHRAE_90_Upper', 'ASHRAE_90_Lower'],
-              rows: dailyAdaptive.map((d) => [
-                d.dayOfYear,
-                d.month + 1,
-                d.dayOfMonth,
-                d.tMin,
-                d.tMean,
-                d.tMax,
-                d.tRunningMean,
-                d.ashraeNeutral,
-                d.ashrae80Upper,
-                d.ashrae80Lower,
-                d.ashrae90Upper,
-                d.ashrae90Lower
-              ])
-            })}
-          >
-            {(svgRef) => {
-              const W = 780;
-              const H = 225;
-              const padL = 38;
-              const padR = 16;
-              const padT = 14;
-              const padB = 26;
-              const plotW = W - padL - padR;
-              const plotH = H - padT - padB;
-              const tMin = globalValueRanges ? -25 : Math.min(-5, ...dailyAdaptive.map((d) => d.tMin));
-              const tMax = globalValueRanges ? 48 : Math.max(38, ...dailyAdaptive.map((d) => d.tMax));
-              const xForD = (d: number) => padL + ((d - 1) / 364) * plotW;
-              const yForT = (t: number) => padT + plotH - ((t - tMin) / Math.max(1, tMax - tMin)) * plotH;
+          {/* 1. Yearly Dry-Bulb Temp & Yearly Relative Humidity Charts (365 Days) */}
+          <div className="grid grid-cols-1 xl:grid-cols-2 gap-5">
+            <ClimaChartCard
+              title="Yearly Dry-Bulb Temperature (365d) & ASHRAE 55 Adaptive Bands"
+              subtitle="Daily Min–Max bars, daily mean curve, and 7-day running mean (α = 0.9) 80% (±3.5K) & 90% (±2.5K) bands"
+              icon={<Thermometer className="w-4 h-4 text-rose-500" />}
+              svgFilename={`${climate.id}_yearly_temp_adaptive.svg`}
+              csvFilename={`${climate.id}_daily_adaptive_365.csv`}
+              onBuildCsv={() => ({
+                headers: ['DayOfYear', 'Month', 'Day', 'T_min', 'T_mean', 'T_max', 'T_runningMean', 'ASHRAE_Neutral', 'ASHRAE_80_Upper', 'ASHRAE_80_Lower', 'ASHRAE_90_Upper', 'ASHRAE_90_Lower'],
+                rows: dailyAdaptive.map((d) => [
+                  d.dayOfYear,
+                  d.month + 1,
+                  d.dayOfMonth,
+                  d.tMin,
+                  d.tMean,
+                  d.tMax,
+                  d.tRunningMean,
+                  d.ashraeNeutral,
+                  d.ashrae80Upper,
+                  d.ashrae80Lower,
+                  d.ashrae90Upper,
+                  d.ashrae90Lower
+                ])
+              })}
+            >
+              {(svgRef) => {
+                const W = 720;
+                const H = 225;
+                const padL = 38;
+                const padR = 16;
+                const padT = 14;
+                const padB = 26;
+                const plotW = W - padL - padR;
+                const plotH = H - padT - padB;
+                const tMin = globalValueRanges ? -25 : Math.min(-5, ...dailyAdaptive.map((d) => d.tMin));
+                const tMax = globalValueRanges ? 48 : Math.max(38, ...dailyAdaptive.map((d) => d.tMax));
+                const xForD = (d: number) => padL + ((d - 1) / 364) * plotW;
+                const yForT = (t: number) => padT + plotH - ((t - tMin) / Math.max(1, tMax - tMin)) * plotH;
 
-              const poly80Points = [
-                ...dailyAdaptive.map((d) => `${xForD(d.dayOfYear).toFixed(1)},${yForT(d.ashrae80Upper).toFixed(1)}`),
-                ...[...dailyAdaptive]
-                  .reverse()
-                  .map((d) => `${xForD(d.dayOfYear).toFixed(1)},${yForT(d.ashrae80Lower).toFixed(1)}`)
-              ].join(' ');
+                const poly80Points = [
+                  ...dailyAdaptive.map((d) => `${xForD(d.dayOfYear).toFixed(1)},${yForT(d.ashrae80Upper).toFixed(1)}`),
+                  ...[...dailyAdaptive]
+                    .reverse()
+                    .map((d) => `${xForD(d.dayOfYear).toFixed(1)},${yForT(d.ashrae80Lower).toFixed(1)}`)
+                ].join(' ');
 
-              const poly90Points = [
-                ...dailyAdaptive.map((d) => `${xForD(d.dayOfYear).toFixed(1)},${yForT(d.ashrae90Upper).toFixed(1)}`),
-                ...[...dailyAdaptive]
-                  .reverse()
-                  .map((d) => `${xForD(d.dayOfYear).toFixed(1)},${yForT(d.ashrae90Lower).toFixed(1)}`)
-              ].join(' ');
+                const poly90Points = [
+                  ...dailyAdaptive.map((d) => `${xForD(d.dayOfYear).toFixed(1)},${yForT(d.ashrae90Upper).toFixed(1)}`),
+                  ...[...dailyAdaptive]
+                    .reverse()
+                    .map((d) => `${xForD(d.dayOfYear).toFixed(1)},${yForT(d.ashrae90Lower).toFixed(1)}`)
+                ].join(' ');
 
-              const meanPoints = dailyAdaptive
-                .map((d) => `${xForD(d.dayOfYear).toFixed(1)},${yForT(d.tMean).toFixed(1)}`)
-                .join(' ');
+                const meanPoints = dailyAdaptive
+                  .map((d) => `${xForD(d.dayOfYear).toFixed(1)},${yForT(d.tMean).toFixed(1)}`)
+                  .join(' ');
 
-              return (
-                <svg ref={svgRef} viewBox={`0 0 ${W} ${H}`} className="w-full h-auto">
-                  {[-10, 0, 10, 20, 30, 40].map((val) => {
-                    if (val < tMin || val > tMax) return null;
-                    const y = yForT(val);
-                    return (
-                      <g key={val}>
-                        <line x1={padL} y1={y} x2={W - padR} y2={y} stroke="#f1f5f9" />
-                        <text x={padL - 5} y={y + 3} textAnchor="end" fontSize="8.5" fill="#64748b">
-                          {val}°C
-                        </text>
-                      </g>
-                    );
-                  })}
+                return (
+                  <svg ref={svgRef} viewBox={`0 0 ${W} ${H}`} className="w-full h-auto">
+                    {[-10, 0, 10, 20, 30, 40].map((val) => {
+                      if (val < tMin || val > tMax) return null;
+                      const y = yForT(val);
+                      return (
+                        <g key={val}>
+                          <line x1={padL} y1={y} x2={W - padR} y2={y} stroke="#f1f5f9" />
+                          <text x={padL - 5} y={y + 3} textAnchor="end" fontSize="8.5" fill="#64748b">
+                            {val}°C
+                          </text>
+                        </g>
+                      );
+                    })}
 
-                  {/* ASHRAE 80% & 90% Adaptive Comfort Bands */}
-                  <polygon points={poly80Points} fill="#10b981" fillOpacity={0.14} />
-                  <polygon points={poly90Points} fill="#059669" fillOpacity={0.22} />
+                    {/* ASHRAE 80% & 90% Adaptive Comfort Bands */}
+                    <polygon points={poly80Points} fill="#10b981" fillOpacity={0.14} />
+                    <polygon points={poly90Points} fill="#059669" fillOpacity={0.22} />
 
-                  {/* Daily Min-Max Range Bars */}
-                  {dailyAdaptive.map((d) => {
-                    const x = xForD(d.dayOfYear);
-                    const y1 = yForT(d.tMax);
-                    const y2 = yForT(d.tMin);
-                    return (
+                    {/* Daily Min-Max Range Bars */}
+                    {dailyAdaptive.map((d) => {
+                      const x = xForD(d.dayOfYear);
+                      const y1 = yForT(d.tMax);
+                      const y2 = yForT(d.tMin);
+                      return (
+                        <line
+                          key={d.dayOfYear}
+                          x1={x}
+                          y1={y1}
+                          x2={x}
+                          y2={y2}
+                          stroke="#94a3b8"
+                          strokeWidth={1.1}
+                          strokeOpacity={0.65}
+                        />
+                      );
+                    })}
+
+                    {/* Daily Mean Curve */}
+                    <polyline fill="none" stroke="#e11d48" strokeWidth={1.5} points={meanPoints} />
+
+                    {MONTHS.map((m, i) => (
+                      <text
+                        key={m}
+                        x={padL + (i + 0.5) * (plotW / 12)}
+                        y={H - 8}
+                        textAnchor="middle"
+                        fontSize="9"
+                        fontWeight="600"
+                        fill="#475569"
+                      >
+                        {m}
+                      </text>
+                    ))}
+                  </svg>
+                );
+              }}
+            </ClimaChartCard>
+
+            {/* Yearly Relative Humidity Chart (365 Days) - CBE Clima Standard */}
+            <ClimaChartCard
+              title="Yearly Relative Humidity Range (365d) & 30%–70% Comfort Band"
+              subtitle="Daily Min–Max relative humidity range bars, daily mean curve (blue), and indoor/outdoor RH comfort band"
+              icon={<Wind className="w-4 h-4 text-sky-500" />}
+              svgFilename={`${climate.id}_yearly_rh_365.svg`}
+              csvFilename={`${climate.id}_daily_rh_365.csv`}
+              onBuildCsv={() => ({
+                headers: ['DayOfYear', 'Month', 'Day', 'RH_min_%', 'RH_mean_%', 'RH_max_%'],
+                rows: dailyAdaptive.map((d) => [d.dayOfYear, d.month + 1, d.dayOfMonth, d.rhMin, d.rhMean, d.rhMax])
+              })}
+            >
+              {(svgRef) => {
+                const W = 720;
+                const H = 225;
+                const padL = 38;
+                const padR = 16;
+                const padT = 14;
+                const padB = 26;
+                const plotW = W - padL - padR;
+                const plotH = H - padT - padB;
+                const xForD = (d: number) => padL + ((d - 1) / 364) * plotW;
+                const yForRh = (rh: number) => padT + plotH - (Math.max(0, Math.min(100, rh)) / 100) * plotH;
+
+                const rhMeanPts = dailyAdaptive
+                  .map((d) => `${xForD(d.dayOfYear).toFixed(1)},${yForRh(d.rhMean).toFixed(1)}`)
+                  .join(' ');
+
+                return (
+                  <svg ref={svgRef} viewBox={`0 0 ${W} ${H}`} className="w-full h-auto">
+                    {[0, 20, 40, 60, 80, 100].map((val) => {
+                      const y = yForRh(val);
+                      return (
+                        <g key={val}>
+                          <line x1={padL} y1={y} x2={W - padR} y2={y} stroke="#f1f5f9" />
+                          <text x={padL - 5} y={y + 3} textAnchor="end" fontSize="8.5" fill="#64748b">
+                            {val}%
+                          </text>
+                        </g>
+                      );
+                    })}
+
+                    {/* 30% - 70% Relative Humidity Comfort Band */}
+                    <rect
+                      x={padL}
+                      y={yForRh(70)}
+                      width={plotW}
+                      height={yForRh(30) - yForRh(70)}
+                      fill="#10b981"
+                      fillOpacity={0.12}
+                    />
+
+                    {/* Daily RH Min-Max Range Bars */}
+                    {dailyAdaptive.map((d) => (
                       <line
                         key={d.dayOfYear}
-                        x1={x}
-                        y1={y1}
-                        x2={x}
-                        y2={y2}
-                        stroke="#94a3b8"
+                        x1={xForD(d.dayOfYear)}
+                        y1={yForRh(d.rhMax)}
+                        x2={xForD(d.dayOfYear)}
+                        y2={yForRh(d.rhMin)}
+                        stroke="#93c5fd"
                         strokeWidth={1.1}
-                        strokeOpacity={0.65}
+                        strokeOpacity={0.7}
                       />
-                    );
-                  })}
+                    ))}
 
-                  {/* Daily Mean Curve */}
-                  <polyline fill="none" stroke="#e11d48" strokeWidth={1.5} points={meanPoints} />
+                    {/* Daily Mean RH Curve */}
+                    <polyline fill="none" stroke="#0284c7" strokeWidth={1.5} points={rhMeanPts} />
 
-                  {MONTHS.map((m, i) => (
-                    <text
-                      key={m}
-                      x={padL + (i + 0.5) * (plotW / 12)}
-                      y={H - 8}
-                      textAnchor="middle"
-                      fontSize="9"
-                      fontWeight="600"
-                      fill="#475569"
-                    >
-                      {m}
-                    </text>
-                  ))}
-                </svg>
-              );
-            }}
-          </ClimaChartCard>
+                    {MONTHS.map((m, i) => (
+                      <text
+                        key={m}
+                        x={padL + (i + 0.5) * (plotW / 12)}
+                        y={H - 8}
+                        textAnchor="middle"
+                        fontSize="9"
+                        fontWeight="600"
+                        fill="#475569"
+                      >
+                        {m}
+                      </text>
+                    ))}
+                  </svg>
+                );
+              }}
+            </ClimaChartCard>
+          </div>
 
           {/* 2. Diurnal Hourly Profiles: 12 Mini-Charts (Jan–Dec) with T_db & RH + Diurnal Swing ΔT (K) */}
           <ClimaChartCard
             title="Diurnal Hourly Profiles (12 Monthly Facets, Jan–Dec): Mean + 10th/90th Percentile Bands & Diurnal Swing ΔT (K)"
-            subtitle="Orange = Dry-Bulb Temperature (°C, 10th–90th band) • Dashed Blue = Relative Humidity (%, right scale)"
+            subtitle="Switch between dedicated Dry-Bulb Temp (°C), dedicated Relative Humidity (%), or Combined Diurnal Overlay"
             icon={<Activity className="w-4 h-4 text-amber-500" />}
-            svgFilename={`${climate.id}_diurnal_12months.svg`}
+            svgFilename={`${climate.id}_diurnal_12months_${diurnalMetric}.svg`}
             csvFilename={`${climate.id}_diurnal_12months.csv`}
             onBuildCsv={() => ({
-              headers: ['Month', 'Hour', 'T_db_P10', 'T_db_Mean', 'T_db_P90', 'RH_Mean_%', 'DiurnalSwing_K'],
+              headers: ['Month', 'Hour', 'T_db_P10', 'T_db_Mean', 'T_db_P90', 'RH_P10_%', 'RH_Mean_%', 'RH_P90_%', 'DiurnalSwing_K'],
               rows: monthlyDiurnals.flatMap((md) =>
                 Array.from({ length: 24 }, (_, hr) => [
                   md.monthName,
@@ -1034,11 +1187,37 @@ export const Stage1Climate: React.FC = () => {
                   md.hourlyTempP10[hr],
                   md.hourlyTempMean[hr],
                   md.hourlyTempP90[hr],
+                  md.hourlyRhP10[hr],
                   md.hourlyRhMean[hr],
+                  md.hourlyRhP90[hr],
                   md.diurnalSwingK
                 ])
               )
             })}
+            controls={
+              <div className="flex flex-wrap items-center gap-1.5 text-xs">
+                {(
+                  [
+                    { id: 'both', label: 'Combined (T_db + RH)' },
+                    { id: 'temp', label: 'Dry-Bulb Temp (°C, 10th–90th Band)' },
+                    { id: 'rh', label: 'Relative Humidity (%, 10th–90th Band)' }
+                  ] as const
+                ).map((m) => (
+                  <button
+                    key={m.id}
+                    type="button"
+                    onClick={() => setDiurnalMetric(m.id)}
+                    className={`px-2.5 py-1 rounded-lg font-bold text-[11px] border transition ${
+                      diurnalMetric === m.id
+                        ? 'bg-slate-900 text-white border-slate-900'
+                        : 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100'
+                    }`}
+                  >
+                    {m.label}
+                  </button>
+                ))}
+              </div>
+            }
           >
             {(svgRef) => {
               const W = 780;
@@ -1064,11 +1243,18 @@ export const Stage1Climate: React.FC = () => {
                     const yForT = (t: number) => y0 + 18 + ph - ((t - tMin) / (tMax - tMin)) * ph;
                     const yForRh = (rh: number) => y0 + 18 + ph - (rh / 100) * ph;
 
-                    const bandPts = [
+                    const tBandPts = [
                       ...md.hourlyTempP90.map((t, hr) => `${xForH(hr).toFixed(1)},${yForT(t).toFixed(1)}`),
                       ...[...md.hourlyTempP10]
                         .reverse()
                         .map((t, idx) => `${xForH(23 - idx).toFixed(1)},${yForT(t).toFixed(1)}`)
+                    ].join(' ');
+
+                    const rhBandPts = [
+                      ...md.hourlyRhP90.map((rh, hr) => `${xForH(hr).toFixed(1)},${yForRh(rh).toFixed(1)}`),
+                      ...[...md.hourlyRhP10]
+                        .reverse()
+                        .map((rh, idx) => `${xForH(23 - idx).toFixed(1)},${yForRh(rh).toFixed(1)}`)
                     ].join(' ');
 
                     const tMeanPts = md.hourlyTempMean
@@ -1093,12 +1279,27 @@ export const Stage1Climate: React.FC = () => {
                           {md.monthName}
                         </text>
                         <text x={x0 + pw - 6} y={y0 + 12} textAnchor="end" fontSize="8" fontWeight="700" fill="#0d9488">
-                          ΔT {md.diurnalSwingK} K
+                          {diurnalMetric === 'rh' ? `RH ${md.rhStats.mean}%` : `ΔT ${md.diurnalSwingK} K`}
                         </text>
 
-                        <polygon points={bandPts} fill="#f97316" fillOpacity={0.22} />
-                        <polyline fill="none" stroke="#0284c7" strokeWidth={1.1} strokeDasharray="2 2" points={rhMeanPts} />
-                        <polyline fill="none" stroke="#ea580c" strokeWidth={1.8} points={tMeanPts} />
+                        {(diurnalMetric === 'temp' || diurnalMetric === 'both') && (
+                          <polygon points={tBandPts} fill="#f97316" fillOpacity={0.22} />
+                        )}
+                        {diurnalMetric === 'rh' && (
+                          <polygon points={rhBandPts} fill="#0284c7" fillOpacity={0.22} />
+                        )}
+                        {(diurnalMetric === 'rh' || diurnalMetric === 'both') && (
+                          <polyline
+                            fill="none"
+                            stroke="#0284c7"
+                            strokeWidth={diurnalMetric === 'rh' ? 1.8 : 1.1}
+                            strokeDasharray={diurnalMetric === 'both' ? '2 2' : undefined}
+                            points={rhMeanPts}
+                          />
+                        )}
+                        {(diurnalMetric === 'temp' || diurnalMetric === 'both') && (
+                          <polyline fill="none" stroke="#ea580c" strokeWidth={1.8} points={tMeanPts} />
+                        )}
                       </g>
                     );
                   })}
@@ -1111,7 +1312,7 @@ export const Stage1Climate: React.FC = () => {
           <div className="grid grid-cols-1 xl:grid-cols-2 gap-5">
             <ClimaChartCard
               title="24h × 365d Dry-Bulb Temperature Timetable Heatmap (°C)"
-              subtitle="Annual hourly temperature matrix showing seasonal & diurnal thermal waves"
+              subtitle="Continuous RdYlBu_r annual hourly temperature matrix showing seasonal & diurnal thermal waves"
               icon={<Thermometer className="w-4 h-4 text-rose-500" />}
               svgFilename={`${climate.id}_tdb_carpet.svg`}
               csvFilename={`${climate.id}_tdb_8760.csv`}
@@ -1128,11 +1329,11 @@ export const Stage1Climate: React.FC = () => {
                   getColor={(v) => colorForTempC(v, globalValueRanges)}
                   unitLabel="°C"
                   legendItems={[
-                    { label: '<5°C', color: '#1d4ed8' },
-                    { label: '5–15°C', color: '#0ea5e9' },
-                    { label: '15–24°C', color: '#10b981' },
-                    { label: '24–30°C', color: '#f59e0b' },
-                    { label: '>30°C', color: '#e11d48' }
+                    { label: '<0°C', color: '#313695' },
+                    { label: '10°C', color: '#74add1' },
+                    { label: '20°C', color: '#ffffbf' },
+                    { label: '28°C', color: '#f46d43' },
+                    { label: '>35°C', color: '#a50026' }
                   ]}
                 />
               )}
@@ -1140,7 +1341,7 @@ export const Stage1Climate: React.FC = () => {
 
             <ClimaChartCard
               title="24h × 365d Relative Humidity Timetable Heatmap (%)"
-              subtitle="Annual hourly relative humidity matrix"
+              subtitle="Continuous YlGnBu annual hourly relative humidity matrix"
               icon={<Wind className="w-4 h-4 text-sky-500" />}
               svgFilename={`${climate.id}_rh_carpet.svg`}
               csvFilename={`${climate.id}_rh_8760.csv`}
@@ -1154,16 +1355,14 @@ export const Stage1Climate: React.FC = () => {
                   svgRef={svgRef}
                   hourly={climate.hourly}
                   getValue={(h) => h.relHum}
-                  getColor={(rh) =>
-                    rh < 30 ? '#f59e0b' : rh < 50 ? '#10b981' : rh < 70 ? '#38bdf8' : rh < 85 ? '#0284c7' : '#1e3a8a'
-                  }
+                  getColor={(rh) => colorForRhPct(rh)}
                   unitLabel="% RH"
                   legendItems={[
-                    { label: '<30% Arid', color: '#f59e0b' },
-                    { label: '30–50%', color: '#10b981' },
-                    { label: '50–70%', color: '#38bdf8' },
-                    { label: '70–85%', color: '#0284c7' },
-                    { label: '>85% Humid', color: '#1e3a8a' }
+                    { label: '<25% Arid', color: '#ffffd9' },
+                    { label: '45%', color: '#c7e9b4' },
+                    { label: '65%', color: '#41b6c4' },
+                    { label: '80%', color: '#225ea8' },
+                    { label: '>90% Humid', color: '#081d58' }
                   ]}
                 />
               )}
@@ -1349,7 +1548,7 @@ export const Stage1Climate: React.FC = () => {
                 }
               >
                 {(svgRef) => {
-                  const sunHours = climate.hourly.filter((h) => h.solarAlt > 2 && h.dayOfMonth % 6 === 1);
+                  const sunHours = climate.hourly.filter((h) => h.solarAlt > 0.5);
                   const canyonS = sim.canyonAnglesDeg.S;
                   const canyonE = sim.canyonAnglesDeg.E;
                   const canyonW = sim.canyonAnglesDeg.W;
@@ -1374,6 +1573,17 @@ export const Stage1Climate: React.FC = () => {
                     const plotH = H - padT - padB;
                     const xForAz = (az: number) => padL + (az / 360) * plotW;
                     const yForAlt = (alt: number) => padT + plotH - (alt / 90) * plotH;
+
+                    const makeCartArc = (dayOfYear: number) => {
+                      const pts: string[] = [];
+                      for (let hr = 3.5; hr <= 20.5; hr += 0.25) {
+                        const pos = calcSolarPosition(climate.lat, dayOfYear, hr, climate.lon, climate.tz);
+                        if (pos.alt > 0) {
+                          pts.push(`${xForAz(pos.az).toFixed(1)},${yForAlt(pos.alt).toFixed(1)}`);
+                        }
+                      }
+                      return pts.join(' ');
+                    };
 
                     return (
                       <div className="space-y-2">
@@ -1419,13 +1629,19 @@ export const Stage1Climate: React.FC = () => {
                             />
                           )}
 
-                          {/* Analemma Points */}
+                          {/* Solstice & Equinox Reference Curves */}
+                          <polyline fill="none" stroke="#e11d48" strokeWidth={1.3} strokeOpacity={0.7} points={makeCartArc(172)} />
+                          <polyline fill="none" stroke="#10b981" strokeWidth={1.2} strokeOpacity={0.7} points={makeCartArc(80)} />
+                          <polyline fill="none" stroke="#0284c7" strokeWidth={1.3} strokeOpacity={0.7} points={makeCartArc(355)} />
+
+                          {/* 365-Day Analemma Points (All Daytime Hours with Spencer 1971 EoT) */}
                           {sunHours.map((h, i) => (
                             <circle
                               key={i}
                               cx={xForAz(h.solarAz)}
                               cy={yForAlt(h.solarAlt)}
-                              r={2.4}
+                              r={1.65}
+                              fillOpacity={0.82}
                               fill={
                                 sunColorMode === 'temp'
                                   ? colorForTempC(h.dryBulb, globalValueRanges)
@@ -1450,21 +1666,22 @@ export const Stage1Climate: React.FC = () => {
                     );
                   }
 
-                  // Polar Stereographic Projection
+                  // Polar Stereographic Projection (True Stereographic tan((90 - alt)/2))
                   const size = 320;
                   const cx = size / 2;
                   const cy = size / 2;
                   const R = 126;
+                  const stereoR = (alt: number) => R * Math.tan(((90 - Math.max(0, alt)) * Math.PI) / 360);
                   const polarPt = (alt: number, az: number) => {
-                    const r = ((90 - Math.max(0, alt)) / 90) * R;
+                    const r = stereoR(alt);
                     const rad = ((az - 90) * Math.PI) / 180;
                     return { x: cx + r * Math.cos(rad), y: cy + r * Math.sin(rad) };
                   };
 
                   const makeDayArc = (dayOfYear: number) => {
                     const pts: string[] = [];
-                    for (let hr = 4; hr <= 20; hr += 0.5) {
-                      const pos = calcSolarPosition(climate.lat, dayOfYear, hr);
+                    for (let hr = 3.5; hr <= 20.5; hr += 0.25) {
+                      const pos = calcSolarPosition(climate.lat, dayOfYear, hr, climate.lon, climate.tz);
                       if (pos.alt > 0) {
                         const p = polarPt(pos.alt, pos.az);
                         pts.push(`${p.x.toFixed(1)},${p.y.toFixed(1)}`);
@@ -1476,15 +1693,16 @@ export const Stage1Climate: React.FC = () => {
                   return (
                     <div className="flex flex-col items-center space-y-2">
                       <svg ref={svgRef} viewBox={`0 0 ${size} ${size}`} className="w-full max-w-[330px] h-auto">
-                        {[15, 30, 45, 60, 75, 90].map((alt) => (
+                        {[0, 15, 30, 45, 60, 75, 90].map((alt) => (
                           <circle
                             key={alt}
                             cx={cx}
                             cy={cy}
-                            r={((90 - alt) / 90) * R}
+                            r={stereoR(alt)}
                             fill="none"
-                            stroke="#e2e8f0"
-                            strokeDasharray="3 3"
+                            stroke={alt === 0 ? '#94a3b8' : '#e2e8f0'}
+                            strokeWidth={alt === 0 ? 1.4 : 1}
+                            strokeDasharray={alt === 0 ? undefined : '3 3'}
                           />
                         ))}
 
@@ -1505,7 +1723,7 @@ export const Stage1Climate: React.FC = () => {
                         <polyline fill="none" stroke="#10b981" strokeWidth={1.4} points={makeDayArc(80)} />
                         <polyline fill="none" stroke="#0284c7" strokeWidth={1.6} points={makeDayArc(355)} />
 
-                        {/* Analemma Sun Points */}
+                        {/* 365-Day Analemma Sun Points (Figure-8 Loops via Equation of Time) */}
                         {sunHours.map((h, i) => {
                           const p = polarPt(h.solarAlt, h.solarAz);
                           return (
@@ -1513,7 +1731,8 @@ export const Stage1Climate: React.FC = () => {
                               key={i}
                               cx={p.x}
                               cy={p.y}
-                              r={2.1}
+                              r={1.55}
+                              fillOpacity={0.82}
                               fill={
                                 sunColorMode === 'temp'
                                   ? colorForTempC(h.dryBulb, globalValueRanges)
@@ -1532,7 +1751,7 @@ export const Stage1Climate: React.FC = () => {
                           <circle
                             cx={cx}
                             cy={cy}
-                            r={((90 - overhangAngleDeg) / 90) * R}
+                            r={stereoR(overhangAngleDeg)}
                             fill="rgba(245, 158, 11, 0.25)"
                             stroke="#d97706"
                             strokeWidth={1.8}
@@ -1643,101 +1862,228 @@ export const Stage1Climate: React.FC = () => {
             </div>
           </div>
 
-          {/* Monthly Global, Direct Normal & Diffuse Solar Boxplots + Sky Cover % */}
-          <ClimaChartCard
-            title="Monthly Global (GHI), Direct Normal (DNI), Diffuse (DHI) Solar Radiation & Sky Cover (%)"
-            subtitle="Monthly cumulative irradiation bars (kWh/m²) and mean cloud cover percentage"
-            icon={<Layers className="w-4 h-4 text-amber-500" />}
-            svgFilename={`${climate.id}_monthly_solar_clouds.svg`}
-            csvFilename={`${climate.id}_monthly_solar_clouds.csv`}
-            onBuildCsv={() => ({
-              headers: ['Month', 'GHI_kWh/m2', 'DNI_kWh/m2', 'DHI_kWh/m2', 'DaytimeGHI_Median_W/m2', 'DaytimeGHI_Q75_W/m2', 'SkyCover_%'],
-              rows: solarAnalytics.monthlySolar.map((s) => [
-                s.month,
-                s.ghiMonthlyKwh,
-                s.dniMonthlyKwh,
-                s.dhiMonthlyKwh,
-                s.ghiMedian,
-                s.ghiQ75,
-                s.skyCoverMeanPct
-              ])
-            })}
-          >
-            {(svgRef) => {
-              const W = 720;
-              const H = 200;
-              const padL = 40;
-              const padR = 36;
-              const padT = 16;
-              const padB = 26;
-              const plotW = W - padL - padR;
-              const plotH = H - padT - padB;
-              const maxKwh = Math.max(260, ...solarAnalytics.monthlySolar.map((s) => Math.max(s.ghiMonthlyKwh, s.dniMonthlyKwh)));
-              const xForM = (i: number) => padL + (i + 0.5) * (plotW / 12);
-              const yForK = (v: number) => padT + plotH - (v / maxKwh) * plotH;
-              const yForCloud = (pct: number) => padT + plotH - (pct / 100) * plotH;
+          {/* Monthly Global, Direct Normal & Diffuse Solar Boxplots + Cloud Cover Regime Distribution */}
+          <div className="grid grid-cols-1 xl:grid-cols-2 gap-5">
+            <ClimaChartCard
+              title="Monthly Solar Radiation (kWh/m²) & Daytime Irradiance Boxplots (Wh/m²)"
+              subtitle="Cumulative GHI, DNI, DHI bars (top) and daytime hourly Q25–Median–Q75–Max boxplots (bottom)"
+              icon={<Layers className="w-4 h-4 text-amber-500" />}
+              svgFilename={`${climate.id}_monthly_solar_boxplots.svg`}
+              csvFilename={`${climate.id}_monthly_solar_boxplots.csv`}
+              onBuildCsv={() => ({
+                headers: [
+                  'Month',
+                  'GHI_kWh/m2',
+                  'DNI_kWh/m2',
+                  'DHI_kWh/m2',
+                  'DaytimeGHI_Q25_W/m2',
+                  'DaytimeGHI_Median_W/m2',
+                  'DaytimeGHI_Q75_W/m2',
+                  'DaytimeGHI_Max_W/m2',
+                  'DaytimeDNI_Median_W/m2',
+                  'DaytimeDHI_Median_W/m2'
+                ],
+                rows: solarAnalytics.monthlySolar.map((s) => [
+                  s.month,
+                  s.ghiMonthlyKwh,
+                  s.dniMonthlyKwh,
+                  s.dhiMonthlyKwh,
+                  s.ghiQ25,
+                  s.ghiMedian,
+                  s.ghiQ75,
+                  s.ghiMax,
+                  s.dniMedian,
+                  s.dhiMedian
+                ])
+              })}
+            >
+              {(svgRef) => {
+                const W = 540;
+                const H = 225;
+                const padL = 38;
+                const padR = 36;
+                const padT = 16;
+                const padB = 26;
+                const plotW = W - padL - padR;
+                const plotH = H - padT - padB;
+                const maxW = Math.max(950, ...solarAnalytics.monthlySolar.map((s) => Math.max(s.ghiMax, s.dniMax)));
+                const xForM = (i: number) => padL + (i + 0.5) * (plotW / 12);
+                const yForW = (v: number) => padT + plotH - (Math.min(maxW, Math.max(0, v)) / maxW) * plotH;
 
-              const cloudPts = solarAnalytics.monthlySolar
-                .map((s, i) => `${xForM(i)},${yForCloud(s.skyCoverMeanPct)}`)
-                .join(' ');
+                return (
+                  <div className="space-y-1.5">
+                    <svg ref={svgRef} viewBox={`0 0 ${W} ${H}`} className="w-full h-auto">
+                      {[0, 0.25, 0.5, 0.75, 1].map((f, i) => {
+                        const y = padT + plotH - f * plotH;
+                        return (
+                          <g key={i}>
+                            <line x1={padL} y1={y} x2={W - padR} y2={y} stroke="#f1f5f9" />
+                            <text x={padL - 5} y={y + 3} textAnchor="end" fontSize="8.5" fill="#64748b">
+                              {Math.round(maxW * f)}
+                            </text>
+                          </g>
+                        );
+                      })}
 
-              return (
-                <svg ref={svgRef} viewBox={`0 0 ${W} ${H}`} className="w-full h-auto">
-                  {[0, 0.25, 0.5, 0.75, 1].map((f, i) => {
-                    const y = padT + plotH - f * plotH;
-                    return (
-                      <g key={i}>
-                        <line x1={padL} y1={y} x2={W - padR} y2={y} stroke="#f1f5f9" />
-                        <text x={padL - 5} y={y + 3} textAnchor="end" fontSize="8.5" fill="#64748b">
-                          {Math.round(maxKwh * f)}
-                        </text>
-                        <text x={W - padR + 5} y={y + 3} fontSize="8.5" fill="#64748b">
-                          {Math.round(100 * f)}%
-                        </text>
-                      </g>
-                    );
-                  })}
+                      {solarAnalytics.monthlySolar.map((s, i) => {
+                        const cx = xForM(i);
+                        const drawBox = (offset: number, q25: number, med: number, q75: number, maxVal: number, color: string) => {
+                          const x = cx + offset;
+                          const yMax = yForW(maxVal);
+                          const y75 = yForW(q75);
+                          const yMed = yForW(med);
+                          const y25 = yForW(q25);
+                          const y0 = yForW(0);
+                          return (
+                            <g>
+                              <line x1={x} y1={yMax} x2={x} y2={y0} stroke={color} strokeWidth={1.1} strokeDasharray="2 1" />
+                              <line x1={x - 3} y1={yMax} x2={x + 3} y2={yMax} stroke={color} strokeWidth={1.2} />
+                              <rect
+                                x={x - 3.8}
+                                y={y75}
+                                width={7.6}
+                                height={Math.max(2, y25 - y75)}
+                                fill={color}
+                                fillOpacity={0.28}
+                                stroke={color}
+                                strokeWidth={1.2}
+                                rx={1}
+                              />
+                              <line x1={x - 3.8} y1={yMed} x2={x + 3.8} y2={yMed} stroke="#0f172a" strokeWidth={1.6} />
+                            </g>
+                          );
+                        };
 
-                  {solarAnalytics.monthlySolar.map((s, i) => {
-                    const gx = xForM(i) - 15;
-                    return (
-                      <g key={s.month}>
-                        <rect
-                          x={gx}
-                          y={yForK(s.ghiMonthlyKwh)}
-                          width={9}
-                          height={Math.max(1, padT + plotH - yForK(s.ghiMonthlyKwh))}
-                          fill="#f59e0b"
-                          rx={1.5}
-                        />
-                        <rect
-                          x={gx + 10}
-                          y={yForK(s.dniMonthlyKwh)}
-                          width={9}
-                          height={Math.max(1, padT + plotH - yForK(s.dniMonthlyKwh))}
-                          fill="#e11d48"
-                          rx={1.5}
-                        />
-                        <rect
-                          x={gx + 20}
-                          y={yForK(s.dhiMonthlyKwh)}
-                          width={9}
-                          height={Math.max(1, padT + plotH - yForK(s.dhiMonthlyKwh))}
-                          fill="#38bdf8"
-                          rx={1.5}
-                        />
-                        <text x={xForM(i)} y={H - 8} textAnchor="middle" fontSize="9" fontWeight="600" fill="#475569">
-                          {s.month}
-                        </text>
-                      </g>
-                    );
-                  })}
+                        return (
+                          <g key={s.month}>
+                            {drawBox(-10, s.ghiQ25, s.ghiMedian, s.ghiQ75, s.ghiMax, '#f59e0b')}
+                            {drawBox(0, s.dniQ25, s.dniMedian, s.dniQ75, s.dniMax, '#e11d48')}
+                            {drawBox(10, s.dhiQ25, s.dhiMedian, s.dhiQ75, s.dhiMax, '#0284c7')}
+                            <text x={cx} y={H - 8} textAnchor="middle" fontSize="9" fontWeight="600" fill="#475569">
+                              {s.month}
+                            </text>
+                          </g>
+                        );
+                      })}
+                    </svg>
+                    <div className="flex flex-wrap items-center justify-between text-[10px] text-slate-600 px-1">
+                      <span className="font-semibold text-slate-500">Daytime Irradiance Boxplots (Q25–Median–Q75 + Max Whisker, Wh/m²)</span>
+                      <div className="flex items-center gap-3 font-bold">
+                        <span className="flex items-center gap-1 text-amber-600">
+                          <span className="w-2.5 h-2.5 rounded-sm bg-amber-500 inline-block" /> Global (GHI)
+                        </span>
+                        <span className="flex items-center gap-1 text-rose-600">
+                          <span className="w-2.5 h-2.5 rounded-sm bg-rose-600 inline-block" /> Direct Normal (DNI)
+                        </span>
+                        <span className="flex items-center gap-1 text-sky-600">
+                          <span className="w-2.5 h-2.5 rounded-sm bg-sky-600 inline-block" /> Diffuse (DHI)
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                );
+              }}
+            </ClimaChartCard>
 
-                  <polyline fill="none" stroke="#475569" strokeWidth={2} strokeDasharray="4 2" points={cloudPts} />
-                </svg>
-              );
-            }}
-          </ClimaChartCard>
+            <ClimaChartCard
+              title="Monthly Cloud Cover Distribution & Cumulative Solar Irradiation"
+              subtitle="CBE Clima sky cover regimes (Clear ≤30%, Partly Cloudy 40–70%, Overcast ≥80%) + Mean Cloud Cover %"
+              icon={<Sun className="w-4 h-4 text-sky-500" />}
+              svgFilename={`${climate.id}_monthly_cloud_cover.svg`}
+              csvFilename={`${climate.id}_monthly_cloud_cover.csv`}
+              onBuildCsv={() => ({
+                headers: ['Month', 'ClearSky_%', 'PartlyCloudy_%', 'Overcast_%', 'MeanSkyCover_%', 'GHI_kWh/m2', 'DNI_kWh/m2', 'DHI_kWh/m2'],
+                rows: solarAnalytics.monthlySolar.map((s) => [
+                  s.month,
+                  s.clearSkyPct,
+                  s.partlyCloudyPct,
+                  s.overcastPct,
+                  s.skyCoverMeanPct,
+                  s.ghiMonthlyKwh,
+                  s.dniMonthlyKwh,
+                  s.dhiMonthlyKwh
+                ])
+              })}
+            >
+              {(svgRef) => {
+                const W = 540;
+                const H = 225;
+                const padL = 38;
+                const padR = 20;
+                const padT = 16;
+                const padB = 26;
+                const plotW = W - padL - padR;
+                const plotH = H - padT - padB;
+                const xForM = (i: number) => padL + (i + 0.5) * (plotW / 12);
+                const yForPct = (pct: number) => padT + plotH - (Math.min(100, Math.max(0, pct)) / 100) * plotH;
+
+                const cloudPts = solarAnalytics.monthlySolar
+                  .map((s, i) => `${xForM(i)},${yForPct(s.skyCoverMeanPct)}`)
+                  .join(' ');
+
+                return (
+                  <div className="space-y-1.5">
+                    <svg ref={svgRef} viewBox={`0 0 ${W} ${H}`} className="w-full h-auto">
+                      {[0, 25, 50, 75, 100].map((pct) => {
+                        const y = yForPct(pct);
+                        return (
+                          <g key={pct}>
+                            <line x1={padL} y1={y} x2={W - padR} y2={y} stroke="#f1f5f9" />
+                            <text x={padL - 5} y={y + 3} textAnchor="end" fontSize="8.5" fill="#64748b">
+                              {pct}%
+                            </text>
+                          </g>
+                        );
+                      })}
+
+                      {solarAnalytics.monthlySolar.map((s, i) => {
+                        const x = xForM(i) - 11;
+                        const hClear = (s.clearSkyPct / 100) * plotH;
+                        const hPartly = (s.partlyCloudyPct / 100) * plotH;
+                        const hOver = (s.overcastPct / 100) * plotH;
+                        const yClear = padT + plotH - hClear;
+                        const yPartly = yClear - hPartly;
+                        const yOver = yPartly - hOver;
+
+                        return (
+                          <g key={s.month}>
+                            <rect x={x} y={yClear} width={22} height={Math.max(0, hClear)} fill="#38bdf8" />
+                            <rect x={x} y={yPartly} width={22} height={Math.max(0, hPartly)} fill="#94a3b8" />
+                            <rect x={x} y={yOver} width={22} height={Math.max(0, hOver)} fill="#475569" />
+                            <text x={xForM(i)} y={H - 8} textAnchor="middle" fontSize="9" fontWeight="600" fill="#475569">
+                              {s.month}
+                            </text>
+                          </g>
+                        );
+                      })}
+
+                      <polyline fill="none" stroke="#f59e0b" strokeWidth={2.2} points={cloudPts} />
+                      {solarAnalytics.monthlySolar.map((s, i) => (
+                        <circle key={i} cx={xForM(i)} cy={yForPct(s.skyCoverMeanPct)} r={3} fill="#f59e0b" stroke="#fff" strokeWidth={1} />
+                      ))}
+                    </svg>
+                    <div className="flex flex-wrap items-center justify-between text-[10px] text-slate-600 px-1">
+                      <span className="font-semibold text-slate-500">Monthly Sky Cover Share (%)</span>
+                      <div className="flex items-center gap-3 font-bold">
+                        <span className="flex items-center gap-1 text-sky-600">
+                          <span className="w-2.5 h-2.5 rounded-sm bg-sky-400 inline-block" /> Clear (≤3 tenths)
+                        </span>
+                        <span className="flex items-center gap-1 text-slate-500">
+                          <span className="w-2.5 h-2.5 rounded-sm bg-slate-400 inline-block" /> Partly (4–7 tenths)
+                        </span>
+                        <span className="flex items-center gap-1 text-slate-700">
+                          <span className="w-2.5 h-2.5 rounded-sm bg-slate-600 inline-block" /> Overcast (≥8 tenths)
+                        </span>
+                        <span className="flex items-center gap-1 text-amber-600">
+                          <span className="w-2.5 h-2.5 rounded-full bg-amber-500 inline-block" /> Mean Cloud %
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                );
+              }}
+            </ClimaChartCard>
+          </div>
         </div>
       )}
 

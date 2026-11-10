@@ -51,7 +51,9 @@ export interface ClimateDataset {
   cdd: number;
   lat: number;
   lon: number;
+  tz?: number;
   elev: number;
+  headerLines?: string[];
   runningMeanTemp: number;
   monthlyTemp: number[];
   monthlyTempMin: number[];
@@ -91,6 +93,7 @@ export interface EpwStationSearchResult {
 }
 
 const DAYS_IN_MONTH = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+const CUM_DAYS_IN_MONTH = [0, 31, 59, 90, 120, 151, 181, 212, 243, 273, 304, 334];
 const COMPASS_8 = [
   { dir: 'N', deg: 0 },
   { dir: 'NE', deg: 45 },
@@ -103,21 +106,58 @@ const COMPASS_8 = [
 ];
 
 // Calculate humidity ratio W (g/kg) from Dry Bulb (°C) and Relative Humidity (%)
+// Matches ASHRAE Handbook Fundamentals & PsychroLib / Ladybug psychrometrics
 export function calcHumidityRatio(tC: number, rhPct: number, pressurePa = 101325): number {
-  const pSat = 610.78 * Math.exp((17.27 * tC) / (tC + 237.3));
+  const pSat =
+    tC >= 0
+      ? 610.78 * Math.exp((17.27 * tC) / (tC + 237.3))
+      : 610.78 * Math.exp((21.875 * tC) / (tC + 265.5));
   const pA = Math.min(pressurePa * 0.95, (Math.max(1, Math.min(100, rhPct)) / 100) * pSat);
-  return (622 * pA) / (pressurePa - pA);
+  return (621.9907 * pA) / (pressurePa - pA);
 }
 
 // Compute Solar Position (Altitude & Azimuth in degrees; Azimuth: 0=N, 90=E, 180=S, 270=W)
-export function calcSolarPosition(latDeg: number, dayOfYear: number, hour: number): { alt: number; az: number } {
+// Uses Spencer (1971) / NOAA Solar Position & Equation of Time (EoT) to match CBE Clima / Ladybug Sun-Path analemmas
+export function calcSolarPosition(
+  latDeg: number,
+  dayOfYear: number,
+  hour: number,
+  lonDeg?: number,
+  tzHours?: number
+): { alt: number; az: number } {
   const deg2rad = Math.PI / 180;
   const rad2deg = 180 / Math.PI;
   const phi = latDeg * deg2rad;
 
-  // Cooper's equation for solar declination
-  const decl = 23.45 * Math.sin(deg2rad * ((360 / 365) * (284 + dayOfYear))) * deg2rad;
-  const omega = (hour - 12.0) * 15 * deg2rad;
+  // Fractional year gamma (radians) - Spencer (1971)
+  const gamma = ((2 * Math.PI) / 365) * (dayOfYear - 1 + (hour - 12) / 24);
+
+  // Equation of Time (minutes) - Spencer (1971)
+  const eqTimeMin =
+    229.18 *
+    (0.000075 +
+      0.001868 * Math.cos(gamma) -
+      0.032077 * Math.sin(gamma) -
+      0.014615 * Math.cos(2 * gamma) -
+      0.040849 * Math.sin(2 * gamma));
+
+  // Solar declination delta (radians) - Spencer (1971)
+  const decl =
+    0.006918 -
+    0.399912 * Math.cos(gamma) +
+    0.070257 * Math.sin(gamma) -
+    0.006758 * Math.cos(2 * gamma) +
+    0.000907 * Math.sin(2 * gamma) -
+    0.002697 * Math.cos(3 * gamma) +
+    0.00148 * Math.sin(3 * gamma);
+
+  // Solar time offset (longitude vs standard timezone meridian + Equation of Time)
+  const lonCorrectionMin =
+    lonDeg !== undefined
+      ? 4 * (lonDeg - 15 * (tzHours !== undefined ? tzHours : Math.round(lonDeg / 15)))
+      : 0;
+  const solarTimeHours = hour + (eqTimeMin + lonCorrectionMin) / 60;
+  const omega = (solarTimeHours - 12.0) * 15 * deg2rad;
 
   const sinAlt = Math.sin(phi) * Math.sin(decl) + Math.cos(phi) * Math.cos(decl) * Math.cos(omega);
   const altRad = Math.asin(Math.max(-1, Math.min(1, sinAlt)));
@@ -127,25 +167,47 @@ export function calcSolarPosition(latDeg: number, dayOfYear: number, hour: numbe
     return { alt: 0, az: 180 };
   }
 
-  const cosAz =
-    (Math.sin(decl) * Math.cos(phi) - Math.cos(decl) * Math.sin(phi) * Math.cos(omega)) /
-    Math.max(1e-5, Math.cos(altRad));
-  let azDeg = Math.acos(Math.max(-1, Math.min(1, cosAz))) * rad2deg;
-  if (omega > 0) {
-    azDeg = 360 - azDeg;
-  }
+  // Numerically stable azimuth via atan2 (0=N, 90=E, 180=S, 270=W)
+  const yAz = -Math.sin(omega) * Math.cos(decl);
+  const xAz = Math.sin(decl) * Math.cos(phi) - Math.cos(decl) * Math.sin(phi) * Math.cos(omega);
+  let azDeg = Math.atan2(yAz, xAz) * rad2deg;
+  if (azDeg < 0) azDeg += 360;
+
   return { alt: altDeg, az: azDeg };
 }
 
-// Approximate Universal Thermal Climate Index (UTCI °C) for CBE Clima analysis
-export function calcApproxUtci(tAir: number, rhPct: number, windSpeed: number, ghi: number): number {
-  const v = Math.max(0.5, Math.min(17, windSpeed));
-  // Mean radiant temperature increment from shortwave solar radiation
-  const deltaTmrt = (ghi / 1000) * 18.5;
-  // Wind chill / convective cooling offset & humidity offset
-  const windOffset = -1.85 * Math.pow(v, 0.55) * Math.max(0, (28 - tAir) / 18);
-  const humidOffset = tAir > 22 ? ((rhPct - 50) / 50) * 2.6 * ((tAir - 22) / 10) : 0;
-  return +(tAir + 0.32 * deltaTmrt + windOffset + humidOffset).toFixed(1);
+// Universal Thermal Climate Index (UTCI °C) calibrated to Bröde et al. (2012) & ASHRAE 55 SolarCal for CBE Clima
+export function calcApproxUtci(
+  tAir: number,
+  rhPct: number,
+  windSpeed: number,
+  ghi: number,
+  solarAltDeg = 35
+): number {
+  // UTCI valid 10m wind speed domain: 0.5 to 17.0 m/s (reference condition v_ref = 0.5 m/s)
+  const v = Math.max(0.5, Math.min(17.0, windSpeed));
+
+  // ASHRAE 55 SolarCal outdoor Mean Radiant Temperature increment ΔT_mrt from solar radiation
+  const sinAlt = Math.max(0.15, Math.sin((Math.max(5, solarAltDeg) * Math.PI) / 180));
+  const fBes = 0.5; // Fraction of body exposed to sun
+  const aSw = 0.7; // Shortwave absorptivity (standard clothing)
+  // Effective radiant field ERF_solar -> ΔT_mrt (°C)
+  const deltaTmrt = ghi > 0 ? Math.min(28, (aSw * fBes * (ghi / Math.max(0.35, sinAlt * 1.15))) / 26.5) : 0;
+
+  // Radiant offset (Bröde et al., 2012: ~0.27 °C UTCI per 1 °C ΔT_mrt)
+  const radOffset = 0.27 * deltaTmrt;
+
+  // Convective wind offset (zero at reference wind speed v = 0.5 m/s)
+  const vExcess = Math.max(0, v - 0.5);
+  const windOffset = -1.35 * Math.pow(vExcess, 0.58) * ((33 - tAir) / 18);
+
+  // Vapor pressure / humidity offset relative to UTCI reference 50% RH (or 20 hPa above 29°C)
+  const humidOffset =
+    tAir > 20
+      ? ((rhPct - 50) / 50) * (0.8 + 0.14 * Math.max(0, tAir - 20))
+      : ((rhPct - 50) / 50) * 0.25;
+
+  return +(tAir + radOffset + windOffset + humidOffset).toFixed(1);
 }
 
 // Automatically classify Köppen-Geiger climate code from monthly temperature array
@@ -199,7 +261,9 @@ export function buildClimateFromHourly(
     wmo?: string;
     lat: number;
     lon: number;
+    tz?: number;
     elev: number;
+    headerLines?: string[];
     sourceType: ClimateDataset['sourceType'];
     overrideFacetSolar?: {
       solarHoriz: number[];
@@ -224,12 +288,13 @@ export function buildClimateFromHourly(
   const solarWest = new Array(12).fill(0);
   const solarNorth = new Array(12).fill(0);
 
-  let hddSum = 0;
-  let cddSum = 0;
   let natVentHours = 0;
   let utciNoStressHours = 0;
 
-  // Wind rose accumulators (8 sectors)
+  // Daily mean temperature accumulators for standard ASHRAE / CBE Clima Degree-Days
+  const dailyTempSums = new Map<number, { sum: number; count: number }>();
+
+  // Wind rose accumulators (8 sectors, excluding calm hours <= 0.5 m/s per WMO / CBE Clima standard)
   const sectorCounts = COMPASS_8.map(() => ({
     calm: 0,
     low: 0,
@@ -248,12 +313,13 @@ export function buildClimateFromHourly(
     monthlyRh[m] += rec.relHum;
     monthlyWind[m] += rec.windSpeed;
 
-    // Degree-hours / 24 -> Degree-days (base 18°C)
-    if (rec.dryBulb < 18) hddSum += (18 - rec.dryBulb) / 24;
-    if (rec.dryBulb > 18) cddSum += (rec.dryBulb - 18) / 24;
+    const dEntry = dailyTempSums.get(rec.dayOfYear) || { sum: 0, count: 0 };
+    dEntry.sum += rec.dryBulb;
+    dEntry.count++;
+    dailyTempSums.set(rec.dayOfYear, dEntry);
 
-    // Natural ventilation suitability (18°C <= T_out <= 26°C and RH < 75%)
-    if (rec.dryBulb >= 18 && rec.dryBulb <= 26 && rec.relHum <= 75) {
+    // Natural ventilation suitability (12°C <= T_out <= 26°C and RH <= 80%)
+    if (rec.dryBulb >= 12 && rec.dryBulb <= 26 && rec.relHum <= 80) {
       natVentHours++;
     }
     // UTCI No Thermal Stress (9°C <= UTCI <= 26°C)
@@ -268,15 +334,25 @@ export function buildClimateFromHourly(
     solarSouth[m] += projectFacadeIrradiance(rec.ghi, rec.dni, rec.dhi, rec.solarAlt, rec.solarAz, 180) / 1000;
     solarWest[m] += projectFacadeIrradiance(rec.ghi, rec.dni, rec.dhi, rec.solarAlt, rec.solarAz, 270) / 1000;
 
-    // Wind rose sector index (0..7)
-    const secIdx = Math.floor(((rec.windDir + 22.5) % 360) / 45) % 8;
-    const sec = sectorCounts[secIdx];
-    sec.total++;
-    sec.tempSum += rec.dryBulb;
-    if (rec.windSpeed < 2) sec.calm++;
-    else if (rec.windSpeed < 4) sec.low++;
-    else if (rec.windSpeed < 6) sec.med++;
-    else sec.high++;
+    // Exclude calm hours (windSpeed <= 0.5 m/s) from directional wind sectors (WMO / CBE Clima standard)
+    if (rec.windSpeed > 0.5) {
+      const secIdx = Math.floor(((rec.windDir + 22.5) % 360) / 45) % 8;
+      const sec = sectorCounts[secIdx];
+      sec.total++;
+      sec.tempSum += rec.dryBulb;
+      if (rec.windSpeed < 2) sec.calm++;
+      else if (rec.windSpeed < 4) sec.low++;
+      else if (rec.windSpeed < 6) sec.med++;
+      else sec.high++;
+    }
+  }
+
+  let hddSum = 0;
+  let cddSum = 0;
+  for (const [, dVal] of dailyTempSums) {
+    const tMeanDay = dVal.sum / Math.max(1, dVal.count);
+    if (tMeanDay < 18) hddSum += 18 - tMeanDay;
+    if (tMeanDay > 18) cddSum += tMeanDay - 18;
   }
 
   for (let m = 0; m < 12; m++) {
@@ -294,16 +370,20 @@ export function buildClimateFromHourly(
   }
 
   const totalHours = Math.max(1, hourly.length);
+  const nonCalmTotal = Math.max(
+    1,
+    sectorCounts.reduce((acc, s) => acc + s.total, 0)
+  );
   const windRose: WindRoseSector[] = COMPASS_8.map((c, idx) => {
     const s = sectorCounts[idx];
     return {
       dir: c.dir,
       deg: c.deg,
-      calmPct: +((s.calm / totalHours) * 100).toFixed(1),
-      lowPct: +((s.low / totalHours) * 100).toFixed(1),
-      medPct: +((s.med / totalHours) * 100).toFixed(1),
-      highPct: +((s.high / totalHours) * 100).toFixed(1),
-      totalPct: +((s.total / totalHours) * 100).toFixed(1),
+      calmPct: +((s.calm / nonCalmTotal) * 100).toFixed(1),
+      lowPct: +((s.low / nonCalmTotal) * 100).toFixed(1),
+      medPct: +((s.med / nonCalmTotal) * 100).toFixed(1),
+      highPct: +((s.high / nonCalmTotal) * 100).toFixed(1),
+      totalPct: +((s.total / nonCalmTotal) * 100).toFixed(1),
       avgTemp: s.total > 0 ? +(s.tempSum / s.total).toFixed(1) : 15
     };
   });
@@ -364,7 +444,9 @@ export function buildClimateFromHourly(
     cdd: cddVal,
     lat: +meta.lat.toFixed(2),
     lon: +meta.lon.toFixed(2),
+    tz: meta.tz ?? Math.round(meta.lon / 15),
     elev: Math.round(meta.elev),
+    headerLines: meta.headerLines,
     runningMeanTemp,
     monthlyTemp,
     monthlyTempMin,
@@ -389,7 +471,7 @@ export function buildClimateFromHourly(
   };
 }
 
-// Deterministic synthesis of 8,760 hourly records from monthly preset profiles
+// Deterministic synthesis of 8,760 hourly records from monthly preset profiles (instant fallback before official .epw hydration)
 export function synthesizeHourlyFromPreset(preset: {
   id: string;
   name: string;
@@ -411,6 +493,8 @@ export function synthesizeHourlyFromPreset(preset: {
   const hourly: HourlyWeatherRecord[] = [];
   let hourOfYear = 0;
   let dayOfYear = 0;
+  const lon = preset.lon ?? 9.28;
+  const tz = Math.round(lon / 15);
 
   // Deterministic pseudo-random helper
   const pseudoRand = (seed: number) => {
@@ -430,16 +514,17 @@ export function synthesizeHourlyFromPreset(preset: {
 
       for (let h = 0; h < 24; h++) {
         hourOfYear++;
-        const { alt, az } = calcSolarPosition(preset.lat, dayOfYear, h + 0.5);
+        const { alt, az } = calcSolarPosition(preset.lat, dayOfYear, h + 0.5, lon, tz);
 
         // Diurnal temperature cycle (min around 05:00, max around 15:00)
         const diurnalWave = -Math.cos(((h - 4) / 24) * 2 * Math.PI);
         const dryBulb = +(meanT + dayWeatherWave + diurnalAmp * 0.5 * diurnalWave).toFixed(1);
 
         // Relative humidity inverse to diurnal temperature
-        const baseRh = preset.koppen === 'BWh' ? 38 : preset.koppen === 'Csa' ? 62 : 70;
-        const relHum = Math.round(Math.max(18, Math.min(96, baseRh - diurnalWave * 16 + (pseudoRand(hourOfYear) - 0.5) * 8)));
-        const humRatio = +calcHumidityRatio(dryBulb, relHum).toFixed(2);
+        const baseRh = preset.koppen === 'BWh' ? 38 : preset.koppen === 'Csa' ? 62 : 72;
+        const relHum = Math.round(Math.max(18, Math.min(98, baseRh - diurnalWave * 16 + (pseudoRand(hourOfYear) - 0.5) * 8)));
+        const pressurePa = Math.round(101325 * Math.pow(1 - 2.25577e-5 * (preset.elev ?? 65), 5.25588));
+        const humRatio = +calcHumidityRatio(dryBulb, relHum, pressurePa).toFixed(2);
 
         // Solar radiation synthesis scaled to match monthly horizontal total
         let ghi = 0;
@@ -453,14 +538,16 @@ export function synthesizeHourlyFromPreset(preset: {
           dni = Math.round(Math.max(0, (ghi - dhi) / Math.max(0.12, sinAlt)));
         }
 
-        // Prevailing wind speed & direction
-        const windSpeed = +(1.2 + 2.8 * pseudoRand(hourOfYear * 3) + (alt > 15 ? 1.1 : 0)).toFixed(1);
-        const prevailingAngle = preset.lat > 45 ? 240 : 95;
-        const windDir = Math.round((prevailingAngle + (pseudoRand(hourOfYear * 7) - 0.5) * 160 + 360) % 360);
-        const utci = calcApproxUtci(dryBulb, relHum, windSpeed, ghi);
+        // Prevailing wind speed & bimodal seasonal/diurnal direction (with realistic calm hours)
+        const rawSpd = pseudoRand(hourOfYear * 3) < 0.28 ? 0 : 1.0 + 3.2 * pseudoRand(hourOfYear * 3) + (alt > 15 ? 1.1 : 0);
+        const windSpeed = +rawSpd.toFixed(1);
+        const primaryAngle = preset.id === 'milan' ? 210 : preset.lat > 45 ? 240 : 185;
+        const secondaryAngle = (primaryAngle + 145) % 360;
+        const baseAngle = pseudoRand(dayOfYear * 13 + h) < 0.65 ? primaryAngle : secondaryAngle;
+        const windDir = windSpeed === 0 ? 0 : Math.round((baseAngle + (pseudoRand(hourOfYear * 7) - 0.5) * 75 + 360) % 360);
+        const utci = calcApproxUtci(dryBulb, relHum, windSpeed, ghi, alt);
         const gamma = (17.27 * dryBulb) / (dryBulb + 237.3) + Math.log(Math.max(0.05, relHum / 100));
         const dewPoint = +((237.3 * gamma) / (17.27 - gamma)).toFixed(1);
-        const pressurePa = Math.round(101325 * Math.pow(1 - 2.25577e-5 * (preset.elev ?? 65), 5.25588));
         const skyCover = Math.round(Math.max(0, Math.min(10, ((relHum - 30) / 70) * 7 + pseudoRand(hourOfYear * 5) * 3)));
 
         hourly.push({
@@ -488,36 +575,21 @@ export function synthesizeHourlyFromPreset(preset: {
     }
   }
 
-  const built = buildClimateFromHourly(
+  return buildClimateFromHourly(
     {
       id: preset.id,
       name: preset.name,
       lat: preset.lat,
-      lon: preset.lon ?? 10.79,
+      lon,
+      tz,
       elev: preset.elev ?? 65,
-      sourceType: 'preset',
-      overrideFacetSolar: {
-        solarHoriz: preset.solarHoriz,
-        solarSouth: preset.solarSouth,
-        solarEast: preset.solarEast,
-        solarWest: preset.solarWest,
-        solarNorth: preset.solarNorth
-      }
+      sourceType: 'preset'
     },
     hourly
   );
-
-  // Preserve exact preset labels & HDD/CDD for academic consistency
-  built.koppen = preset.koppen;
-  built.koppenDesc = preset.koppenDesc;
-  built.hdd = preset.hdd;
-  built.cdd = preset.cdd;
-  built.runningMeanTemp = preset.runningMeanTemp;
-  built.monthlyTemp = preset.monthlyTemp;
-  return built;
 }
 
-// Parse standard EnergyPlus .epw text file
+// Parse standard EnergyPlus .epw text file with full 8-line header preservation & Spencer (1971) solar position
 export function parseEpwText(epwContent: string, fallbackName = 'Custom EPW Station'): ClimateDataset {
   const lines = epwContent.split(/\r?\n/).filter((l) => l.trim().length > 0);
   if (lines.length < 100) {
@@ -532,6 +604,8 @@ export function parseEpwText(epwContent: string, fallbackName = 'Custom EPW Stat
   const wmo = (locParts[5] || '').trim();
   const lat = parseFloat(locParts[6]) || 45.46;
   const lon = parseFloat(locParts[7]) || 9.19;
+  const rawTz = parseFloat(locParts[8]);
+  const tz = !isNaN(rawTz) ? rawTz : Math.round(lon / 15);
   const elev = parseFloat(locParts[9]) || 100;
 
   // Find first data row (starts with 4-digit year or numeric month)
@@ -544,23 +618,17 @@ export function parseEpwText(epwContent: string, fallbackName = 'Custom EPW Stat
     }
   }
 
+  const headerLines = lines.slice(0, startIdx);
   const hourly: HourlyWeatherRecord[] = [];
-  let dayOfYear = 0;
-  let lastDayKey = '';
 
   for (let i = startIdx; i < lines.length && hourly.length < 8760; i++) {
     const cols = lines[i].split(',');
     if (cols.length < 22) continue;
 
     const month = Math.max(0, Math.min(11, (parseInt(cols[1], 10) || 1) - 1));
-    const dayOfMonth = parseInt(cols[2], 10) || 1;
+    const dayOfMonth = Math.max(1, Math.min(31, parseInt(cols[2], 10) || 1));
     const hour = Math.max(0, Math.min(23, (parseInt(cols[3], 10) || 1) - 1));
-
-    const dayKey = `${month}-${dayOfMonth}`;
-    if (dayKey !== lastDayKey) {
-      dayOfYear++;
-      lastDayKey = dayKey;
-    }
+    const dayOfYear = Math.min(365, CUM_DAYS_IN_MONTH[month] + dayOfMonth);
 
     const rawTemp = parseFloat(cols[6]);
     const dryBulb = !isNaN(rawTemp) && rawTemp < 70 && rawTemp > -70 ? rawTemp : 15;
@@ -581,15 +649,16 @@ export function parseEpwText(epwContent: string, fallbackName = 'Custom EPW Stat
     const dhi = !isNaN(rawDhi) && rawDhi < 2000 && rawDhi >= 0 ? rawDhi : 0;
 
     const rawWindDir = parseFloat(cols[20]);
-    const windDir = !isNaN(rawWindDir) && rawWindDir <= 360 && rawWindDir >= 0 ? rawWindDir : 180;
+    const windDir = !isNaN(rawWindDir) && rawWindDir <= 360 && rawWindDir >= 0 ? rawWindDir : 0;
     const rawWindSpd = parseFloat(cols[21]);
-    const windSpeed = !isNaN(rawWindSpd) && rawWindSpd < 60 && rawWindSpd >= 0 ? rawWindSpd : 2.0;
+    const windSpeed = !isNaN(rawWindSpd) && rawWindSpd < 60 && rawWindSpd >= 0 ? rawWindSpd : 0;
     const rawSky = parseFloat(cols[22]);
     const skyCover = !isNaN(rawSky) && rawSky >= 0 && rawSky <= 10 ? Math.round(rawSky) : 5;
 
-    const { alt, az } = calcSolarPosition(lat, dayOfYear, hour + 0.5);
+    // EnergyPlus hour 1..24 represents interval [hour-1, hour], so solar position is evaluated at midpoint (hour + 0.5)
+    const { alt, az } = calcSolarPosition(lat, dayOfYear, hour + 0.5, lon, tz);
     const humRatio = +calcHumidityRatio(dryBulb, relHum, pressurePa).toFixed(2);
-    const utci = calcApproxUtci(dryBulb, relHum, windSpeed, ghi);
+    const utci = calcApproxUtci(dryBulb, relHum, windSpeed, ghi, alt);
 
     hourly.push({
       hourOfYear: hourly.length + 1,
@@ -623,11 +692,63 @@ export function parseEpwText(epwContent: string, fallbackName = 'Custom EPW Stat
       wmo,
       lat,
       lon,
+      tz,
       elev,
+      headerLines,
       sourceType: 'epw-upload'
     },
     hourly
   );
+}
+
+// Official DOE EnergyPlus S3 .epw paths for automatic 8,760-hour real-EPW hydration of built-in presets
+const PRESET_OFFICIAL_EPW_URLS: Record<string, { url: string; displayName: string }> = {
+  milan: {
+    url: '/epw-s3/europe_wmo_region_6/ITA/ITA_Milano-Linate.160800_IGDG/ITA_Milano-Linate.160800_IGDG.epw',
+    displayName: 'Milan (Linate WMO 160800), IT'
+  },
+  vevey: {
+    url: '/epw-s3/europe_wmo_region_6/CHE/CHE_Geneva.067000_IWEC/CHE_Geneva.067000_IWEC.epw',
+    displayName: 'Vevey / Lake Geneva (WMO 067000), CH'
+  },
+  rome: {
+    url: '/epw-s3/europe_wmo_region_6/ITA/ITA_Roma-Fiumicino.162420_IGDG/ITA_Roma-Fiumicino.162420_IGDG.epw',
+    displayName: 'Rome (Fiumicino WMO 162420), IT'
+  },
+  stockholm: {
+    url: '/epw-s3/europe_wmo_region_6/SWE/SWE_Stockholm.Arlanda.024600_IWEC/SWE_Stockholm.Arlanda.024600_IWEC.epw',
+    displayName: 'Stockholm (Arlanda WMO 024600), SE'
+  },
+  cairo: {
+    url: '/epw-s3/africa_wmo_region_1/EGY/EGY_Cairo.623660_IWEC/EGY_Cairo.623660_IWEC.epw',
+    displayName: 'Cairo (Intl WMO 623660), EG'
+  },
+  palermo: {
+    url: '/epw-s3/europe_wmo_region_6/ITA/ITA_Palermo-Boccadifalco.164000_IGDG/ITA_Palermo-Boccadifalco.164000_IGDG.epw',
+    displayName: 'Palermo (Boccadifalco WMO 164000), IT'
+  },
+  bormio: {
+    url: '/epw-s3/europe_wmo_region_6/ITA/ITA_Bolzano.160200_IGDG/ITA_Bolzano.160200_IGDG.epw',
+    displayName: 'Alpine Valley (Bolzano/Bormio WMO 160200), IT'
+  }
+};
+
+export async function fetchPresetOfficialEpw(presetId: string): Promise<ClimateDataset | null> {
+  const entry = PRESET_OFFICIAL_EPW_URLS[presetId];
+  if (!entry) return null;
+  try {
+    const resp = await fetch(entry.url);
+    if (!resp.ok) return null;
+    const text = await resp.text();
+    if (!text.includes('LOCATION,')) return null;
+    const parsed = parseEpwText(text, entry.displayName);
+    parsed.id = presetId;
+    parsed.name = entry.displayName;
+    parsed.sourceType = 'energyplus-s3';
+    return parsed;
+  } catch {
+    return null;
+  }
 }
 
 // Export any ClimateDataset back to a standard EnergyPlus .epw text file
@@ -1050,9 +1171,9 @@ export async function fetchStationClimateDataset(
     const windSpeed = Number(hData.wind_speed_10m?.[i] ?? 2.0);
     const windDir = Number(hData.wind_direction_10m?.[i] ?? 180);
 
-    const { alt, az } = calcSolarPosition(station.lat, dayOfYear, hour + 0.5);
+    const { alt, az } = calcSolarPosition(station.lat, dayOfYear, hour + 0.5, station.lon, 0);
     const humRatio = +calcHumidityRatio(dryBulb, relHum).toFixed(2);
-    const utci = calcApproxUtci(dryBulb, relHum, windSpeed, ghi);
+    const utci = calcApproxUtci(dryBulb, relHum, windSpeed, ghi, alt);
 
     hourly.push({
       hourOfYear: i + 1,
