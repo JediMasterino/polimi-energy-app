@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useRef } from 'react';
+import React, { useState, useMemo, useRef, useEffect } from 'react';
 import {
   Globe,
   Sun,
@@ -92,6 +92,12 @@ export const Stage1Climate: React.FC = () => {
 
   const [activeSubTab, setActiveSubTab] = useState<ClimaSubTabId>('summary');
   const [uploadedQuality, setUploadedQuality] = useState<EpwQualityReport | null>(null);
+
+  useEffect(() => {
+    const handler = () => setActiveSubTab('station_map');
+    window.addEventListener('polimi:open-station-map', handler);
+    return () => window.removeEventListener('polimi:open-station-map', handler);
+  }, []);
   const [uploadStatusMsg, setUploadStatusMsg] = useState<string | null>(null);
   const [uploadErrorMsg, setUploadErrorMsg] = useState<string | null>(null);
   const [isDraggingFile, setIsDraggingFile] = useState(false);

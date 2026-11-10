@@ -30,7 +30,6 @@ import {
   LegislativeTargetType
 } from './context/DesignProjectContext';
 import { INITIAL_CLIMATE_PRESETS } from './data/climateAndStrategies';
-import { EpwSearchAndUploadWidget } from './components/ClimaAndAdvancedPanels';
 import { Stage1Climate } from './components/Stage1Climate';
 import { Stage2Urban } from './components/Stage2Urban';
 import { Stage3FormZoning } from './components/Stage3FormZoning';
@@ -85,18 +84,31 @@ const StudioWorkspace: React.FC = () => {
     lengthX,
     widthY,
     floors,
+    setFloors,
     floorHeight,
     urbanAzimuth,
+    setUrbanAzimuth,
     perimeterDepth,
+    wwrS,
+    setWwrS,
+    wwrE,
+    setWwrE,
+    setWwrW,
     uWin,
     shgc,
+    setShgc,
     visTrans,
     overhangDepth,
+    setOverhangDepth,
     shadingMode,
+    setShadingMode,
     natVentOpeningRatio,
+    hrvEff,
+    setHrvEff,
     heatingCop,
     coolingEer,
-    roofPvRatio
+    roofPvRatio,
+    setRoofPvRatio
   } = useDesignProject();
 
   const [leftDrawerOpen, setLeftDrawerOpen] = useState(true);
@@ -336,7 +348,7 @@ const StudioWorkspace: React.FC = () => {
         {/* PERSISTENT LEFT CONTROL DRAWER */}
         {leftDrawerOpen && (
           <aside className="lg:col-span-3 space-y-4">
-            {/* Card 1: Climate & Live EPW Map Selector */}
+            {/* Card 1: Climate Quick-Switcher & Boundary Summary */}
             <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-3.5 space-y-3">
               <div className="flex items-center justify-between">
                 <span className="text-xs font-extrabold uppercase tracking-wider text-slate-700 flex items-center gap-1.5">
@@ -350,14 +362,14 @@ const StudioWorkspace: React.FC = () => {
 
               <div>
                 <label className="text-[11px] font-semibold text-slate-600 block mb-1">
-                  Reference Climate Preset (or select from EPW Map below):
+                  Active Weather Station / Reference Preset:
                 </label>
                 <select
                   value={climateId}
                   onChange={(e) => setClimateId(e.target.value)}
                   className="w-full rounded-xl bg-slate-50 border border-slate-300 px-3 py-2 text-xs font-bold text-slate-800 focus:outline-none focus:border-teal-500"
                 >
-                  <optgroup label="Academic Reference Presets">
+                  <optgroup label="Academic Reference Presets (8,760h)">
                     {Object.values(INITIAL_CLIMATE_PRESETS).map((c) => (
                       <option key={c.id} value={c.id}>
                         {c.name} [{c.koppen} • HDD {c.hdd}]
@@ -376,12 +388,194 @@ const StudioWorkspace: React.FC = () => {
                 </select>
               </div>
 
-              {/* Live 23,227-Station EPW Map + Search + Local Upload/Export */}
-              <EpwSearchAndUploadWidget
-                currentClimate={climate}
-                customClimates={customClimates}
-                onSelectClimate={addAndSelectClimate}
-              />
+              <div className="grid grid-cols-2 gap-1.5 text-[11px]">
+                <div className="bg-slate-50 px-2.5 py-1.5 rounded-lg border border-slate-200 flex justify-between">
+                  <span className="text-slate-500">HDD / CDD:</span>
+                  <span className="font-bold text-slate-800">{climate.hdd}/{climate.cdd}</span>
+                </div>
+                <div className="bg-slate-50 px-2.5 py-1.5 rounded-lg border border-slate-200 flex justify-between">
+                  <span className="text-slate-500">99.6% / 0.4%:</span>
+                  <span className="font-bold text-slate-800">{climate.designHeat996}°/{climate.designCool004}°</span>
+                </div>
+                <div className="bg-slate-50 px-2.5 py-1.5 rounded-lg border border-slate-200 flex justify-between">
+                  <span className="text-slate-500">Horiz Solar:</span>
+                  <span className="font-bold text-amber-700">
+                    {climate.solarHoriz.reduce((a, b) => a + b, 0)} kWh/m²
+                  </span>
+                </div>
+                <div className="bg-slate-50 px-2.5 py-1.5 rounded-lg border border-slate-200 flex justify-between">
+                  <span className="text-slate-500">NatVent Hrs:</span>
+                  <span className="font-bold text-teal-700">{climate.natVentHoursPct}%</span>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setActiveStage(1);
+                  setTimeout(() => {
+                    window.dispatchEvent(new CustomEvent('polimi:open-station-map'));
+                  }, 30);
+                }}
+                className="w-full py-2 px-3 rounded-xl bg-slate-900 hover:bg-slate-800 text-teal-300 border border-slate-700 text-xs font-bold flex items-center justify-center gap-1.5 transition shadow-sm"
+              >
+                <Globe className="w-3.5 h-3.5 text-teal-400" />
+                Open 23,227-Station EPW Map & .EPW Upload
+              </button>
+            </div>
+
+            {/* Card 2: Cross-Scale Parametric Quick-Tune Cockpit */}
+            <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-3.5 space-y-2.5 text-xs">
+              <div className="flex items-center justify-between">
+                <span className="font-extrabold uppercase tracking-wider text-slate-700 flex items-center gap-1.5">
+                  <Sparkles className="w-4 h-4 text-teal-600" />
+                  Cross-Scale Quick-Tune Cockpit
+                </span>
+                <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-200">
+                  Live Coupled
+                </span>
+              </div>
+              <p className="text-[11px] text-slate-500">
+                Adjust core massing, glazing & solar parameters from any stage:
+              </p>
+
+              <div className="grid grid-cols-2 gap-2.5 bg-slate-50 p-2.5 rounded-xl border border-slate-200">
+                <label>
+                  <div className="flex justify-between text-[10px] text-slate-600">
+                    <span>Storeys</span>
+                    <span className="font-bold text-slate-900">{floors} fl ({sim.gfa} m²)</span>
+                  </div>
+                  <input
+                    type="range"
+                    min={1}
+                    max={15}
+                    step={1}
+                    value={floors}
+                    onChange={(e) => setFloors(Number(e.target.value))}
+                    className="w-full accent-teal-600"
+                  />
+                </label>
+
+                <label>
+                  <div className="flex justify-between text-[10px] text-slate-600">
+                    <span>Azimuth</span>
+                    <span className="font-bold text-slate-900">{urbanAzimuth}°</span>
+                  </div>
+                  <input
+                    type="range"
+                    min={-45}
+                    max={45}
+                    step={5}
+                    value={urbanAzimuth}
+                    onChange={(e) => setUrbanAzimuth(Number(e.target.value))}
+                    className="w-full accent-teal-600"
+                  />
+                </label>
+
+                <label>
+                  <div className="flex justify-between text-[10px] text-slate-600">
+                    <span>South WWR</span>
+                    <span className="font-bold text-rose-700">{wwrS}%</span>
+                  </div>
+                  <input
+                    type="range"
+                    min={10}
+                    max={85}
+                    step={5}
+                    value={wwrS}
+                    onChange={(e) => setWwrS(Number(e.target.value))}
+                    className="w-full accent-rose-600"
+                  />
+                </label>
+
+                <label>
+                  <div className="flex justify-between text-[10px] text-slate-600">
+                    <span>E/W WWR</span>
+                    <span className="font-bold text-amber-700">{wwrE}%</span>
+                  </div>
+                  <input
+                    type="range"
+                    min={10}
+                    max={85}
+                    step={5}
+                    value={wwrE}
+                    onChange={(e) => {
+                      const v = Number(e.target.value);
+                      setWwrE(v);
+                      setWwrW(v);
+                    }}
+                    className="w-full accent-amber-600"
+                  />
+                </label>
+
+                <label>
+                  <div className="flex justify-between text-[10px] text-slate-600">
+                    <span>Solar g (SHGC)</span>
+                    <span className="font-bold text-sky-700">{shgc.toFixed(2)}</span>
+                  </div>
+                  <input
+                    type="range"
+                    min={0.18}
+                    max={0.75}
+                    step={0.02}
+                    value={shgc}
+                    onChange={(e) => setShgc(Number(e.target.value))}
+                    className="w-full accent-sky-600"
+                  />
+                </label>
+
+                <label>
+                  <div className="flex justify-between text-[10px] text-slate-600">
+                    <span>Overhang</span>
+                    <span className="font-bold text-amber-700">{overhangDepth.toFixed(1)} m</span>
+                  </div>
+                  <input
+                    type="range"
+                    min={0}
+                    max={2.0}
+                    step={0.1}
+                    value={overhangDepth}
+                    onChange={(e) => {
+                      const d = Number(e.target.value);
+                      setOverhangDepth(d);
+                      if (d > 0 && shadingMode === 'none') setShadingMode('fixed_overhang');
+                    }}
+                    className="w-full accent-amber-600"
+                  />
+                </label>
+
+                <label>
+                  <div className="flex justify-between text-[10px] text-slate-600">
+                    <span>HRV Recovery</span>
+                    <span className="font-bold text-teal-700">{Math.round(hrvEff * 100)}%</span>
+                  </div>
+                  <input
+                    type="range"
+                    min={0}
+                    max={0.9}
+                    step={0.05}
+                    value={hrvEff}
+                    onChange={(e) => setHrvEff(Number(e.target.value))}
+                    className="w-full accent-teal-600"
+                  />
+                </label>
+
+                <label>
+                  <div className="flex justify-between text-[10px] text-slate-600">
+                    <span>Roof Solar PV</span>
+                    <span className="font-bold text-emerald-700">{roofPvRatio}%</span>
+                  </div>
+                  <input
+                    type="range"
+                    min={0}
+                    max={95}
+                    step={5}
+                    value={roofPvRatio}
+                    onChange={(e) => setRoofPvRatio(Number(e.target.value))}
+                    className="w-full accent-emerald-600"
+                  />
+                </label>
+              </div>
             </div>
 
             {/* Card 2: Site Brief, Program & Legislative Target */}
