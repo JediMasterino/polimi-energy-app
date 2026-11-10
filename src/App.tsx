@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { Analytics } from '@vercel/analytics/react';
+import { SpeedInsights } from '@vercel/speed-insights/react';
 import {
   Globe,
   Building2,
@@ -1214,6 +1215,7 @@ export default function App() {
     <DesignProjectProvider>
       <StudioWorkspace />
       <Analytics />
+      <SpeedInsights />
     </DesignProjectProvider>
   );
 }
