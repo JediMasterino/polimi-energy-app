@@ -701,34 +701,41 @@ export function parseEpwText(epwContent: string, fallbackName = 'Custom EPW Stat
   );
 }
 
-// Official DOE EnergyPlus S3 .epw paths for automatic 8,760-hour real-EPW hydration of built-in presets
-const PRESET_OFFICIAL_EPW_URLS: Record<string, { url: string; displayName: string }> = {
+// Official EnergyPlus .epw paths bundled in public/weather/ for instant 8,760-hour real-EPW hydration
+const PRESET_OFFICIAL_EPW_URLS: Record<string, { localUrl: string; fallbackUrl: string; displayName: string }> = {
   milan: {
-    url: '/epw-s3/europe_wmo_region_6/ITA/ITA_Milano-Linate.160800_IGDG/ITA_Milano-Linate.160800_IGDG.epw',
+    localUrl: '/weather/milan.epw',
+    fallbackUrl: '/epw-s3/europe_wmo_region_6/ITA/ITA_Milano-Linate.160800_IGDG/ITA_Milano-Linate.160800_IGDG.epw',
     displayName: 'Milan (Linate WMO 160800), IT'
   },
   vevey: {
-    url: '/epw-s3/europe_wmo_region_6/CHE/CHE_Geneva.067000_IWEC/CHE_Geneva.067000_IWEC.epw',
+    localUrl: '/weather/vevey.epw',
+    fallbackUrl: '/epw-s3/europe_wmo_region_6/CHE/CHE_Geneva.067000_IWEC/CHE_Geneva.067000_IWEC.epw',
     displayName: 'Vevey / Lake Geneva (WMO 067000), CH'
   },
   rome: {
-    url: '/epw-s3/europe_wmo_region_6/ITA/ITA_Roma-Fiumicino.162420_IGDG/ITA_Roma-Fiumicino.162420_IGDG.epw',
+    localUrl: '/weather/rome.epw',
+    fallbackUrl: '/epw-s3/europe_wmo_region_6/ITA/ITA_Roma-Fiumicino.162420_IGDG/ITA_Roma-Fiumicino.162420_IGDG.epw',
     displayName: 'Rome (Fiumicino WMO 162420), IT'
   },
   stockholm: {
-    url: '/epw-s3/europe_wmo_region_6/SWE/SWE_Stockholm.Arlanda.024600_IWEC/SWE_Stockholm.Arlanda.024600_IWEC.epw',
+    localUrl: '/weather/stockholm.epw',
+    fallbackUrl: '/epw-s3/europe_wmo_region_6/SWE/SWE_Stockholm.Arlanda.024600_IWEC/SWE_Stockholm.Arlanda.024600_IWEC.epw',
     displayName: 'Stockholm (Arlanda WMO 024600), SE'
   },
   cairo: {
-    url: '/epw-s3/africa_wmo_region_1/EGY/EGY_Cairo.623660_IWEC/EGY_Cairo.623660_IWEC.epw',
+    localUrl: '/weather/cairo.epw',
+    fallbackUrl: '/epw-s3/africa_wmo_region_1/EGY/EGY_Cairo.623660_IWEC/EGY_Cairo.623660_IWEC.epw',
     displayName: 'Cairo (Intl WMO 623660), EG'
   },
   palermo: {
-    url: '/epw-s3/europe_wmo_region_6/ITA/ITA_Palermo-Boccadifalco.164000_IGDG/ITA_Palermo-Boccadifalco.164000_IGDG.epw',
+    localUrl: '/weather/palermo.epw',
+    fallbackUrl: '/epw-s3/europe_wmo_region_6/ITA/ITA_Palermo-Boccadifalco.164000_IGDG/ITA_Palermo-Boccadifalco.164000_IGDG.epw',
     displayName: 'Palermo (Boccadifalco WMO 164000), IT'
   },
   bormio: {
-    url: '/epw-s3/europe_wmo_region_6/ITA/ITA_Bolzano.160200_IGDG/ITA_Bolzano.160200_IGDG.epw',
+    localUrl: '/weather/bormio.epw',
+    fallbackUrl: '/epw-s3/europe_wmo_region_6/ITA/ITA_Bolzano.160200_IGDG/ITA_Bolzano.160200_IGDG.epw',
     displayName: 'Alpine Valley (Bolzano/Bormio WMO 160200), IT'
   }
 };
@@ -737,9 +744,24 @@ export async function fetchPresetOfficialEpw(presetId: string): Promise<ClimateD
   const entry = PRESET_OFFICIAL_EPW_URLS[presetId];
   if (!entry) return null;
   try {
-    const resp = await fetch(entry.url);
-    if (!resp.ok) return null;
-    const text = await resp.text();
+    let text = '';
+    // Try bundled local static file in /weather/ first
+    try {
+      const localResp = await fetch(entry.localUrl);
+      if (localResp.ok) {
+        text = await localResp.text();
+      }
+    } catch {
+      // Fallback
+    }
+
+    // If local fetch failed, try fallback proxy URL
+    if (!text || !text.includes('LOCATION,')) {
+      const resp = await fetch(entry.fallbackUrl);
+      if (!resp.ok) return null;
+      text = await resp.text();
+    }
+
     if (!text.includes('LOCATION,')) return null;
     const parsed = parseEpwText(text, entry.displayName);
     parsed.id = presetId;

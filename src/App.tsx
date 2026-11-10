@@ -112,6 +112,7 @@ const StudioWorkspace: React.FC = () => {
   } = useDesignProject();
 
   const [leftDrawerOpen, setLeftDrawerOpen] = useState(true);
+  const [stage1WideMode, setStage1WideMode] = useState(true);
   const [showExportModal, setShowExportModal] = useState(false);
   const [showHvacModal, setShowHvacModal] = useState(false);
   const [showParetoModal, setShowParetoModal] = useState(false);
@@ -699,8 +700,23 @@ const StudioWorkspace: React.FC = () => {
         )}
 
         {/* CENTRAL INTERACTIVE 2D / 2.5D / BIOCLIMATIC STAGE CANVAS */}
-        <section className={leftDrawerOpen ? 'lg:col-span-6' : 'lg:col-span-9'}>
-          {activeStage === 1 && <Stage1Climate />}
+        <section
+          className={
+            activeStage === 1 && stage1WideMode
+              ? leftDrawerOpen
+                ? 'lg:col-span-9'
+                : 'lg:col-span-12'
+              : leftDrawerOpen
+              ? 'lg:col-span-6'
+              : 'lg:col-span-9'
+          }
+        >
+          {activeStage === 1 && (
+            <Stage1Climate
+              stage1WideMode={stage1WideMode}
+              setStage1WideMode={setStage1WideMode}
+            />
+          )}
           {activeStage === 2 && <Stage2Urban />}
           {activeStage === 3 && <Stage3FormZoning />}
           {activeStage === 4 && <Stage4FacadeFabric />}
@@ -708,8 +724,9 @@ const StudioWorkspace: React.FC = () => {
           {activeStage === 6 && <Stage6LCA />}
         </section>
 
-        {/* PERSISTENT RIGHT KPI & COMPLIANCE PANEL */}
-        <aside className="lg:col-span-3 space-y-4">
+        {/* PERSISTENT RIGHT KPI & COMPLIANCE PANEL (collapsible in Stage 1 wide studio mode) */}
+        {(!stage1WideMode || activeStage !== 1) && (
+          <aside className="lg:col-span-3 space-y-4">
           {/* Card 1: Primary Energy & Net Site EUI Gauge */}
           <div className="bg-slate-900 text-white rounded-2xl border border-slate-700 p-4 shadow-md space-y-3">
             <div className="flex items-center justify-between">
@@ -908,6 +925,7 @@ const StudioWorkspace: React.FC = () => {
             </div>
           </div>
         </aside>
+        )}
       </main>
 
       {/* Global Drag-and-Drop Floating Overlay */}

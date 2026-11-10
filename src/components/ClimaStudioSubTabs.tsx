@@ -30,8 +30,25 @@ import {
 import { MONTHS, CLIMATE_SCOUT_STRATEGIES, scoreStrategyRelevance } from '../data/climateAndStrategies';
 
 // ============================================================================
-// REUSABLE CHART CARD WITH ONE-CLICK "EXPORT SVG" & "EXPORT DERIVED CSV"
+// REUSABLE CHART CARD WITH ONE-CLICK "EXPORT SVG", "EXPORT DERIVED CSV" & INTERACTIVE TOOLTIP
 // ============================================================================
+export interface ClimaTooltipLine {
+  label: string;
+  value: string | number;
+  color?: string;
+}
+
+export interface ClimaTooltipData {
+  title: string;
+  lines: ClimaTooltipLine[];
+}
+
+export interface ClimaTooltipCtx {
+  show: (e: React.MouseEvent<SVGElement | HTMLElement>, title: string, lines: ClimaTooltipLine[]) => void;
+  move: (e: React.MouseEvent<SVGElement | HTMLElement>) => void;
+  hide: () => void;
+}
+
 interface ClimaChartCardProps {
   title: string;
   subtitle?: string;
@@ -41,7 +58,10 @@ interface ClimaChartCardProps {
   svgFilename: string;
   csvFilename: string;
   onBuildCsv: () => { headers: string[]; rows: Array<Array<string | number>> };
-  children: (svgRef: React.RefObject<SVGSVGElement | null>) => React.ReactNode;
+  children: (
+    svgRef: React.RefObject<SVGSVGElement | null>,
+    tooltipCtx: ClimaTooltipCtx
+  ) => React.ReactNode;
   footer?: React.ReactNode;
 }
 
@@ -58,6 +78,46 @@ export const ClimaChartCard: React.FC<ClimaChartCardProps> = ({
   footer
 }) => {
   const svgRef = useRef<SVGSVGElement | null>(null);
+  const containerRef = useRef<HTMLDivElement | null>(null);
+  const [tooltip, setTooltip] = useState<{
+    visible: boolean;
+    x: number;
+    y: number;
+    data: ClimaTooltipData | null;
+  }>({
+    visible: false,
+    x: 0,
+    y: 0,
+    data: null
+  });
+
+  const tooltipCtx = useMemo<ClimaTooltipCtx>(
+    () => ({
+      show: (e, title, lines) => {
+        if (!containerRef.current) return;
+        const rect = containerRef.current.getBoundingClientRect();
+        setTooltip({
+          visible: true,
+          x: e.clientX - rect.left,
+          y: e.clientY - rect.top,
+          data: { title, lines }
+        });
+      },
+      move: (e) => {
+        if (!containerRef.current) return;
+        const rect = containerRef.current.getBoundingClientRect();
+        setTooltip((prev) => ({
+          ...prev,
+          x: e.clientX - rect.left,
+          y: e.clientY - rect.top
+        }));
+      },
+      hide: () => {
+        setTooltip((prev) => (prev.visible ? { ...prev, visible: false } : prev));
+      }
+    }),
+    []
+  );
 
   const handleExportSvg = () => {
     exportSvgNodeToFile(svgRef.current, svgFilename);
@@ -69,7 +129,7 @@ export const ClimaChartCard: React.FC<ClimaChartCardProps> = ({
   };
 
   return (
-    <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-4 space-y-3 flex flex-col justify-between">
+    <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-4 space-y-3 flex flex-col justify-between relative transition hover:shadow-md">
       <div className="space-y-2">
         <div className="flex flex-wrap items-start justify-between gap-2">
           <div>
@@ -86,18 +146,18 @@ export const ClimaChartCard: React.FC<ClimaChartCardProps> = ({
               type="button"
               onClick={handleExportSvg}
               title="Download publication-grade vector SVG chart"
-              className="px-2 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200 text-[10px] font-bold flex items-center gap-1 transition"
+              className="px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200 text-[10.5px] font-bold flex items-center gap-1 transition"
             >
-              <Download className="w-3 h-3 text-teal-600" />
+              <Download className="w-3.5 h-3.5 text-teal-600" />
               Export SVG
             </button>
             <button
               type="button"
               onClick={handleExportCsv}
               title="Download derived numerical table as CSV"
-              className="px-2 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200 text-[10px] font-bold flex items-center gap-1 transition"
+              className="px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200 text-[10.5px] font-bold flex items-center gap-1 transition"
             >
-              <FileSpreadsheet className="w-3 h-3 text-indigo-600" />
+              <FileSpreadsheet className="w-3.5 h-3.5 text-indigo-600" />
               Export CSV
             </button>
           </div>
@@ -106,7 +166,37 @@ export const ClimaChartCard: React.FC<ClimaChartCardProps> = ({
         {controls && <div className="pt-1">{controls}</div>}
       </div>
 
-      <div className="w-full overflow-x-auto">{children(svgRef)}</div>
+      <div ref={containerRef} className="w-full overflow-x-auto relative min-h-[160px]">
+        {children(svgRef, tooltipCtx)}
+
+        {/* Global Floating Glassmorphism Tooltip */}
+        {tooltip.visible && tooltip.data && (
+          <div
+            className="pointer-events-none absolute z-50 px-3.5 py-2.5 rounded-xl bg-slate-950/95 text-white shadow-2xl border border-slate-700/80 backdrop-blur-md max-w-xs -translate-x-1/2 -translate-y-full transition-all duration-75"
+            style={{
+              left: Math.max(100, Math.min(800, tooltip.x)),
+              top: Math.max(15, tooltip.y - 10)
+            }}
+          >
+            <div className="font-extrabold text-[11px] text-teal-300 pb-1 border-b border-slate-800 flex items-center justify-between gap-3">
+              <span>{tooltip.data.title}</span>
+            </div>
+            <div className="space-y-1 pt-1.5 text-[10.5px]">
+              {tooltip.data.lines.map((ln, idx) => (
+                <div key={idx} className="flex items-center justify-between gap-3 font-medium">
+                  <span className="text-slate-400 flex items-center gap-1.5">
+                    {ln.color && (
+                      <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: ln.color }} />
+                    )}
+                    {ln.label}:
+                  </span>
+                  <span className="font-mono font-bold text-slate-100">{ln.value}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
 
       {footer && <div className="pt-1">{footer}</div>}
     </div>
@@ -114,10 +204,11 @@ export const ClimaChartCard: React.FC<ClimaChartCardProps> = ({
 };
 
 // ============================================================================
-// REUSABLE 24h x 365d TIMETABLE CARPET HEATMAP SVG RENDERER
+// REUSABLE 24h x 365d TIMETABLE CARPET HEATMAP SVG RENDERER (INTERACTIVE HOVER)
 // ============================================================================
 interface CarpetHeatmapProps {
   svgRef?: React.RefObject<SVGSVGElement | null>;
+  tooltipCtx?: ClimaTooltipCtx;
   hourly: HourlyWeatherRecord[];
   getValue: (h: HourlyWeatherRecord, idx: number) => number;
   getColor: (val: number) => string;
@@ -127,30 +218,77 @@ interface CarpetHeatmapProps {
 
 export const CarpetHeatmap24x365: React.FC<CarpetHeatmapProps> = ({
   svgRef,
+  tooltipCtx,
   hourly,
   getValue,
   getColor,
   unitLabel,
   legendItems
 }) => {
-  const W = 780;
-  const H = 195;
-  const padL = 38;
-  const padR = 14;
-  const padT = 14;
-  const padB = 28;
+  const W = 860;
+  const H = 240;
+  const padL = 42;
+  const padR = 16;
+  const padT = 16;
+  const padB = 30;
   const plotW = W - padL - padR;
   const plotH = H - padT - padB;
   const cellW = plotW / 365;
   const cellH = plotH / 24;
 
+  const [activeCell, setActiveCell] = useState<{ dayOfYear: number; hour: number } | null>(null);
+
+  const handleMouseMove = (e: React.MouseEvent<SVGSVGElement>) => {
+    if (!svgRef?.current) return;
+    const pt = svgRef.current.createSVGPoint();
+    pt.x = e.clientX;
+    pt.y = e.clientY;
+    const cursor = pt.matrixTransform(svgRef.current.getScreenCTM()?.inverse());
+    if (cursor.x < padL || cursor.x > W - padR || cursor.y < padT || cursor.y > H - padB) {
+      setActiveCell(null);
+      tooltipCtx?.hide();
+      return;
+    }
+    const day0 = Math.floor((cursor.x - padL) / cellW);
+    const dayOfYear = Math.max(1, Math.min(365, day0 + 1));
+    const hrInv = Math.floor((cursor.y - padT) / cellH);
+    const hour = Math.max(0, Math.min(23, 23 - hrInv));
+
+    setActiveCell({ dayOfYear, hour });
+    const idx = (dayOfYear - 1) * 24 + hour;
+    const rec = hourly[idx];
+    if (rec && tooltipCtx) {
+      const val = getValue(rec, idx);
+      const mName = MONTHS[rec.month];
+      tooltipCtx.show(e, `${mName} ${rec.dayOfMonth} • ${String(hour).padStart(2, '0')}:00`, [
+        { label: unitLabel, value: typeof val === 'number' ? val.toFixed(1) : String(val), color: getColor(val) },
+        { label: 'Dry-Bulb Temp', value: `${rec.dryBulb}°C` },
+        { label: 'Relative Humidity', value: `${rec.relHum}%` },
+        { label: 'Wind Speed', value: `${rec.windSpeed} m/s` },
+        { label: 'GHI', value: `${rec.ghi} W/m²` }
+      ]);
+      tooltipCtx.move(e);
+    }
+  };
+
+  const handleMouseLeave = () => {
+    setActiveCell(null);
+    tooltipCtx?.hide();
+  };
+
   return (
-    <div className="space-y-1.5">
-      <svg ref={svgRef} viewBox={`0 0 ${W} ${H}`} className="w-full h-auto bg-slate-950 rounded-xl p-1">
+    <div className="space-y-2">
+      <svg
+        ref={svgRef}
+        viewBox={`0 0 ${W} ${H}`}
+        onMouseMove={handleMouseMove}
+        onMouseLeave={handleMouseLeave}
+        className="w-full h-auto bg-slate-950 rounded-xl p-1 cursor-crosshair shadow-inner"
+      >
         {[0, 6, 12, 18, 23].map((hr) => {
           const y = padT + (23 - hr) * cellH + cellH * 0.5;
           return (
-            <text key={hr} x={padL - 5} y={y + 3} textAnchor="end" fontSize="8.5" fill="#94a3b8">
+            <text key={hr} x={padL - 6} y={y + 3.5} textAnchor="end" fontSize="9" fontWeight="600" fill="#94a3b8">
               {String(hr).padStart(2, '0')}:00
             </text>
           );
@@ -165,12 +303,26 @@ export const CarpetHeatmap24x365: React.FC<CarpetHeatmapProps> = ({
               key={idx}
               x={x}
               y={y}
-              width={cellW + 0.35}
-              height={cellH + 0.35}
+              width={cellW + 0.45}
+              height={cellH + 0.45}
               fill={getColor(val)}
             />
           );
         })}
+
+        {/* Highlight Active Cell Border */}
+        {activeCell && (
+          <rect
+            x={padL + (activeCell.dayOfYear - 1) * cellW}
+            y={padT + (23 - activeCell.hour) * cellH}
+            width={cellW + 1}
+            height={cellH + 1}
+            fill="none"
+            stroke="#ffffff"
+            strokeWidth={1.8}
+            className="animate-pulse"
+          />
+        )}
 
         {MONTHS.map((m, i) => {
           const x = padL + (i + 0.5) * (plotW / 12);
@@ -181,10 +333,10 @@ export const CarpetHeatmap24x365: React.FC<CarpetHeatmapProps> = ({
                 y1={padT}
                 x2={padL + i * (plotW / 12)}
                 y2={padT + plotH}
-                stroke="rgba(255,255,255,0.12)"
-                strokeWidth={0.7}
+                stroke="rgba(255,255,255,0.18)"
+                strokeWidth={0.8}
               />
-              <text x={x} y={H - 8} textAnchor="middle" fontSize="9" fill="#cbd5e1" fontWeight="600">
+              <text x={x} y={H - 9} textAnchor="middle" fontSize="10" fill="#e2e8f0" fontWeight="700">
                 {m}
               </text>
             </g>
@@ -192,14 +344,14 @@ export const CarpetHeatmap24x365: React.FC<CarpetHeatmapProps> = ({
         })}
       </svg>
 
-      <div className="flex flex-wrap items-center justify-between gap-2 text-[10px] text-slate-600 px-1">
+      <div className="flex flex-wrap items-center justify-between gap-2 text-[10.5px] text-slate-600 px-1">
         <span className="font-semibold text-slate-500">
-          365 Days × 24 Hours (8,760h Annual Matrix • {unitLabel})
+          365 Days × 24 Hours (8,760h Annual Matrix • {unitLabel} • Hover to inspect any hour)
         </span>
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2.5">
           {legendItems.map((it, idx) => (
-            <span key={idx} className="flex items-center gap-1 font-medium">
-              <span className="w-2.5 h-2.5 rounded-sm inline-block" style={{ backgroundColor: it.color }} />
+            <span key={idx} className="flex items-center gap-1.5 font-medium">
+              <span className="w-3 h-3 rounded-sm inline-block shadow-sm" style={{ backgroundColor: it.color }} />
               {it.label}
             </span>
           ))}
@@ -417,11 +569,11 @@ export const SubTab5Wind: React.FC<{
               </div>
             }
           >
-            {(svgRef) => {
-              const size = 320;
+            {(svgRef, tooltipCtx) => {
+              const size = 440;
               const cx = size / 2;
               const cy = size / 2;
-              const R = 116;
+              const R = 170;
               const maxPct = Math.max(12, ...windStats.sectors.map((s) => s.totalPct));
 
               const wedgePath = (deg: number, rInner: number, rOuter: number) => {
@@ -441,7 +593,7 @@ export const SubTab5Wind: React.FC<{
 
               return (
                 <div className="flex flex-col items-center">
-                  <svg ref={svgRef} viewBox={`0 0 ${size} ${size}`} className="w-full max-w-[320px] h-auto">
+                  <svg ref={svgRef} viewBox={`0 0 ${size} ${size}`} className="w-full max-w-[460px] h-auto cursor-pointer">
                     {[0.25, 0.5, 0.75, 1].map((f, i) => (
                       <g key={i}>
                         <circle
@@ -452,7 +604,7 @@ export const SubTab5Wind: React.FC<{
                           stroke="#e2e8f0"
                           strokeDasharray="3 3"
                         />
-                        <text x={cx + 4} y={cy - R * f + 9} fontSize="8" fill="#64748b">
+                        <text x={cx + 4} y={cy - R * f + 9} fontSize="9" fontWeight="600" fill="#64748b">
                           {+(maxPct * f).toFixed(1)}%
                         </text>
                       </g>
@@ -466,17 +618,36 @@ export const SubTab5Wind: React.FC<{
                       const r5 = (s.totalPct / maxPct) * R;
 
                       const labelRad = ((s.deg - 90) * Math.PI) / 180;
-                      const lx = cx + (R + 20) * Math.cos(labelRad);
-                      const ly = cy + (R + 20) * Math.sin(labelRad);
+                      const lx = cx + (R + 24) * Math.cos(labelRad);
+                      const ly = cy + (R + 24) * Math.sin(labelRad);
+
+                      const onSectorEnter = (e: React.MouseEvent<SVGElement>) => {
+                        tooltipCtx.show(e, `Wind Sector: ${s.dir} (${s.deg}°)`, [
+                          { label: 'Total Frequency', value: `${s.totalPct}% (${Math.round((s.totalPct / 100) * windStats.filteredCount)} hrs)` },
+                          { label: '0.5–2 m/s', value: `${s.b0_2Pct}%`, color: '#bae6fd' },
+                          { label: '2–4 m/s', value: `${s.b2_4Pct}%`, color: '#38bdf8' },
+                          { label: '4–6 m/s', value: `${s.b4_6Pct}%`, color: '#0284c7' },
+                          { label: '6–9 m/s', value: `${s.b6_9Pct}%`, color: '#f59e0b' },
+                          { label: '>9 m/s', value: `${s.b9PlusPct}%`, color: '#e11d48' },
+                          { label: 'Mean Velocity', value: `${s.avgSpeed} m/s` },
+                          { label: 'Sector Mean Temp', value: `${s.avgTemp}°C` }
+                        ]);
+                      };
 
                       return (
-                        <g key={s.dir}>
+                        <g
+                          key={s.dir}
+                          onMouseEnter={onSectorEnter}
+                          onMouseMove={tooltipCtx.move}
+                          onMouseLeave={tooltipCtx.hide}
+                          className="transition hover:opacity-90"
+                        >
                           {r1 > 0 && <path d={wedgePath(s.deg, 0, r1)} fill="#bae6fd" />}
                           {r2 > r1 && <path d={wedgePath(s.deg, r1, r2)} fill="#38bdf8" />}
                           {r3 > r2 && <path d={wedgePath(s.deg, r2, r3)} fill="#0284c7" />}
                           {r4 > r3 && <path d={wedgePath(s.deg, r3, r4)} fill="#f59e0b" />}
                           {r5 > r4 && <path d={wedgePath(s.deg, r4, r5)} fill="#e11d48" />}
-                          <text x={lx} y={ly + 3} textAnchor="middle" fontSize="8.5" fontWeight="700" fill="#1e293b">
+                          <text x={lx} y={ly + 3.5} textAnchor="middle" fontSize="9.5" fontWeight="800" fill="#1e293b">
                             {s.dir}
                           </text>
                         </g>
@@ -484,21 +655,21 @@ export const SubTab5Wind: React.FC<{
                     })}
                   </svg>
 
-                  <div className="flex flex-wrap items-center justify-center gap-3 text-[10px] mt-1">
-                    <span className="flex items-center gap-1">
-                      <span className="w-2.5 h-2.5 rounded-sm bg-sky-200 inline-block" /> 0.5–2 m/s
+                  <div className="flex flex-wrap items-center justify-center gap-3.5 text-[10.5px] mt-2 font-medium">
+                    <span className="flex items-center gap-1.5">
+                      <span className="w-3 h-3 rounded-sm bg-sky-200 inline-block shadow-sm" /> 0.5–2 m/s
                     </span>
-                    <span className="flex items-center gap-1">
-                      <span className="w-2.5 h-2.5 rounded-sm bg-sky-400 inline-block" /> 2–4 m/s
+                    <span className="flex items-center gap-1.5">
+                      <span className="w-3 h-3 rounded-sm bg-sky-400 inline-block shadow-sm" /> 2–4 m/s
                     </span>
-                    <span className="flex items-center gap-1">
-                      <span className="w-2.5 h-2.5 rounded-sm bg-sky-600 inline-block" /> 4–6 m/s
+                    <span className="flex items-center gap-1.5">
+                      <span className="w-3 h-3 rounded-sm bg-sky-600 inline-block shadow-sm" /> 4–6 m/s
                     </span>
-                    <span className="flex items-center gap-1">
-                      <span className="w-2.5 h-2.5 rounded-sm bg-amber-500 inline-block" /> 6–9 m/s
+                    <span className="flex items-center gap-1.5">
+                      <span className="w-3 h-3 rounded-sm bg-amber-500 inline-block shadow-sm" /> 6–9 m/s
                     </span>
-                    <span className="flex items-center gap-1">
-                      <span className="w-2.5 h-2.5 rounded-sm bg-rose-600 inline-block" /> &gt;9 m/s
+                    <span className="flex items-center gap-1.5">
+                      <span className="w-3 h-3 rounded-sm bg-rose-600 inline-block shadow-sm" /> &gt;9 m/s
                     </span>
                   </div>
                 </div>
@@ -520,13 +691,13 @@ export const SubTab5Wind: React.FC<{
               rows: MONTHS.map((m, i) => [m, climate.monthlyWind[i]])
             })}
           >
-            {(svgRef) => {
-              const W = 500;
-              const H = 175;
-              const padL = 36;
+            {(svgRef, tooltipCtx) => {
+              const W = 520;
+              const H = 200;
+              const padL = 38;
               const padR = 16;
               const padT = 16;
-              const padB = 26;
+              const padB = 28;
               const plotW = W - padL - padR;
               const plotH = H - padT - padB;
               const vMax = globalValueRanges ? 12 : Math.max(6, ...climate.monthlyWind) * 1.25;
@@ -542,7 +713,7 @@ export const SubTab5Wind: React.FC<{
                       return (
                         <g key={idx}>
                           <line x1={padL} y1={y} x2={W - padR} y2={y} stroke="#f1f5f9" />
-                          <text x={padL - 5} y={y + 3} textAnchor="end" fontSize="8.5" fill="#64748b">
+                          <text x={padL - 5} y={y + 3} textAnchor="end" fontSize="9" fill="#64748b">
                             {val}
                           </text>
                         </g>
@@ -553,20 +724,30 @@ export const SubTab5Wind: React.FC<{
                       const x = xForM(i);
                       const y = yForV(v);
                       return (
-                        <g key={MONTHS[i]}>
+                        <g
+                          key={MONTHS[i]}
+                          className="cursor-pointer transition hover:opacity-85"
+                          onMouseEnter={(e) => {
+                            tooltipCtx.show(e, `${MONTHS[i]} Mean Wind Speed`, [
+                              { label: 'Mean Velocity', value: `${v} m/s`, color: '#0284c7' }
+                            ]);
+                          }}
+                          onMouseMove={tooltipCtx.move}
+                          onMouseLeave={tooltipCtx.hide}
+                        >
                           <rect
-                            x={x - 11}
+                            x={x - 12}
                             y={y}
-                            width={22}
+                            width={24}
                             height={Math.max(2, padT + plotH - y)}
                             rx={4}
                             fill="#0284c7"
-                            fillOpacity={0.8}
+                            fillOpacity={0.85}
                           />
-                          <text x={x} y={y - 4} textAnchor="middle" fontSize="8.5" fontWeight="700" fill="#0369a1">
+                          <text x={x} y={y - 5} textAnchor="middle" fontSize="9" fontWeight="700" fill="#0369a1">
                             {v}
                           </text>
-                          <text x={x} y={H - 8} textAnchor="middle" fontSize="9" fontWeight="600" fill="#475569">
+                          <text x={x} y={H - 8} textAnchor="middle" fontSize="9.5" fontWeight="600" fill="#475569">
                             {MONTHS[i]}
                           </text>
                         </g>
@@ -576,7 +757,10 @@ export const SubTab5Wind: React.FC<{
 
                   <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5 text-[10px]">
                     {windStats.sectors.map((s) => (
-                      <div key={s.dir} className="bg-slate-50 px-2 py-1.5 rounded-lg border border-slate-200 flex justify-between items-center">
+                      <div
+                        key={s.dir}
+                        className="bg-slate-50 px-2 py-1.5 rounded-lg border border-slate-200 flex justify-between items-center cursor-pointer hover:bg-slate-100 transition"
+                      >
                         <span className="font-bold text-slate-800">{s.dir}: {s.totalPct}%</span>
                         <span className="text-slate-500 text-[9.5px]">{s.avgSpeed}m/s • {s.avgTemp}°C</span>
                       </div>
@@ -602,9 +786,10 @@ export const SubTab5Wind: React.FC<{
             rows: climate.hourly.map((h) => [h.hourOfYear, h.month + 1, h.dayOfMonth, h.hour, h.windSpeed, h.windDir])
           })}
         >
-          {(svgRef) => (
+          {(svgRef, tooltipCtx) => (
             <CarpetHeatmap24x365
               svgRef={svgRef}
+              tooltipCtx={tooltipCtx}
               hourly={climate.hourly}
               getValue={(h) => h.windSpeed}
               getColor={(v) => colorForWindSpeed(v, globalValueRanges)}
@@ -631,9 +816,10 @@ export const SubTab5Wind: React.FC<{
             rows: climate.hourly.map((h) => [h.hourOfYear, h.month + 1, h.dayOfMonth, h.hour, h.windDir])
           })}
         >
-          {(svgRef) => (
+          {(svgRef, tooltipCtx) => (
             <CarpetHeatmap24x365
               svgRef={svgRef}
+              tooltipCtx={tooltipCtx}
               hourly={climate.hourly}
               getValue={(h) => h.windDir}
               getColor={(deg) => colorForWindDir(deg)}
@@ -783,13 +969,13 @@ export const SubTab6Psychrometric: React.FC<{
               </div>
             }
           >
-            {(svgRef) => {
-              const W = 580;
-              const H = 340;
-              const padL = 36;
-              const padR = 42;
-              const padT = 18;
-              const padB = 32;
+            {(svgRef, tooltipCtx) => {
+              const W = 800;
+              const H = 440;
+              const padL = 42;
+              const padR = 48;
+              const padT = 20;
+              const padB = 34;
               const plotW = W - padL - padR;
               const plotH = H - padT - padB;
 
@@ -841,7 +1027,7 @@ export const SubTab6Psychrometric: React.FC<{
                     {[-10, -5, 0, 5, 10, 15, 20, 25, 30, 35, 40, 45].map((t) => (
                       <g key={t}>
                         <line x1={xForT(t)} y1={padT} x2={xForT(t)} y2={H - padB} stroke="#e2e8f0" strokeWidth={0.8} />
-                        <text x={xForT(t)} y={H - 10} textAnchor="middle" fontSize="8.5" fill="#475569" fontWeight="600">
+                        <text x={xForT(t)} y={H - 12} textAnchor="middle" fontSize="9.5" fill="#475569" fontWeight="600">
                           {t}°C
                         </text>
                       </g>
@@ -851,7 +1037,7 @@ export const SubTab6Psychrometric: React.FC<{
                     {[0, 4, 8, 12, 16, 20, 24].map((w) => (
                       <g key={w}>
                         <line x1={padL} y1={yForW(w)} x2={W - padR} y2={yForW(w)} stroke="#e2e8f0" strokeWidth={0.8} />
-                        <text x={W - padR + 5} y={yForW(w) + 3} fontSize="8.5" fill="#475569" fontWeight="600">
+                        <text x={W - padR + 6} y={yForW(w) + 3.5} fontSize="9.5" fill="#475569" fontWeight="600">
                           {w} g/kg
                         </text>
                       </g>
@@ -863,7 +1049,7 @@ export const SubTab6Psychrometric: React.FC<{
                         key={rh}
                         fill="none"
                         stroke={rh === 100 ? '#0284c7' : '#94a3b8'}
-                        strokeWidth={rh === 100 ? 1.8 : 1}
+                        strokeWidth={rh === 100 ? 2 : 1}
                         strokeDasharray={rh === 100 ? undefined : '3 3'}
                         points={buildRhCurve(rh)}
                       />
@@ -883,10 +1069,20 @@ export const SubTab6Psychrometric: React.FC<{
                             key={idx}
                             x={x}
                             y={y}
-                            width={cellW + 0.4}
-                            height={cellH + 0.4}
+                            width={cellW + 0.45}
+                            height={cellH + 0.45}
                             fill={fill}
-                            fillOpacity={0.82}
+                            fillOpacity={0.85}
+                            className="cursor-pointer transition hover:opacity-100"
+                            onMouseEnter={(e) => {
+                              tooltipCtx.show(e, `Psychrometric Density Bin`, [
+                                { label: 'Dry-Bulb Temp', value: `${b.tBin}°C to ${b.tBin + 1}°C` },
+                                { label: 'Humidity Ratio', value: `${b.wBin.toFixed(1)} to ${(b.wBin + 0.5).toFixed(1)} g/kg` },
+                                { label: 'Annual Hours in Bin', value: `${b.count} hrs (${((b.count / 8760) * 100).toFixed(1)}%)`, color: fill }
+                              ]);
+                            }}
+                            onMouseMove={tooltipCtx.move}
+                            onMouseLeave={tooltipCtx.hide}
                           />
                         );
                       })}
@@ -918,9 +1114,21 @@ export const SubTab6Psychrometric: React.FC<{
                           key={i}
                           cx={xForT(h.dryBulb)}
                           cy={yForW(h.humRatio)}
-                          r={1.7}
+                          r={2.2}
                           fill={fill}
-                          fillOpacity={0.45}
+                          fillOpacity={0.55}
+                          className="cursor-pointer"
+                          onMouseEnter={(e) => {
+                            tooltipCtx.show(e, `Hour ${h.hour}:00 (Day ${h.dayOfYear})`, [
+                              { label: 'Dry-Bulb Temp', value: `${h.dryBulb}°C` },
+                              { label: 'Relative Humidity', value: `${h.relHum}%` },
+                              { label: 'Humidity Ratio', value: `${h.humRatio} g/kg` },
+                              { label: 'GHI', value: `${h.ghi} W/m²` },
+                              { label: 'UTCI', value: `${h.utci}°C` }
+                            ]);
+                          }}
+                          onMouseMove={tooltipCtx.move}
+                          onMouseLeave={tooltipCtx.hide}
                         />
                       );
                     })}
@@ -935,19 +1143,32 @@ export const SubTab6Psychrometric: React.FC<{
                       const pts = clippedPts.map(([t, w]) => `${xForT(t).toFixed(1)},${yForW(w).toFixed(1)}`).join(' ');
                       const cx = clippedPts.reduce((s, p) => s + xForT(p[0]), 0) / clippedPts.length;
                       const cy = clippedPts.reduce((s, p) => s + yForW(p[1]), 0) / clippedPts.length;
+                      const pct = evalStats.polygonSharesPct[poly.id];
                       return (
-                        <g key={poly.id}>
+                        <g
+                          key={poly.id}
+                          className="cursor-pointer transition hover:opacity-90"
+                          onMouseEnter={(e) => {
+                            tooltipCtx.show(e, `Strategy Envelope: ${poly.name}`, [
+                              { label: 'Annual Comfort Share', value: `${pct}% of year`, color: poly.color },
+                              { label: 'Bioclimatic Zone', value: poly.shortName },
+                              { label: 'Scope', value: poly.description }
+                            ]);
+                          }}
+                          onMouseMove={tooltipCtx.move}
+                          onMouseLeave={tooltipCtx.hide}
+                        >
                           <polygon
                             points={pts}
                             fill={poly.fillColor}
                             stroke={poly.color}
-                            strokeWidth={2}
+                            strokeWidth={2.4}
                           />
                           <text
                             x={cx}
                             y={cy}
                             textAnchor="middle"
-                            fontSize="8.5"
+                            fontSize="9"
                             fontWeight="800"
                             fill={poly.color}
                           >
@@ -957,13 +1178,13 @@ export const SubTab6Psychrometric: React.FC<{
                       );
                     })}
                   </svg>
-                  <div className="flex flex-wrap items-center justify-between text-[10px] text-slate-600 px-1">
+                  <div className="flex flex-wrap items-center justify-between text-[10.5px] text-slate-600 px-1">
                     <span>
                       Station Pressure: <strong>{Math.round(meanPressurePa)} Pa</strong> • Saturation Curve: <strong className="text-sky-600">100% RH</strong>
                     </span>
                     {colorBy === 'frequency' && (
                       <span>
-                        Max Bin Density: <strong className="text-rose-600">{maxBinCount} hrs / bin</strong> (ΔT=1°C × ΔW=0.5 g/kg)
+                        Max Bin Density: <strong className="text-rose-600">{maxBinCount} hrs / bin</strong> (ΔT=1°C × ΔW=0.5 g/kg • Hover to inspect)
                       </span>
                     )}
                   </div>
@@ -1188,13 +1409,13 @@ export const SubTab7NatVent: React.FC<{
               ])
             })}
           >
-            {(svgRef) => {
-              const W = 460;
-              const H = 215;
-              const padL = 34;
-              const padR = 14;
-              const padT = 16;
-              const padB = 26;
+            {(svgRef, tooltipCtx) => {
+              const W = 620;
+              const H = 260;
+              const padL = 40;
+              const padR = 18;
+              const padT = 20;
+              const padB = 30;
               const plotW = W - padL - padR;
               const plotH = H - padT - padB;
               const xForM = (i: number) => padL + (i + 0.5) * (plotW / 12);
@@ -1206,7 +1427,7 @@ export const SubTab7NatVent: React.FC<{
                     return (
                       <g key={pct}>
                         <line x1={padL} y1={y} x2={W - padR} y2={y} stroke="#f1f5f9" />
-                        <text x={padL - 5} y={y + 3} textAnchor="end" fontSize="8.5" fill="#64748b">
+                        <text x={padL - 6} y={y + 3} textAnchor="end" fontSize="9" fill="#64748b">
                           {pct}%
                         </text>
                       </g>
@@ -1218,26 +1439,40 @@ export const SubTab7NatVent: React.FC<{
                     const hSuit = (suit / 100) * plotH;
                     const x = xForM(i);
                     return (
-                      <g key={m}>
+                      <g
+                        key={m}
+                        className="cursor-pointer"
+                        onMouseEnter={(e) => {
+                          tooltipCtx.show(e, `${m} Natural Ventilation`, [
+                            { label: 'Suitable Window Hours', value: `${suit}%`, color: '#10b981' },
+                            { label: 'Too Cold (<' + minTempC + '°C)', value: `${nvStats.monthlyTooColdPct[i]}%`, color: '#0284c7' },
+                            { label: 'Too Humid (T_dp >' + maxDewPointC + '°C)', value: `${nvStats.monthlyTooHumidPct[i]}%`, color: '#8b5cf6' },
+                            { label: 'Too Hot (>' + maxTempC + '°C)', value: `${nvStats.monthlyTooHotPct[i]}%`, color: '#e11d48' }
+                          ]);
+                        }}
+                        onMouseMove={(e) => tooltipCtx.move(e)}
+                        onMouseLeave={() => tooltipCtx.hide()}
+                      >
                         <rect
-                          x={x - 10}
+                          x={x - 14}
                           y={padT + plotH - hSuit}
-                          width={20}
+                          width={28}
                           height={Math.max(2, hSuit)}
-                          rx={3}
+                          rx={4}
                           fill="#10b981"
+                          className="hover:opacity-90 transition"
                         />
                         <text
                           x={x}
-                          y={padT + plotH - hSuit - 4}
+                          y={padT + plotH - hSuit - 5}
                           textAnchor="middle"
-                          fontSize="8"
+                          fontSize="9"
                           fontWeight="700"
                           fill="#047857"
                         >
                           {suit}%
                         </text>
-                        <text x={x} y={H - 8} textAnchor="middle" fontSize="9" fontWeight="600" fill="#475569">
+                        <text x={x} y={H - 8} textAnchor="middle" fontSize="9.5" fontWeight="600" fill="#475569">
                           {m}
                         </text>
                       </g>
@@ -1271,9 +1506,10 @@ export const SubTab7NatVent: React.FC<{
               ])
             })}
           >
-            {(svgRef) => (
+            {(svgRef, tooltipCtx) => (
               <CarpetHeatmap24x365
                 svgRef={svgRef}
+                tooltipCtx={tooltipCtx}
                 hourly={climate.hourly}
                 getValue={(_, idx) => {
                   const st = nvStats.hourlyStates[idx];
@@ -1371,9 +1607,10 @@ export const SubTab8Utci: React.FC<{
             rows: climate.hourly.map((h, i) => [h.hourOfYear, h.month + 1, h.dayOfMonth, h.hour, utciData.hourlyUtci[i]])
           })}
         >
-          {(svgRef) => (
+          {(svgRef, tooltipCtx) => (
             <CarpetHeatmap24x365
               svgRef={svgRef}
+              tooltipCtx={tooltipCtx}
               hourly={climate.hourly}
               getValue={(_, idx) => utciData.hourlyUtci[idx]}
               getColor={(v) => colorForTempC(v, false)}
@@ -1403,9 +1640,10 @@ export const SubTab8Utci: React.FC<{
             ])
           })}
         >
-          {(svgRef) => (
+          {(svgRef, tooltipCtx) => (
             <CarpetHeatmap24x365
               svgRef={svgRef}
+              tooltipCtx={tooltipCtx}
               hourly={climate.hourly}
               getValue={(_, idx) => utciData.hourlyUtci[idx]}
               getColor={(val) => {
@@ -1439,13 +1677,13 @@ export const SubTab8Utci: React.FC<{
           ])
         })}
       >
-        {(svgRef) => {
-          const W = 720;
-          const H = 210;
-          const padL = 38;
-          const padR = 16;
-          const padT = 14;
-          const padB = 26;
+        {(svgRef, tooltipCtx) => {
+          const W = 860;
+          const H = 260;
+          const padL = 44;
+          const padR = 20;
+          const padT = 18;
+          const padB = 30;
           const plotW = W - padL - padR;
           const plotH = H - padT - padB;
           const xForM = (i: number) => padL + (i + 0.5) * (plotW / 12);
@@ -1458,7 +1696,7 @@ export const SubTab8Utci: React.FC<{
                   return (
                     <g key={pct}>
                       <line x1={padL} y1={y} x2={W - padR} y2={y} stroke="#f1f5f9" />
-                      <text x={padL - 5} y={y + 3} textAnchor="end" fontSize="8.5" fill="#64748b">
+                      <text x={padL - 6} y={y + 3} textAnchor="end" fontSize="9" fill="#64748b">
                         {pct}%
                       </text>
                     </g>
@@ -1480,15 +1718,26 @@ export const SubTab8Utci: React.FC<{
                         return (
                           <rect
                             key={band.id}
-                            x={x - 16}
+                            x={x - 18}
                             y={y}
-                            width={32}
+                            width={36}
                             height={Math.max(0.5, hBar)}
                             fill={band.color}
+                            className="cursor-pointer hover:opacity-90 transition"
+                            onMouseEnter={(e) => {
+                              tooltipCtx.show(e, `${m} — ${band.label}`, [
+                                { label: 'Stress Category', value: band.label, color: band.color },
+                                { label: 'Monthly Share', value: `${val}%`, color: band.color },
+                                { label: 'Equivalent Temp Range', value: `${band.minC}°C to ${band.maxC}°C` },
+                                { label: 'Shelter Scenario', value: scenario.toUpperCase() }
+                              ]);
+                            }}
+                            onMouseMove={(e) => tooltipCtx.move(e)}
+                            onMouseLeave={() => tooltipCtx.hide()}
                           />
                         );
                       })}
-                      <text x={x} y={H - 8} textAnchor="middle" fontSize="9" fontWeight="600" fill="#475569">
+                      <text x={x} y={H - 8} textAnchor="middle" fontSize="9.5" fontWeight="600" fill="#475569">
                         {m}
                       </text>
                     </g>
@@ -1754,13 +2003,13 @@ export const SubTab9DataExplorer: React.FC<{
             ])
           })}
         >
-          {(svgRef) => {
-            const W = 500;
-            const H = 310;
-            const padL = 42;
-            const padB = 34;
-            const histTopH = 44;
-            const histRightW = 48;
+          {(svgRef, tooltipCtx) => {
+            const W = 620;
+            const H = 380;
+            const padL = 46;
+            const padB = 38;
+            const histTopH = 50;
+            const histRightW = 54;
             const plotW = W - padL - histRightW - 18;
             const plotH = H - histTopH - padB - 14;
             const plotX0 = padL;
@@ -1777,14 +2026,14 @@ export const SubTab9DataExplorer: React.FC<{
             const maxXBin = Math.max(1, ...stats.xHist.bins.map((b) => b.count));
             const maxYBin = Math.max(1, ...stats.yHist.bins.map((b) => b.count));
 
-            const sampled = filtered.filter((_, idx) => idx % 3 === 0);
+            const sampled = filtered.filter((_, idx) => idx % 2 === 0);
 
             return (
               <svg ref={svgRef} viewBox={`0 0 ${W} ${H}`} className="w-full h-auto bg-slate-50 rounded-xl border border-slate-200">
                 {/* Top Marginal X Histogram */}
                 {stats.xHist.bins.map((b, i) => {
                   const bx = plotX0 + (i / stats.xHist.bins.length) * plotW;
-                  const bw = plotW / stats.xHist.bins.length - 1.5;
+                  const bw = plotW / stats.xHist.bins.length - 2;
                   const bh = (b.count / maxXBin) * (histTopH - 6);
                   return (
                     <rect
@@ -1803,7 +2052,7 @@ export const SubTab9DataExplorer: React.FC<{
                 {/* Right Marginal Y Histogram */}
                 {stats.yHist.bins.map((b, i) => {
                   const by = plotY0 + plotH - ((i + 1) / stats.yHist.bins.length) * plotH;
-                  const bh = plotH / stats.yHist.bins.length - 1.5;
+                  const bh = plotH / stats.yHist.bins.length - 2;
                   const bw = (b.count / maxYBin) * (histRightW - 8);
                   return (
                     <rect
@@ -1840,25 +2089,35 @@ export const SubTab9DataExplorer: React.FC<{
                       key={i}
                       cx={xFor(xv)}
                       cy={yFor(yv)}
-                      r={2.1}
+                      r={2.4}
                       fill={color}
-                      fillOpacity={0.5}
+                      fillOpacity={0.65}
+                      className="cursor-pointer hover:r-[5] transition-all"
+                      onMouseEnter={(e) => {
+                        tooltipCtx.show(e, `${MONTHS[h.month]} ${h.dayOfMonth} • ${h.hour}:00`, [
+                          { label: xMeta.label, value: `${xv} ${xMeta.unit}`, color: '#0d9488' },
+                          { label: yMeta.label, value: `${yv} ${yMeta.unit}`, color: '#6366f1' },
+                          { label: zMeta.label, value: `${zv} ${zMeta.unit}`, color: color }
+                        ]);
+                      }}
+                      onMouseMove={(e) => tooltipCtx.move(e)}
+                      onMouseLeave={() => tooltipCtx.hide()}
                     />
                   );
                 })}
 
                 {/* Axis Labels */}
-                <text x={plotX0 + plotW / 2} y={H - 8} textAnchor="middle" fontSize="9.5" fontWeight="700" fill="#334155">
+                <text x={plotX0 + plotW / 2} y={H - 10} textAnchor="middle" fontSize="10" fontWeight="700" fill="#334155">
                   {xMeta.label} ({xMeta.unit}) [Min {xMin} • Mean {stats.xHist.mean} • Max {xMax}]
                 </text>
                 <text
-                  x={13}
+                  x={14}
                   y={plotY0 + plotH / 2}
                   textAnchor="middle"
-                  fontSize="9.5"
+                  fontSize="10"
                   fontWeight="700"
                   fill="#334155"
-                  transform={`rotate(-90, 13, ${plotY0 + plotH / 2})`}
+                  transform={`rotate(-90, 14, ${plotY0 + plotH / 2})`}
                 >
                   {yMeta.label} ({yMeta.unit})
                 </text>

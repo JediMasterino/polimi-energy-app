@@ -64,7 +64,15 @@ const CLIMA_SUB_TABS: Array<{
   { id: 'explorer', shortLabel: '9. Data Explorer', subtitle: 'X/Y/Z Joint Correlation' }
 ];
 
-export const Stage1Climate: React.FC = () => {
+export interface Stage1ClimateProps {
+  stage1WideMode?: boolean;
+  setStage1WideMode?: (v: boolean) => void;
+}
+
+export const Stage1Climate: React.FC<Stage1ClimateProps> = ({
+  stage1WideMode = true,
+  setStage1WideMode
+}) => {
   const {
     climateId,
     setClimateId,
@@ -271,6 +279,21 @@ export const Stage1Climate: React.FC = () => {
               <span className="text-[10px] text-slate-400 block">Coupled Net Site EUI</span>
               <span className="font-bold text-teal-300">{sim.netSiteEui} kWh/m²yr</span>
             </div>
+            {setStage1WideMode && (
+              <button
+                type="button"
+                onClick={() => setStage1WideMode(!stage1WideMode)}
+                className={`px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 border shadow transition ${
+                  stage1WideMode
+                    ? 'bg-amber-400 text-slate-950 border-amber-300'
+                    : 'bg-slate-800 text-slate-200 border-slate-600 hover:bg-slate-700'
+                }`}
+                title="Toggle between wide studio canvas and split 50/50 sidebar view"
+              >
+                <Layers className="w-3.5 h-3.5" />
+                {stage1WideMode ? 'Canvas: Wide (100%)' : 'Canvas: Split (50%)'}
+              </button>
+            )}
             <button
               type="button"
               onClick={() => setActiveStage(2)}
@@ -765,13 +788,13 @@ export const Stage1Climate: React.FC = () => {
               </div>
             }
           >
-            {(svgRef) => {
-              const W = 720;
-              const H = 215;
-              const padL = 42;
-              const padR = 18;
-              const padT = 20;
-              const padB = 30;
+            {(svgRef, tooltipCtx) => {
+              const W = 800;
+              const H = 250;
+              const padL = 46;
+              const padR = 20;
+              const padT = 24;
+              const padB = 32;
               const plotW = W - padL - padR;
               const plotH = H - padT - padB;
               const maxVal = Math.max(
@@ -779,6 +802,7 @@ export const Stage1Climate: React.FC = () => {
                 ...MONTHS.map((_, i) => Math.max(customDd.monthlyHdd[i], customDd.monthlyCdd[i]))
               );
               const xForM = (i: number) => padL + (i + 0.5) * (plotW / 12);
+              const colW = plotW / 12;
 
               return (
                 <div className="space-y-1.5">
@@ -789,7 +813,7 @@ export const Stage1Climate: React.FC = () => {
                       return (
                         <g key={idx}>
                           <line x1={padL} y1={y} x2={W - padR} y2={y} stroke="#f1f5f9" />
-                          <text x={padL - 6} y={y + 3} textAnchor="end" fontSize="8.5" fill="#64748b">
+                          <text x={padL - 6} y={y + 3} textAnchor="end" fontSize="9" fill="#64748b">
                             {v}
                           </text>
                         </g>
@@ -804,21 +828,52 @@ export const Stage1Climate: React.FC = () => {
                       const x = xForM(i);
                       return (
                         <g key={m}>
+                          {/* Invisible hover backdrop for entire month column */}
+                          <rect
+                            x={x - colW / 2}
+                            y={padT}
+                            width={colW}
+                            height={plotH}
+                            fill="transparent"
+                            className="cursor-pointer"
+                            onMouseEnter={(e) => {
+                              tooltipCtx.show(e, `${m} Degree Days (CBE Clima)`, [
+                                { label: `Heating (HDD_${hddBaseC})`, value: `${hdd} K·d`, color: '#0284c7' },
+                                { label: `Cooling (CDD_${cddBaseC})`, value: `${cdd} K·d`, color: '#e11d48' },
+                                { label: 'Combined Demand', value: `${hdd + cdd} K·d` },
+                                { label: 'Annual Heating Share', value: `${customDd.annualHdd > 0 ? Math.round((hdd / customDd.annualHdd) * 100) : 0}%` },
+                                { label: 'Annual Cooling Share', value: `${customDd.annualCdd > 0 ? Math.round((cdd / customDd.annualCdd) * 100) : 0}%` }
+                              ]);
+                            }}
+                            onMouseMove={(e) => tooltipCtx.move(e)}
+                            onMouseLeave={() => tooltipCtx.hide()}
+                          />
                           {/* Grouped HDD Bar (Left, Blue) */}
                           <rect
-                            x={x - 15}
+                            x={x - 17}
                             y={padT + plotH - hHdd}
-                            width={14}
+                            width={16}
                             height={Math.max(1, hHdd)}
                             fill="#0284c7"
-                            rx={2}
+                            rx={2.5}
+                            className="cursor-pointer hover:opacity-90 transition"
+                            onMouseEnter={(e) => {
+                              e.stopPropagation();
+                              tooltipCtx.show(e, `${m} Heating Demand`, [
+                                { label: `HDD (Base ${hddBaseC}°C)`, value: `${hdd} K·d`, color: '#0284c7' },
+                                { label: 'Annual HDD Share', value: `${customDd.annualHdd > 0 ? Math.round((hdd / customDd.annualHdd) * 100) : 0}%` },
+                                { label: 'Annual Total HDD', value: `${customDd.annualHdd} K·d` }
+                              ]);
+                            }}
+                            onMouseMove={(e) => tooltipCtx.move(e)}
+                            onMouseLeave={() => tooltipCtx.hide()}
                           />
                           {hdd > 0 && (
                             <text
-                              x={x - 8}
-                              y={padT + plotH - hHdd - 3}
+                              x={x - 9}
+                              y={padT + plotH - hHdd - 4}
                               textAnchor="middle"
-                              fontSize="7.5"
+                              fontSize="8"
                               fontWeight="700"
                               fill="#0369a1"
                             >
@@ -829,24 +884,35 @@ export const Stage1Climate: React.FC = () => {
                           <rect
                             x={x + 1}
                             y={padT + plotH - hCdd}
-                            width={14}
+                            width={16}
                             height={Math.max(1, hCdd)}
                             fill="#e11d48"
-                            rx={2}
+                            rx={2.5}
+                            className="cursor-pointer hover:opacity-90 transition"
+                            onMouseEnter={(e) => {
+                              e.stopPropagation();
+                              tooltipCtx.show(e, `${m} Cooling Demand`, [
+                                { label: `CDD (Base ${cddBaseC}°C)`, value: `${cdd} K·d`, color: '#e11d48' },
+                                { label: 'Annual CDD Share', value: `${customDd.annualCdd > 0 ? Math.round((cdd / customDd.annualCdd) * 100) : 0}%` },
+                                { label: 'Annual Total CDD', value: `${customDd.annualCdd} K·d` }
+                              ]);
+                            }}
+                            onMouseMove={(e) => tooltipCtx.move(e)}
+                            onMouseLeave={() => tooltipCtx.hide()}
                           />
                           {cdd > 0 && (
                             <text
-                              x={x + 8}
-                              y={padT + plotH - hCdd - 3}
+                              x={x + 9}
+                              y={padT + plotH - hCdd - 4}
                               textAnchor="middle"
-                              fontSize="7.5"
+                              fontSize="8"
                               fontWeight="700"
                               fill="#be123c"
                             >
                               {cdd}
                             </text>
                           )}
-                          <text x={x} y={H - 8} textAnchor="middle" fontSize="9" fontWeight="600" fill="#475569">
+                          <text x={x} y={H - 8} textAnchor="middle" fontSize="9.5" fontWeight="600" fill="#475569">
                             {m}
                           </text>
                         </g>
@@ -911,21 +977,33 @@ export const Stage1Climate: React.FC = () => {
                   rows: item.stats.bins.map((b) => [b.x0, b.x1, b.count, b.pct])
                 })}
               >
-                {(svgRef) => {
-                  const W = 260;
-                  const H = 155;
-                  const padL = 26;
-                  const padR = 10;
-                  const padT = 12;
-                  const padB = 24;
+                {(svgRef, tooltipCtx) => {
+                  const W = 360;
+                  const H = 200;
+                  const padL = 32;
+                  const padR = 14;
+                  const padT = 16;
+                  const padB = 28;
                   const plotW = W - padL - padR;
                   const plotH = H - padT - padB;
                   const maxPct = Math.max(5, ...item.stats.bins.map((b) => b.pct));
 
                   return (
                     <svg ref={svgRef} viewBox={`0 0 ${W} ${H}`} className="w-full h-auto">
+                      {[0, 0.5, 1].map((f, idx) => {
+                        const v = Math.round(maxPct * f);
+                        const y = padT + plotH - f * plotH;
+                        return (
+                          <g key={idx}>
+                            <line x1={padL} y1={y} x2={W - padR} y2={y} stroke="#f1f5f9" />
+                            <text x={padL - 4} y={y + 3} textAnchor="end" fontSize="8" fill="#94a3b8">
+                              {v}%
+                            </text>
+                          </g>
+                        );
+                      })}
                       {item.stats.bins.map((b, i) => {
-                        const bw = plotW / item.stats.bins.length - 1.5;
+                        const bw = plotW / item.stats.bins.length - 2;
                         const x = padL + i * (plotW / item.stats.bins.length);
                         const bh = (b.pct / maxPct) * plotH;
                         const y = padT + plotH - bh;
@@ -934,22 +1012,33 @@ export const Stage1Climate: React.FC = () => {
                             key={i}
                             x={x}
                             y={y}
-                            width={Math.max(2, bw)}
+                            width={Math.max(2.5, bw)}
                             height={Math.max(1, bh)}
                             fill={item.color}
-                            fillOpacity={0.8}
-                            rx={1.5}
+                            fillOpacity={0.82}
+                            rx={2}
+                            className="cursor-pointer hover:opacity-100 hover:brightness-110 transition"
+                            onMouseEnter={(e) => {
+                              tooltipCtx.show(e, `${item.title.split(' (')[0]}`, [
+                                { label: 'Bin Interval', value: `${b.x0} – ${b.x1} ${item.unit}`, color: item.color },
+                                { label: 'Hours in Range', value: `${b.count.toLocaleString()} hrs` },
+                                { label: 'Percentage of Year', value: `${b.pct}%` },
+                                { label: 'Median Baseline', value: `${item.stats.median} ${item.unit}` }
+                              ]);
+                            }}
+                            onMouseMove={(e) => tooltipCtx.move(e)}
+                            onMouseLeave={() => tooltipCtx.hide()}
                           />
                         );
                       })}
                       {/* IQR Box (Q25 to Q75) & Median Marker at bottom */}
-                      <text x={padL} y={H - 6} fontSize="8" fill="#64748b">
+                      <text x={padL} y={H - 8} fontSize="8.5" fill="#64748b">
                         {item.stats.min}{item.unit}
                       </text>
-                      <text x={padL + plotW / 2} y={H - 6} textAnchor="middle" fontSize="8" fontWeight="700" fill="#1e293b">
-                        IQR: {item.stats.q25}–{item.stats.q75}{item.unit}
+                      <text x={padL + plotW / 2} y={H - 8} textAnchor="middle" fontSize="8.5" fontWeight="700" fill="#1e293b">
+                        IQR: {item.stats.q25}–{item.stats.q75}{item.unit} (Med: {item.stats.median})
                       </text>
-                      <text x={W - padR} y={H - 6} textAnchor="end" fontSize="8" fill="#64748b">
+                      <text x={W - padR} y={H - 8} textAnchor="end" fontSize="8.5" fill="#64748b">
                         {item.stats.max}{item.unit}
                       </text>
                     </svg>
@@ -992,19 +1081,20 @@ export const Stage1Climate: React.FC = () => {
                 ])
               })}
             >
-              {(svgRef) => {
-                const W = 720;
-                const H = 225;
-                const padL = 38;
-                const padR = 16;
-                const padT = 14;
-                const padB = 26;
+              {(svgRef, tooltipCtx) => {
+                const W = 880;
+                const H = 290;
+                const padL = 44;
+                const padR = 20;
+                const padT = 18;
+                const padB = 28;
                 const plotW = W - padL - padR;
                 const plotH = H - padT - padB;
                 const tMin = globalValueRanges ? -25 : Math.min(-5, ...dailyAdaptive.map((d) => d.tMin));
                 const tMax = globalValueRanges ? 48 : Math.max(38, ...dailyAdaptive.map((d) => d.tMax));
                 const xForD = (d: number) => padL + ((d - 1) / 364) * plotW;
                 const yForT = (t: number) => padT + plotH - ((t - tMin) / Math.max(1, tMax - tMin)) * plotH;
+                const dayColW = Math.max(1.8, plotW / 365);
 
                 const poly80Points = [
                   ...dailyAdaptive.map((d) => `${xForD(d.dayOfYear).toFixed(1)},${yForT(d.ashrae80Upper).toFixed(1)}`),
@@ -1032,7 +1122,7 @@ export const Stage1Climate: React.FC = () => {
                       return (
                         <g key={val}>
                           <line x1={padL} y1={y} x2={W - padR} y2={y} stroke="#f1f5f9" />
-                          <text x={padL - 5} y={y + 3} textAnchor="end" fontSize="8.5" fill="#64748b">
+                          <text x={padL - 6} y={y + 3} textAnchor="end" fontSize="9" fill="#64748b">
                             {val}°C
                           </text>
                         </g>
@@ -1040,30 +1130,53 @@ export const Stage1Climate: React.FC = () => {
                     })}
 
                     {/* ASHRAE 80% & 90% Adaptive Comfort Bands */}
-                    <polygon points={poly80Points} fill="#10b981" fillOpacity={0.14} />
-                    <polygon points={poly90Points} fill="#059669" fillOpacity={0.22} />
+                    <polygon points={poly80Points} fill="#10b981" fillOpacity={0.15} />
+                    <polygon points={poly90Points} fill="#059669" fillOpacity={0.24} />
 
-                    {/* Daily Min-Max Range Bars */}
+                    {/* Daily Min-Max Range Bars & Interactive Hover Trackers */}
                     {dailyAdaptive.map((d) => {
                       const x = xForD(d.dayOfYear);
                       const y1 = yForT(d.tMax);
                       const y2 = yForT(d.tMin);
                       return (
-                        <line
-                          key={d.dayOfYear}
-                          x1={x}
-                          y1={y1}
-                          x2={x}
-                          y2={y2}
-                          stroke="#94a3b8"
-                          strokeWidth={1.1}
-                          strokeOpacity={0.65}
-                        />
+                        <g key={d.dayOfYear}>
+                          <line
+                            x1={x}
+                            y1={y1}
+                            x2={x}
+                            y2={y2}
+                            stroke="#94a3b8"
+                            strokeWidth={1.2}
+                            strokeOpacity={0.7}
+                          />
+                          {/* Invisible full-height hover zone */}
+                          <rect
+                            x={x - dayColW / 2}
+                            y={padT}
+                            width={dayColW}
+                            height={plotH}
+                            fill="transparent"
+                            className="cursor-crosshair"
+                            onMouseEnter={(e) => {
+                              tooltipCtx.show(e, `${MONTHS[d.month]} ${d.dayOfMonth} (Day ${d.dayOfYear})`, [
+                                { label: 'Max Outdoor (T_max)', value: `${d.tMax}°C`, color: '#e11d48' },
+                                { label: 'Daily Mean (T_mean)', value: `${d.tMean}°C`, color: '#ea580c' },
+                                { label: 'Min Outdoor (T_min)', value: `${d.tMin}°C`, color: '#0284c7' },
+                                { label: 'Diurnal Swing ΔT', value: `${(d.tMax - d.tMin).toFixed(1)} K` },
+                                { label: '7-Day Running Mean (T_rm)', value: `${d.tRunningMean}°C`, color: '#059669' },
+                                { label: 'ASHRAE 80% Band', value: `${d.ashrae80Lower}°C – ${d.ashrae80Upper}°C`, color: '#10b981' },
+                                { label: 'ASHRAE 90% Band', value: `${d.ashrae90Lower}°C – ${d.ashrae90Upper}°C`, color: '#047857' }
+                              ]);
+                            }}
+                            onMouseMove={(e) => tooltipCtx.move(e)}
+                            onMouseLeave={() => tooltipCtx.hide()}
+                          />
+                        </g>
                       );
                     })}
 
                     {/* Daily Mean Curve */}
-                    <polyline fill="none" stroke="#e11d48" strokeWidth={1.5} points={meanPoints} />
+                    <polyline fill="none" stroke="#e11d48" strokeWidth={1.6} points={meanPoints} />
 
                     {MONTHS.map((m, i) => (
                       <text
@@ -1071,7 +1184,7 @@ export const Stage1Climate: React.FC = () => {
                         x={padL + (i + 0.5) * (plotW / 12)}
                         y={H - 8}
                         textAnchor="middle"
-                        fontSize="9"
+                        fontSize="9.5"
                         fontWeight="600"
                         fill="#475569"
                       >
@@ -1095,17 +1208,18 @@ export const Stage1Climate: React.FC = () => {
                 rows: dailyAdaptive.map((d) => [d.dayOfYear, d.month + 1, d.dayOfMonth, d.rhMin, d.rhMean, d.rhMax])
               })}
             >
-              {(svgRef) => {
-                const W = 720;
-                const H = 225;
-                const padL = 38;
-                const padR = 16;
-                const padT = 14;
-                const padB = 26;
+              {(svgRef, tooltipCtx) => {
+                const W = 880;
+                const H = 290;
+                const padL = 44;
+                const padR = 20;
+                const padT = 18;
+                const padB = 28;
                 const plotW = W - padL - padR;
                 const plotH = H - padT - padB;
                 const xForD = (d: number) => padL + ((d - 1) / 364) * plotW;
                 const yForRh = (rh: number) => padT + plotH - (Math.max(0, Math.min(100, rh)) / 100) * plotH;
+                const dayColW = Math.max(1.8, plotW / 365);
 
                 const rhMeanPts = dailyAdaptive
                   .map((d) => `${xForD(d.dayOfYear).toFixed(1)},${yForRh(d.rhMean).toFixed(1)}`)
@@ -1118,7 +1232,7 @@ export const Stage1Climate: React.FC = () => {
                       return (
                         <g key={val}>
                           <line x1={padL} y1={y} x2={W - padR} y2={y} stroke="#f1f5f9" />
-                          <text x={padL - 5} y={y + 3} textAnchor="end" fontSize="8.5" fill="#64748b">
+                          <text x={padL - 6} y={y + 3} textAnchor="end" fontSize="9" fill="#64748b">
                             {val}%
                           </text>
                         </g>
@@ -1132,25 +1246,50 @@ export const Stage1Climate: React.FC = () => {
                       width={plotW}
                       height={yForRh(30) - yForRh(70)}
                       fill="#10b981"
-                      fillOpacity={0.12}
+                      fillOpacity={0.14}
                     />
 
-                    {/* Daily RH Min-Max Range Bars */}
-                    {dailyAdaptive.map((d) => (
-                      <line
-                        key={d.dayOfYear}
-                        x1={xForD(d.dayOfYear)}
-                        y1={yForRh(d.rhMax)}
-                        x2={xForD(d.dayOfYear)}
-                        y2={yForRh(d.rhMin)}
-                        stroke="#93c5fd"
-                        strokeWidth={1.1}
-                        strokeOpacity={0.7}
-                      />
-                    ))}
+                    {/* Daily RH Min-Max Range Bars & Interactive Hover Trackers */}
+                    {dailyAdaptive.map((d) => {
+                      const x = xForD(d.dayOfYear);
+                      const y1 = yForRh(d.rhMax);
+                      const y2 = yForRh(d.rhMin);
+                      const isComfort = d.rhMean >= 30 && d.rhMean <= 70;
+                      return (
+                        <g key={d.dayOfYear}>
+                          <line
+                            x1={x}
+                            y1={y1}
+                            x2={x}
+                            y2={y2}
+                            stroke="#93c5fd"
+                            strokeWidth={1.2}
+                            strokeOpacity={0.75}
+                          />
+                          <rect
+                            x={x - dayColW / 2}
+                            y={padT}
+                            width={dayColW}
+                            height={plotH}
+                            fill="transparent"
+                            className="cursor-crosshair"
+                            onMouseEnter={(e) => {
+                              tooltipCtx.show(e, `${MONTHS[d.month]} ${d.dayOfMonth} (Day ${d.dayOfYear})`, [
+                                { label: 'Max Humidity (RH_max)', value: `${d.rhMax}%`, color: '#0284c7' },
+                                { label: 'Daily Mean (RH_mean)', value: `${d.rhMean}%`, color: '#0369a1' },
+                                { label: 'Min Humidity (RH_min)', value: `${d.rhMin}%`, color: '#38bdf8' },
+                                { label: 'Comfort Status (30–70%)', value: isComfort ? 'In Comfort Range' : d.rhMean > 70 ? 'Humid (>70%)' : 'Arid (<30%)', color: isComfort ? '#10b981' : '#f59e0b' }
+                              ]);
+                            }}
+                            onMouseMove={(e) => tooltipCtx.move(e)}
+                            onMouseLeave={() => tooltipCtx.hide()}
+                          />
+                        </g>
+                      );
+                    })}
 
                     {/* Daily Mean RH Curve */}
-                    <polyline fill="none" stroke="#0284c7" strokeWidth={1.5} points={rhMeanPts} />
+                    <polyline fill="none" stroke="#0284c7" strokeWidth={1.6} points={rhMeanPts} />
 
                     {MONTHS.map((m, i) => (
                       <text
@@ -1158,7 +1297,7 @@ export const Stage1Climate: React.FC = () => {
                         x={padL + (i + 0.5) * (plotW / 12)}
                         y={H - 8}
                         textAnchor="middle"
-                        fontSize="9"
+                        fontSize="9.5"
                         fontWeight="600"
                         fill="#475569"
                       >
@@ -1219,9 +1358,9 @@ export const Stage1Climate: React.FC = () => {
               </div>
             }
           >
-            {(svgRef) => {
-              const W = 780;
-              const H = 260;
+            {(svgRef, tooltipCtx) => {
+              const W = 880;
+              const H = 310;
               const cols = 6;
               const rows = 2;
               const cellW = W / cols;
@@ -1237,11 +1376,11 @@ export const Stage1Climate: React.FC = () => {
                     const x0 = col * cellW + 8;
                     const y0 = row * cellH + 8;
                     const pw = cellW - 16;
-                    const ph = cellH - 28;
+                    const ph = cellH - 30;
 
                     const xForH = (hr: number) => x0 + (hr / 23) * pw;
-                    const yForT = (t: number) => y0 + 18 + ph - ((t - tMin) / (tMax - tMin)) * ph;
-                    const yForRh = (rh: number) => y0 + 18 + ph - (rh / 100) * ph;
+                    const yForT = (t: number) => y0 + 20 + ph - ((t - tMin) / (tMax - tMin)) * ph;
+                    const yForRh = (rh: number) => y0 + 20 + ph - (rh / 100) * ph;
 
                     const tBandPts = [
                       ...md.hourlyTempP90.map((t, hr) => `${xForH(hr).toFixed(1)},${yForT(t).toFixed(1)}`),
@@ -1265,20 +1404,35 @@ export const Stage1Climate: React.FC = () => {
                       .join(' ');
 
                     return (
-                      <g key={md.monthName}>
+                      <g
+                        key={md.monthName}
+                        className="cursor-pointer"
+                        onMouseEnter={(e) => {
+                          tooltipCtx.show(e, `${md.monthName} Diurnal Profile`, [
+                            { label: 'Diurnal Swing ΔT', value: `${md.diurnalSwingK} K`, color: '#f59e0b' },
+                            { label: 'Mean Dry-Bulb', value: `${md.tempStats.mean}°C`, color: '#ea580c' },
+                            { label: 'T_db 5th–95th', value: `${md.tempStats.p05}°C – ${md.tempStats.p95}°C` },
+                            { label: 'Mean Relative Humidity', value: `${md.rhStats.mean}%`, color: '#0284c7' },
+                            { label: 'Night Flush Feasibility', value: md.diurnalSwingK >= 10 ? 'High (ΔT ≥ 10K)' : 'Moderate' }
+                          ]);
+                        }}
+                        onMouseMove={(e) => tooltipCtx.move(e)}
+                        onMouseLeave={() => tooltipCtx.hide()}
+                      >
                         <rect
                           x={x0}
                           y={y0}
                           width={pw}
-                          height={ph + 20}
-                          rx={6}
+                          height={ph + 24}
+                          rx={8}
                           fill="#f8fafc"
                           stroke="#e2e8f0"
+                          className="hover:stroke-teal-400 hover:fill-teal-50/20 transition"
                         />
-                        <text x={x0 + 6} y={y0 + 12} fontSize="8.5" fontWeight="800" fill="#1e293b">
+                        <text x={x0 + 8} y={y0 + 14} fontSize="9.5" fontWeight="800" fill="#1e293b">
                           {md.monthName}
                         </text>
-                        <text x={x0 + pw - 6} y={y0 + 12} textAnchor="end" fontSize="8" fontWeight="700" fill="#0d9488">
+                        <text x={x0 + pw - 8} y={y0 + 14} textAnchor="end" fontSize="9" fontWeight="700" fill="#0d9488">
                           {diurnalMetric === 'rh' ? `RH ${md.rhStats.mean}%` : `ΔT ${md.diurnalSwingK} K`}
                         </text>
 
@@ -1321,9 +1475,10 @@ export const Stage1Climate: React.FC = () => {
                 rows: climate.hourly.map((h) => [h.hourOfYear, h.month + 1, h.dayOfMonth, h.hour, h.dryBulb])
               })}
             >
-              {(svgRef) => (
+              {(svgRef, tooltipCtx) => (
                 <CarpetHeatmap24x365
                   svgRef={svgRef}
+                  tooltipCtx={tooltipCtx}
                   hourly={climate.hourly}
                   getValue={(h) => h.dryBulb}
                   getColor={(v) => colorForTempC(v, globalValueRanges)}
@@ -1350,9 +1505,10 @@ export const Stage1Climate: React.FC = () => {
                 rows: climate.hourly.map((h) => [h.hourOfYear, h.month + 1, h.dayOfMonth, h.hour, h.relHum])
               })}
             >
-              {(svgRef) => (
+              {(svgRef, tooltipCtx) => (
                 <CarpetHeatmap24x365
                   svgRef={svgRef}
+                  tooltipCtx={tooltipCtx}
                   hourly={climate.hourly}
                   getValue={(h) => h.relHum}
                   getColor={(rh) => colorForRhPct(rh)}
@@ -1547,7 +1703,7 @@ export const Stage1Climate: React.FC = () => {
                   </div>
                 }
               >
-                {(svgRef) => {
+                {(svgRef, tooltipCtx) => {
                   const sunHours = climate.hourly.filter((h) => h.solarAlt > 0.5);
                   const canyonS = sim.canyonAnglesDeg.S;
                   const canyonE = sim.canyonAnglesDeg.E;
@@ -1563,12 +1719,12 @@ export const Stage1Climate: React.FC = () => {
                   const shadedSummerPct = warmSunHours.length > 0 ? Math.round((shadedWarmCount / warmSunHours.length) * 100) : 0;
 
                   if (sunProjection === 'cartesian') {
-                    const W = 540;
-                    const H = 285;
-                    const padL = 36;
-                    const padR = 16;
-                    const padT = 16;
-                    const padB = 30;
+                    const W = 840;
+                    const H = 380;
+                    const padL = 44;
+                    const padR = 20;
+                    const padT = 20;
+                    const padB = 36;
                     const plotW = W - padL - padR;
                     const plotH = H - padT - padB;
                     const xForAz = (az: number) => padL + (az / 360) * plotW;
@@ -1591,7 +1747,7 @@ export const Stage1Climate: React.FC = () => {
                           {[0, 15, 30, 45, 60, 75, 90].map((alt) => (
                             <g key={alt}>
                               <line x1={padL} y1={yForAlt(alt)} x2={W - padR} y2={yForAlt(alt)} stroke="#e2e8f0" />
-                              <text x={padL - 5} y={yForAlt(alt) + 3} textAnchor="end" fontSize="8.5" fill="#64748b">
+                              <text x={padL - 6} y={yForAlt(alt) + 3} textAnchor="end" fontSize="9" fill="#64748b">
                                 {alt}°
                               </text>
                             </g>
@@ -1599,7 +1755,7 @@ export const Stage1Climate: React.FC = () => {
                           {[0, 90, 180, 270, 360].map((az) => (
                             <g key={az}>
                               <line x1={xForAz(az)} y1={padT} x2={xForAz(az)} y2={H - padB} stroke="#e2e8f0" />
-                              <text x={xForAz(az)} y={H - 8} textAnchor="middle" fontSize="8.5" fontWeight="700" fill="#475569">
+                              <text x={xForAz(az)} y={H - 10} textAnchor="middle" fontSize="9.5" fontWeight="700" fill="#475569">
                                 {az === 90 ? '90° (E)' : az === 180 ? '180° (S)' : az === 270 ? '270° (W)' : `${az}° (N)`}
                               </text>
                             </g>
@@ -1630,29 +1786,46 @@ export const Stage1Climate: React.FC = () => {
                           )}
 
                           {/* Solstice & Equinox Reference Curves */}
-                          <polyline fill="none" stroke="#e11d48" strokeWidth={1.3} strokeOpacity={0.7} points={makeCartArc(172)} />
-                          <polyline fill="none" stroke="#10b981" strokeWidth={1.2} strokeOpacity={0.7} points={makeCartArc(80)} />
-                          <polyline fill="none" stroke="#0284c7" strokeWidth={1.3} strokeOpacity={0.7} points={makeCartArc(355)} />
+                          <polyline fill="none" stroke="#e11d48" strokeWidth={1.5} strokeOpacity={0.75} points={makeCartArc(172)} />
+                          <polyline fill="none" stroke="#10b981" strokeWidth={1.3} strokeOpacity={0.75} points={makeCartArc(80)} />
+                          <polyline fill="none" stroke="#0284c7" strokeWidth={1.5} strokeOpacity={0.75} points={makeCartArc(355)} />
 
                           {/* 365-Day Analemma Points (All Daytime Hours with Spencer 1971 EoT) */}
-                          {sunHours.map((h, i) => (
-                            <circle
-                              key={i}
-                              cx={xForAz(h.solarAz)}
-                              cy={yForAlt(h.solarAlt)}
-                              r={1.65}
-                              fillOpacity={0.82}
-                              fill={
-                                sunColorMode === 'temp'
-                                  ? colorForTempC(h.dryBulb, globalValueRanges)
-                                  : h.ghi > 550
-                                  ? '#e11d48'
-                                  : h.ghi > 250
-                                  ? '#f59e0b'
-                                  : '#0ea5e9'
-                              }
-                            />
-                          ))}
+                          {sunHours.map((h, i) => {
+                            const isShaded = (showProtractor && h.solarAlt >= overhangAngleDeg && Math.abs(h.solarAz - 180) <= finAngleDeg + 25) ||
+                              (showUrbanSkylineMask && h.solarAlt <= canyonS);
+                            return (
+                              <circle
+                                key={i}
+                                cx={xForAz(h.solarAz)}
+                                cy={yForAlt(h.solarAlt)}
+                                r={2.2}
+                                fillOpacity={0.85}
+                                fill={
+                                  sunColorMode === 'temp'
+                                    ? colorForTempC(h.dryBulb, globalValueRanges)
+                                    : h.ghi > 550
+                                    ? '#e11d48'
+                                    : h.ghi > 250
+                                    ? '#f59e0b'
+                                    : '#0ea5e9'
+                                }
+                                className="cursor-pointer hover:r-[4] transition-all"
+                                onMouseEnter={(e) => {
+                                  tooltipCtx.show(e, `${MONTHS[h.month]} ${h.dayOfMonth} • ${h.hour}:00`, [
+                                    { label: 'Solar Altitude', value: `${h.solarAlt.toFixed(1)}°`, color: '#f59e0b' },
+                                    { label: 'Solar Azimuth', value: `${h.solarAz.toFixed(1)}°` },
+                                    { label: 'Dry-Bulb Temp', value: `${h.dryBulb}°C`, color: '#e11d48' },
+                                    { label: 'Solar GHI', value: `${h.ghi} Wh/m²` },
+                                    { label: 'Direct Normal (DNI)', value: `${h.dni} Wh/m²` },
+                                    { label: 'Shading Status', value: isShaded ? 'Overhang/Canyon Blocked' : 'Direct Sun', color: isShaded ? '#f59e0b' : '#10b981' }
+                                  ]);
+                                }}
+                                onMouseMove={(e) => tooltipCtx.move(e)}
+                                onMouseLeave={() => tooltipCtx.hide()}
+                              />
+                            );
+                          })}
                         </svg>
                         <div className="text-[11px] text-slate-600 flex justify-between px-1">
                           <span>
@@ -1667,10 +1840,10 @@ export const Stage1Climate: React.FC = () => {
                   }
 
                   // Polar Stereographic Projection (True Stereographic tan((90 - alt)/2))
-                  const size = 320;
+                  const size = 460;
                   const cx = size / 2;
                   const cy = size / 2;
-                  const R = 126;
+                  const R = 180;
                   const stereoR = (alt: number) => R * Math.tan(((90 - Math.max(0, alt)) * Math.PI) / 360);
                   const polarPt = (alt: number, az: number) => {
                     const r = stereoR(alt);
@@ -1692,7 +1865,7 @@ export const Stage1Climate: React.FC = () => {
 
                   return (
                     <div className="flex flex-col items-center space-y-2">
-                      <svg ref={svgRef} viewBox={`0 0 ${size} ${size}`} className="w-full max-w-[330px] h-auto">
+                      <svg ref={svgRef} viewBox={`0 0 ${size} ${size}`} className="w-full max-w-[460px] h-auto">
                         {[0, 15, 30, 45, 60, 75, 90].map((alt) => (
                           <circle
                             key={alt}
@@ -1701,7 +1874,7 @@ export const Stage1Climate: React.FC = () => {
                             r={stereoR(alt)}
                             fill="none"
                             stroke={alt === 0 ? '#94a3b8' : '#e2e8f0'}
-                            strokeWidth={alt === 0 ? 1.4 : 1}
+                            strokeWidth={alt === 0 ? 1.5 : 1}
                             strokeDasharray={alt === 0 ? undefined : '3 3'}
                           />
                         ))}
@@ -1719,20 +1892,22 @@ export const Stage1Climate: React.FC = () => {
                         )}
 
                         {/* Solstice & Equinox Arcs */}
-                        <polyline fill="none" stroke="#e11d48" strokeWidth={1.6} points={makeDayArc(172)} />
-                        <polyline fill="none" stroke="#10b981" strokeWidth={1.4} points={makeDayArc(80)} />
-                        <polyline fill="none" stroke="#0284c7" strokeWidth={1.6} points={makeDayArc(355)} />
+                        <polyline fill="none" stroke="#e11d48" strokeWidth={1.8} points={makeDayArc(172)} />
+                        <polyline fill="none" stroke="#10b981" strokeWidth={1.5} points={makeDayArc(80)} />
+                        <polyline fill="none" stroke="#0284c7" strokeWidth={1.8} points={makeDayArc(355)} />
 
                         {/* 365-Day Analemma Sun Points (Figure-8 Loops via Equation of Time) */}
                         {sunHours.map((h, i) => {
                           const p = polarPt(h.solarAlt, h.solarAz);
+                          const isShaded = (showProtractor && h.solarAlt >= overhangAngleDeg && Math.abs(h.solarAz - 180) <= finAngleDeg + 25) ||
+                            (showUrbanSkylineMask && h.solarAlt <= canyonS);
                           return (
                             <circle
                               key={i}
                               cx={p.x}
                               cy={p.y}
-                              r={1.55}
-                              fillOpacity={0.82}
+                              r={2.2}
+                              fillOpacity={0.85}
                               fill={
                                 sunColorMode === 'temp'
                                   ? colorForTempC(h.dryBulb, globalValueRanges)
@@ -1742,6 +1917,18 @@ export const Stage1Climate: React.FC = () => {
                                   ? '#f59e0b'
                                   : '#0ea5e9'
                               }
+                              className="cursor-pointer hover:r-[4] transition-all"
+                              onMouseEnter={(e) => {
+                                tooltipCtx.show(e, `${MONTHS[h.month]} ${h.dayOfMonth} • ${h.hour}:00`, [
+                                  { label: 'Solar Altitude', value: `${h.solarAlt.toFixed(1)}°`, color: '#f59e0b' },
+                                  { label: 'Solar Azimuth', value: `${h.solarAz.toFixed(1)}°` },
+                                  { label: 'Dry-Bulb Temp', value: `${h.dryBulb}°C`, color: '#e11d48' },
+                                  { label: 'Solar GHI', value: `${h.ghi} Wh/m²` },
+                                  { label: 'Shading Status', value: isShaded ? 'Overhang/Canyon Blocked' : 'Direct Sun', color: isShaded ? '#f59e0b' : '#10b981' }
+                                ]);
+                              }}
+                              onMouseMove={(e) => tooltipCtx.move(e)}
+                              onMouseLeave={() => tooltipCtx.hide()}
                             />
                           );
                         })}
@@ -1759,10 +1946,10 @@ export const Stage1Climate: React.FC = () => {
                           />
                         )}
 
-                        <text x={cx} y={14} textAnchor="middle" fontSize="10" fontWeight="800" fill="#334155">N</text>
-                        <text x={cx} y={size - 6} textAnchor="middle" fontSize="10" fontWeight="800" fill="#e11d48">S</text>
-                        <text x={size - 10} y={cy + 3} textAnchor="middle" fontSize="10" fontWeight="800" fill="#334155">E</text>
-                        <text x={10} y={cy + 3} textAnchor="middle" fontSize="10" fontWeight="800" fill="#334155">W</text>
+                        <text x={cx} y={16} textAnchor="middle" fontSize="11" fontWeight="800" fill="#334155">N</text>
+                        <text x={cx} y={size - 8} textAnchor="middle" fontSize="11" fontWeight="800" fill="#e11d48">S</text>
+                        <text x={size - 12} y={cy + 4} textAnchor="middle" fontSize="11" fontWeight="800" fill="#334155">E</text>
+                        <text x={12} y={cy + 4} textAnchor="middle" fontSize="11" fontWeight="800" fill="#334155">W</text>
                       </svg>
                       <div className="w-full text-[11px] text-slate-600 flex justify-between px-2">
                         <span>
@@ -1797,11 +1984,11 @@ export const Stage1Climate: React.FC = () => {
                   ])
                 })}
               >
-                {(svgRef) => {
-                  const size = 290;
+                {(svgRef, tooltipCtx) => {
+                  const size = 420;
                   const cx = size / 2;
                   const cy = size / 2;
-                  const R = 104;
+                  const R = 155;
                   const maxVal = Math.max(600, ...solarAnalytics.facadeRose8.map((r) => r.annualKwhM2));
 
                   const makePoly = (pick: (r: typeof solarAnalytics.facadeRose8[0]) => number) =>
@@ -1815,7 +2002,7 @@ export const Stage1Climate: React.FC = () => {
 
                   return (
                     <div className="flex flex-col items-center space-y-2">
-                      <svg ref={svgRef} viewBox={`0 0 ${size} ${size}`} className="w-full max-w-[290px] h-auto">
+                      <svg ref={svgRef} viewBox={`0 0 ${size} ${size}`} className="w-full max-w-[420px] h-auto">
                         {[0.25, 0.5, 0.75, 1].map((f, i) => (
                           <circle
                             key={i}
@@ -1828,18 +2015,36 @@ export const Stage1Climate: React.FC = () => {
                           />
                         ))}
 
-                        <polygon points={makePoly((r) => r.annualKwhM2)} fill="rgba(245, 158, 11, 0.25)" stroke="#f59e0b" strokeWidth={2.2} />
-                        <polygon points={makePoly((r) => r.summerKwhM2)} fill="rgba(225, 29, 72, 0.22)" stroke="#e11d48" strokeWidth={1.6} />
-                        <polygon points={makePoly((r) => r.winterKwhM2)} fill="rgba(2, 132, 199, 0.25)" stroke="#0284c7" strokeWidth={1.6} />
+                        <polygon points={makePoly((r) => r.annualKwhM2)} fill="rgba(245, 158, 11, 0.25)" stroke="#f59e0b" strokeWidth={2.4} />
+                        <polygon points={makePoly((r) => r.summerKwhM2)} fill="rgba(225, 29, 72, 0.22)" stroke="#e11d48" strokeWidth={1.8} />
+                        <polygon points={makePoly((r) => r.winterKwhM2)} fill="rgba(2, 132, 199, 0.25)" stroke="#0284c7" strokeWidth={1.8} />
 
                         {solarAnalytics.facadeRose8.map((r) => {
                           const rad = ((r.azDeg - 90) * Math.PI) / 180;
-                          const lx = cx + (R + 22) * Math.cos(rad);
-                          const ly = cy + (R + 22) * Math.sin(rad);
+                          const lx = cx + (R + 26) * Math.cos(rad);
+                          const ly = cy + (R + 26) * Math.sin(rad);
+                          const px = cx + (r.annualKwhM2 / maxVal) * R * Math.cos(rad);
+                          const py = cy + (r.annualKwhM2 / maxVal) * R * Math.sin(rad);
                           return (
-                            <text key={r.dir} x={lx} y={ly + 3} textAnchor="middle" fontSize="8.5" fontWeight="700" fill="#1e293b">
-                              {r.dir} ({r.annualKwhM2})
-                            </text>
+                            <g
+                              key={r.dir}
+                              className="cursor-pointer"
+                              onMouseEnter={(e) => {
+                                tooltipCtx.show(e, `${r.dir} Facade (${r.azDeg}°)`, [
+                                  { label: 'Annual Solar Radiation', value: `${r.annualKwhM2} kWh/m²yr`, color: '#f59e0b' },
+                                  { label: 'Summer (Jun–Aug)', value: `${r.summerKwhM2} kWh/m²`, color: '#e11d48' },
+                                  { label: 'Winter (Dec–Feb)', value: `${r.winterKwhM2} kWh/m²`, color: '#0284c7' },
+                                  { label: 'Winter/Summer Ratio', value: (r.winterKwhM2 / Math.max(1, r.summerKwhM2)).toFixed(2) }
+                                ]);
+                              }}
+                              onMouseMove={(e) => tooltipCtx.move(e)}
+                              onMouseLeave={() => tooltipCtx.hide()}
+                            >
+                              <circle cx={px} cy={py} r={4.5} fill="#f59e0b" stroke="#ffffff" strokeWidth={1.5} className="hover:scale-125 transition" />
+                              <text x={lx} y={ly + 3} textAnchor="middle" fontSize="9.5" fontWeight="700" fill="#1e293b">
+                                {r.dir} ({r.annualKwhM2})
+                              </text>
+                            </g>
                           );
                         })}
                       </svg>
@@ -1897,13 +2102,13 @@ export const Stage1Climate: React.FC = () => {
                 ])
               })}
             >
-              {(svgRef) => {
-                const W = 540;
-                const H = 225;
-                const padL = 38;
+              {(svgRef, tooltipCtx) => {
+                const W = 780;
+                const H = 280;
+                const padL = 44;
                 const padR = 36;
-                const padT = 16;
-                const padB = 26;
+                const padT = 20;
+                const padB = 30;
                 const plotW = W - padL - padR;
                 const plotH = H - padT - padB;
                 const maxW = Math.max(950, ...solarAnalytics.monthlySolar.map((s) => Math.max(s.ghiMax, s.dniMax)));
@@ -2005,13 +2210,13 @@ export const Stage1Climate: React.FC = () => {
                 ])
               })}
             >
-              {(svgRef) => {
-                const W = 540;
-                const H = 225;
-                const padL = 38;
-                const padR = 20;
-                const padT = 16;
-                const padB = 26;
+              {(svgRef, tooltipCtx) => {
+                const W = 780;
+                const H = 280;
+                const padL = 44;
+                const padR = 24;
+                const padT = 20;
+                const padB = 30;
                 const plotW = W - padL - padR;
                 const plotH = H - padT - padB;
                 const xForM = (i: number) => padL + (i + 0.5) * (plotW / 12);
