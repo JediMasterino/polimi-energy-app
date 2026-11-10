@@ -46,6 +46,7 @@ import {
 import { parseEpwText, extractEpwFromZipBuffer, exportDatasetToEpw } from './utils/epwEngine';
 import { AdvancedHvacRenewableModal } from './components/AdvancedHvacRenewableModal';
 import { ParetoExplorerModal } from './components/ParetoExplorerModal';
+import { StructuralEurocodeStudio } from './components/StructuralEurocodeStudio';
 
 const SCALE_STAGES: Array<{
   id: ScaleStageId;
@@ -116,6 +117,7 @@ const StudioWorkspace: React.FC = () => {
   const [showExportModal, setShowExportModal] = useState(false);
   const [showHvacModal, setShowHvacModal] = useState(false);
   const [showParetoModal, setShowParetoModal] = useState(false);
+  const [showStructuralStudio, setShowStructuralStudio] = useState(false);
   const [isDraggingFile, setIsDraggingFile] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
@@ -240,6 +242,20 @@ const StudioWorkspace: React.FC = () => {
           <div className="flex flex-wrap items-center gap-2 text-xs">
             <button
               type="button"
+              onClick={() => setShowStructuralStudio((v) => !v)}
+              className={`px-3 py-1.5 rounded-xl font-bold flex items-center gap-1.5 shadow transition ${
+                showStructuralStudio
+                  ? 'bg-gradient-to-r from-sky-600 to-indigo-600 text-white'
+                  : 'bg-gradient-to-r from-indigo-600 to-sky-600 hover:from-indigo-500 hover:to-sky-500 text-white'
+              }`}
+              title="3D Eurocode Structural Pre-Dimensioning Studio (EN 1990–1996)"
+            >
+              <Building2 className="w-3.5 h-3.5 text-sky-200" />
+              {showStructuralStudio ? 'Return to BEM' : 'Eurocode Studio'}
+            </button>
+
+            <button
+              type="button"
               onClick={() => setShowParetoModal(true)}
               className="px-3 py-1.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold flex items-center gap-1.5 shadow transition"
               title="Multi-Objective Parametric Explorer & Pareto Optimal Frontier"
@@ -308,9 +324,12 @@ const StudioWorkspace: React.FC = () => {
               <React.Fragment key={st.id}>
                 <button
                   type="button"
-                  onClick={() => setActiveStage(st.id)}
+                  onClick={() => {
+                    setActiveStage(st.id);
+                    setShowStructuralStudio(false);
+                  }}
                   className={`flex items-center gap-2.5 px-3 py-2 rounded-xl border text-left transition shrink-0 ${
-                    isActive
+                    isActive && !showStructuralStudio
                       ? 'bg-teal-500 text-slate-950 border-teal-400 shadow-md font-extrabold'
                       : isPast
                       ? 'bg-slate-800/90 text-teal-300 border-teal-800/70 hover:bg-slate-800 font-semibold'
@@ -319,7 +338,7 @@ const StudioWorkspace: React.FC = () => {
                 >
                   <div
                     className={`p-1.5 rounded-lg ${
-                      isActive ? 'bg-slate-950/20 text-slate-950' : 'bg-slate-900 text-teal-400'
+                      isActive && !showStructuralStudio ? 'bg-slate-950/20 text-slate-950' : 'bg-slate-900 text-teal-400'
                     }`}
                   >
                     <Icon className="w-4 h-4" />
@@ -328,7 +347,7 @@ const StudioWorkspace: React.FC = () => {
                     <div className="text-xs leading-tight">{st.shortTitle}</div>
                     <div
                       className={`text-[10px] leading-tight ${
-                        isActive ? 'text-slate-900 font-semibold' : 'text-slate-400'
+                        isActive && !showStructuralStudio ? 'text-slate-900 font-semibold' : 'text-slate-400'
                       }`}
                     >
                       {st.subTitle}
@@ -341,13 +360,61 @@ const StudioWorkspace: React.FC = () => {
               </React.Fragment>
             );
           })}
+
+          {/* Dedicated Eurocode Studio Launcher */}
+          <div className="flex items-center gap-1.5 pl-2 border-l border-slate-800 shrink-0">
+            <button
+              type="button"
+              onClick={() => setShowStructuralStudio((v) => !v)}
+              className={`flex items-center gap-2 px-3 py-2 rounded-xl border text-left transition shrink-0 ${
+                showStructuralStudio
+                  ? 'bg-gradient-to-r from-sky-500 to-indigo-500 text-slate-950 border-sky-400 shadow-md font-extrabold'
+                  : 'bg-slate-800/90 text-sky-300 border-sky-800/70 hover:bg-slate-800 font-semibold'
+              }`}
+            >
+              <div className={`p-1.5 rounded-lg ${showStructuralStudio ? 'bg-slate-950/20 text-slate-950' : 'bg-slate-900 text-sky-400'}`}>
+                <Building2 className="w-4 h-4" />
+              </div>
+              <div>
+                <div className="text-xs leading-tight">Eurocode Studio</div>
+                <div className={`text-[10px] leading-tight ${showStructuralStudio ? 'text-slate-950 font-semibold' : 'text-slate-400'}`}>
+                  3D Structural Pre-Dimensioning
+                </div>
+              </div>
+            </button>
+          </div>
         </div>
       </nav>
 
-      {/* Main 3-Column Studio Layout: Left Control Drawer + Central Canvas + Right KPI & Compliance Panel */}
+      {/* Main Studio Layout: Eurocode Structural Studio OR BEM 3-Column Studio */}
       <main className="flex-1 max-w-[1800px] w-full mx-auto p-4 grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
-        {/* PERSISTENT LEFT CONTROL DRAWER */}
-        {leftDrawerOpen && (
+        {showStructuralStudio ? (
+          <div className="col-span-12 space-y-3">
+            <div className="flex items-center justify-between bg-slate-900 border border-slate-800 px-4 py-2 rounded-xl">
+              <div className="flex items-center gap-2 text-xs">
+                <span className="text-slate-400">Current Workspace:</span>
+                <span className="font-extrabold text-sky-400 flex items-center gap-1.5">
+                  <Building2 className="w-4 h-4" />
+                  3D Eurocode Structural Pre-Dimensioning & Integrated Sizing Studio
+                </span>
+                <span className="text-[10px] px-2 py-0.5 rounded-full bg-sky-950 text-sky-300 border border-sky-800 font-bold">
+                  EN 1990–1996
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowStructuralStudio(false)}
+                className="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold text-xs transition border border-slate-700 flex items-center gap-1"
+              >
+                ← Return to Building Physics & BEM Stages
+              </button>
+            </div>
+            <StructuralEurocodeStudio />
+          </div>
+        ) : (
+          <>
+            {/* PERSISTENT LEFT CONTROL DRAWER */}
+            {leftDrawerOpen && (
           <aside className="lg:col-span-3 space-y-4">
             {/* Card 1: Climate Quick-Switcher & Boundary Summary */}
             <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-3.5 space-y-3">
@@ -925,6 +992,8 @@ const StudioWorkspace: React.FC = () => {
             </div>
           </div>
         </aside>
+        )}
+        </>
         )}
       </main>
 
