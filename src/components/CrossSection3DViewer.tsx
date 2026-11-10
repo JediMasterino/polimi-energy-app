@@ -18,6 +18,7 @@ import {
   XCircle,
   HelpCircle,
   Maximize2,
+  Minimize2,
   Sliders
 } from 'lucide-react';
 import { STEEL_PROFILES, CONCRETE_CLASSES, TIMBER_CLASSES } from '../data/eurocodeDataset';
@@ -41,12 +42,20 @@ export const CrossSection3DViewer: React.FC<CrossSection3DViewerProps> = ({
   const [concreteOpacity, setConcreteOpacity] = useState<number>(0.55);
   const [showNeutralAxisPlane, setShowNeutralAxisPlane] = useState<boolean>(true);
   const [wireframe, setWireframe] = useState<boolean>(false);
+  const [isMaximized, setIsMaximized] = useState<boolean>(false);
 
   const mountRef = useRef<HTMLDivElement | null>(null);
   const rendererRef = useRef<THREE.WebGLRenderer | null>(null);
   const sceneRef = useRef<THREE.Scene | null>(null);
   const cameraRef = useRef<THREE.PerspectiveCamera | null>(null);
   const resetCameraRef = useRef<(() => void) | null>(null);
+
+  // Persistent camera orbit & zoom state across parameter updates
+  const cameraStateRef = useRef<{ theta: number; phi: number; radius: number }>({
+    theta: 0.75,
+    phi: 0.55,
+    radius: 2.4
+  });
 
   const eta = result?.eta_max || 0;
 
@@ -82,7 +91,7 @@ export const CrossSection3DViewer: React.FC<CrossSection3DViewerProps> = ({
       case 'EXCEEDS SCREEN':
         return (
           <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-rose-950/80 text-rose-300 border border-rose-800 flex items-center gap-1">
-            <XCircle className="w-3 h-3" /> EXCEEDS LIMIT (Î· &gt; 1.0)
+            <XCircle className="w-3 h-3" /> EXCEEDS LIMIT (η &gt; 1.0)
           </span>
         );
       case 'OUT OF SCOPE':
@@ -113,7 +122,7 @@ export const CrossSection3DViewer: React.FC<CrossSection3DViewerProps> = ({
     }
 
     const width = domEl.clientWidth || 400;
-    const height = domEl.clientHeight || 260;
+    const height = domEl.clientHeight || (isMaximized ? 420 : 260);
 
     // Scene
     const scene = new THREE.Scene();
@@ -606,7 +615,7 @@ export const CrossSection3DViewer: React.FC<CrossSection3DViewerProps> = ({
       const nLayers = 5;
       const layerH = t_m / nLayers;
 
-      // 5 alternating layers (0Â° longitudinal, 90Â° transverse)
+      // 5 alternating layers (0° longitudinal, 90° transverse)
       for (let i = 0; i < nLayers; i++) {
         const isLong = i % 2 === 0;
         const layerGeo = new THREE.BoxGeometry(b_m, layerH, L_extrude);
@@ -670,13 +679,13 @@ export const CrossSection3DViewer: React.FC<CrossSection3DViewerProps> = ({
     }
 
     // ------------------------------------------------------------------------
-    // MOUSE ORBIT, PAN & ZOOM INTERACTION
+    // MOUSE ORBIT, PAN & ZOOM INTERACTION (PERSISTENT CAMERA REFS)
     // ------------------------------------------------------------------------
     let isDragging = false;
     let prevMouse = { x: 0, y: 0 };
-    let theta = 0.75;
-    let phi = 0.55;
-    let radius = 2.4;
+    let theta = cameraStateRef.current.theta;
+    let phi = cameraStateRef.current.phi;
+    let radius = cameraStateRef.current.radius;
 
     const updateCamera = () => {
       camera.position.x = radius * Math.sin(theta) * Math.cos(phi);
@@ -689,6 +698,7 @@ export const CrossSection3DViewer: React.FC<CrossSection3DViewerProps> = ({
     updateCamera();
 
     resetCameraRef.current = () => {
+      cameraStateRef.current = { theta: 0.75, phi: 0.55, radius: 2.4 };
       theta = 0.75;
       phi = 0.55;
       radius = 2.4;
@@ -708,6 +718,8 @@ export const CrossSection3DViewer: React.FC<CrossSection3DViewerProps> = ({
 
       theta -= dx * 0.008;
       phi = Math.max(-Math.PI / 2.3, Math.min(Math.PI / 2.3, phi + dy * 0.008));
+      cameraStateRef.current.theta = theta;
+      cameraStateRef.current.phi = phi;
       updateCamera();
     };
 
@@ -718,6 +730,7 @@ export const CrossSection3DViewer: React.FC<CrossSection3DViewerProps> = ({
     const onWheel = (e: WheelEvent) => {
       e.preventDefault();
       radius = Math.max(0.8, Math.min(5.0, radius + e.deltaY * 0.002));
+      cameraStateRef.current.radius = radius;
       updateCamera();
     };
 
@@ -736,10 +749,10 @@ export const CrossSection3DViewer: React.FC<CrossSection3DViewerProps> = ({
       domEl.removeEventListener('wheel', onWheel);
       renderer.dispose();
     };
-  }, [memberType, params, result, viewMode, concreteOpacity, showNeutralAxisPlane, wireframe, eta]);
+  }, [memberType, params, result, viewMode, concreteOpacity, showNeutralAxisPlane, wireframe, eta, isMaximized]);
 
   // ==========================================================================
-  // 2D SCALED CAD SECTION & EUROCODE STRESS/STRAIN DIAGRAM
+  // 2D SCALED CAD SECTION & EUROCODE STRESS/STRAIN DIAGRAM (NON-OVERLAPPING)
   // ==========================================================================
   const render2DCadAndStressDiagram = () => {
     // ------------------------------------------------------------------------
@@ -765,17 +778,17 @@ export const CrossSection3DViewer: React.FC<CrossSection3DViewerProps> = ({
       const fck = CONCRETE_CLASSES[params.concreteClass]?.fck || 30;
       const fcd = (fck / 1.5).toFixed(1);
 
-      // Section scaling inside 200x200 box
-      const scale = 170 / Math.max(b, h);
-      const drawW = Math.max(30, b * scale);
-      const drawH = Math.max(40, h * scale);
-      const startX = 20 + (180 - drawW) / 2;
-      const startY = 25 + (180 - drawH) / 2;
+      // Section scaling inside 260x170 box on left panel (center x=145, y=120)
+      const scale = Math.min(210 / b, 150 / h);
+      const drawW = Math.max(35, Math.min(220, b * scale));
+      const drawH = Math.max(40, Math.min(150, h * scale));
+      const startX = 145 - drawW / 2;
+      const startY = 120 - drawH / 2;
       const drawCnom = Math.max(3, cnom * scale);
       const drawX = Math.min(drawH, Math.max(4, x * scale));
       const drawPhi = Math.max(4, phi * scale);
 
-      // Number of bars calculation
+      // Bars layout
       let nBottom = 4;
       let nTop = 2;
       if (isSlab) {
@@ -793,22 +806,30 @@ export const CrossSection3DViewer: React.FC<CrossSection3DViewerProps> = ({
       }
 
       return (
-        <svg viewBox="0 0 440 260" className="w-full h-64 select-none">
+        <svg viewBox="0 0 620 280" className="w-full h-auto select-none" preserveAspectRatio="xMidYMid meet">
+          {/* Vertical Panel Divider */}
+          <line x1="305" y1="15" x2="305" y2="265" stroke="#334155" strokeWidth="1" strokeDasharray="3 3" />
+
           {/* ----------------- LEFT: SCALED CAD CROSS-SECTION ----------------- */}
           <g>
-            <text x="110" y="16" fill="#94a3b8" fontSize="10" fontWeight="bold" textAnchor="middle">
-              1. Scaled Cross-Section ({b}Ã—{h} mm)
+            <text x="145" y="22" fill="#94a3b8" fontSize="11" fontWeight="bold" textAnchor="middle">
+              1. Scaled Cross-Section ({b}×{h} mm)
             </text>
 
             {/* Concrete Section Body */}
-            <rect x={startX} y={startY} width={drawW} height={drawH} rx="2" fill="#1e293b" stroke="#64748b" strokeWidth="1.5" />
+            <rect x={startX} y={startY} width={drawW} height={drawH} rx="3" fill="#1e293b" stroke="#64748b" strokeWidth="1.5" />
 
             {/* Concrete Compression Zone above Neutral Axis */}
             <rect x={startX} y={startY} width={drawW} height={drawX} fill="#0284c7" fillOpacity="0.25" />
 
-            {/* Neutral Axis Dashed Line */}
-            <line x1={startX - 10} y1={startY + drawX} x2={startX + drawW + 10} y2={startY + drawX} stroke="#38bdf8" strokeWidth="1.5" strokeDasharray="3 3" />
-            <text x={startX + drawW + 12} y={startY + drawX + 3} fill="#38bdf8" fontSize="9" fontWeight="bold">N.A. x={x.toFixed(0)}mm</text>
+            {/* Neutral Axis Dashed Line (bounded within section) */}
+            <line x1={startX - 6} y1={startY + drawX} x2={startX + drawW + 6} y2={startY + drawX} stroke="#38bdf8" strokeWidth="1.5" strokeDasharray="3 2" />
+
+            {/* Non-overlapping N.A. Label Pill Badge */}
+            <rect x={startX + 4} y={Math.max(startY + 2, startY + drawX - 14)} width="72" height="12" rx="3" fill="#0b1120" fillOpacity="0.85" />
+            <text x={startX + 40} y={Math.max(startY + 11, startY + drawX - 5)} fill="#38bdf8" fontSize="8" fontWeight="bold" textAnchor="middle">
+              N.A. x={x.toFixed(0)}mm
+            </text>
 
             {/* Links / Stirrups (Only for Beam and Column) */}
             {(isBeam || isCol) && (
@@ -847,49 +868,57 @@ export const CrossSection3DViewer: React.FC<CrossSection3DViewerProps> = ({
             {/* Transverse / Distribution bars for Slab */}
             {isSlab && (
               <g>
-                <text x={startX + drawW / 2} y={startY + drawH - drawCnom - drawPhi - 4} fill="#fbbf24" fontSize="8" textAnchor="middle">
-                  Ã˜{params.phi_t || 8}@{params.s_t || 200} trans
+                <text x={145} y={startY + drawH - drawCnom - drawPhi - 4} fill="#fbbf24" fontSize="8" textAnchor="middle">
+                  Transverse Ø{params.phi_t || 8}@{params.s_t || 200}
                 </text>
               </g>
             )}
 
-            {/* Dimensions */}
-            <text x={startX + drawW / 2} y={startY + drawH + 16} fill="#94a3b8" fontSize="10" textAnchor="middle">b = {b} mm</text>
-            <text x={startX - 8} y={startY + drawH / 2} fill="#94a3b8" fontSize="10" textAnchor="end">h = {h} mm</text>
-            <text x={startX + drawW / 2} y={startY - 6} fill="#38bdf8" fontSize="9" textAnchor="middle">
-              {isBeam ? `Links Ã˜${phi_link} s=${sw}mm` : isCol ? `Ties a=${params.a || 50}mm` : isWall ? `2x Mesh Ã˜${phi}@${s}` : `Bottom Ã˜${phi}@${s}`}
+            {/* Dimension Callouts (Non-overlapping) */}
+            <text x={145} y={startY + drawH + 16} fill="#94a3b8" fontSize="9.5" textAnchor="middle">b = {b} mm</text>
+            <text x={startX - 10} y={120 + 3} fill="#94a3b8" fontSize="9.5" textAnchor="end">h = {h} mm</text>
+            <text x={145} y={262} fill="#38bdf8" fontSize="9" textAnchor="middle" fontWeight="bold">
+              {isBeam ? `Links Ø${phi_link} s=${sw}mm • ${n}Ø${phi}` : isCol ? `Ties a=${params.a || 50}mm • 2×${params.n_bars || 3}Ø${phi}` : isWall ? `2× Mesh Ø${phi}@${s}mm • ties Ø${params.phi_h || 8}` : `Bottom Ø${phi}@${s}mm`}
             </text>
           </g>
 
           {/* ----------------- RIGHT: EUROCODE STRAIN & STRESS ----------------- */}
-          <g transform="translate(230, 0)">
-            <text x="100" y="16" fill="#38bdf8" fontSize="10" fontWeight="bold" textAnchor="middle">
+          <g>
+            <text x="465" y="22" fill="#38bdf8" fontSize="11" fontWeight="bold" textAnchor="middle">
               2. Eurocode EN 1992 Strain & Stress Block
             </text>
 
-            {/* Strain Diagram (linear through NA) */}
-            <line x1="40" y1={startY} x2="40" y2={startY + drawH} stroke="#475569" strokeWidth="1" />
+            {/* Strain Profile Column (Datum at x=365) */}
+            <text x="365" y={startY - 6} fill="#94a3b8" fontSize="8.5" textAnchor="middle">Strain ε</text>
+            <line x1="365" y1={startY} x2="365" y2={startY + drawH} stroke="#475569" strokeWidth="1.2" />
+
+            {/* Concrete Compressive Strain Triangle */}
             <polygon
-              points={`40,${startY} 15,${startY} 40,${startY + drawX}`}
+              points={`365,${startY} 335,${startY} 365,${startY + drawX}`}
               fill="#38bdf8"
               fillOpacity="0.4"
               stroke="#38bdf8"
               strokeWidth="1.2"
             />
+            <text x="330" y={startY + 9} fill="#38bdf8" fontSize="8" textAnchor="end">εcu3=3.5‰</text>
+
+            {/* Steel Tensile Strain Triangle */}
             <polygon
-              points={`40,${startY + drawX} 65,${startY + drawH} 40,${startY + drawH}`}
+              points={`365,${startY + drawX} 395,${startY + drawH} 365,${startY + drawH}`}
               fill="#ef4444"
               fillOpacity="0.3"
               stroke="#ef4444"
               strokeWidth="1.2"
             />
-            <text x="10" y={startY + 10} fill="#38bdf8" fontSize="8" textAnchor="end">Îµcu3=3.5â€°</text>
-            <text x="70" y={startY + drawH - 2} fill="#ef4444" fontSize="8">Îµs &ge; 2.17â€°</text>
+            <text x="400" y={startY + drawH - 2} fill="#ef4444" fontSize="8">εs ≥ 2.17‰</text>
+
+            {/* Stress Profile Column (Datum at x=480) */}
+            <text x="480" y={startY - 6} fill="#94a3b8" fontSize="8.5" textAnchor="middle">Stress σ</text>
+            <line x1="480" y1={startY} x2="480" y2={startY + drawH} stroke="#475569" strokeWidth="1.2" />
 
             {/* Eurocode Rectangular Stress Block (λx = 0.8x at ηfcd) */}
-            <line x1="120" y1={startY} x2="120" y2={startY + drawH} stroke="#475569" strokeWidth="1" />
             <rect
-              x="120"
+              x="480"
               y={startY}
               width="45"
               height={Math.max(4, drawX * 0.8)}
@@ -898,26 +927,31 @@ export const CrossSection3DViewer: React.FC<CrossSection3DViewerProps> = ({
               stroke="#38bdf8"
               strokeWidth="1"
             />
-            <text x="170" y={startY + (drawX * 0.8) / 2 + 3} fill="#38bdf8" fontSize="9" fontWeight="bold">Î·fcd = {fcd} MPa</text>
-            <text x="115" y={startY + (drawX * 0.8) + 12} fill="#94a3b8" fontSize="8" textAnchor="end">Î»x = {(0.8 * x).toFixed(0)}mm</text>
+            <text x="532" y={startY + Math.max(8, (drawX * 0.8) / 2) + 3} fill="#38bdf8" fontSize="9" fontWeight="bold">
+              ηfcd = {fcd} MPa
+            </text>
+            <text x="475" y={startY + (drawX * 0.8) + 12} fill="#94a3b8" fontSize="7.5" textAnchor="end">
+              λx = {(0.8 * x).toFixed(0)}mm
+            </text>
 
             {/* Concrete Compression Force Fc Arrow */}
-            <line x1="165" y1={startY + (drawX * 0.8) / 2} x2="135" y2={startY + (drawX * 0.8) / 2} stroke="#38bdf8" strokeWidth="2" markerEnd="url(#arrow-cyan)" />
-            <text x="175" y={startY + (drawX * 0.8) / 2 - 4} fill="#38bdf8" fontSize="9" fontWeight="bold">Fc</text>
+            <line x1="520" y1={startY + (drawX * 0.4)} x2="490" y2={startY + (drawX * 0.4)} stroke="#38bdf8" strokeWidth="2" />
+            <polygon points={`490,${startY + drawX * 0.4} 495,${startY + drawX * 0.4 - 3} 495,${startY + drawX * 0.4 + 3}`} fill="#38bdf8" />
+            <text x="526" y={startY + (drawX * 0.4) - 3} fill="#38bdf8" fontSize="8.5" fontWeight="bold">Fc</text>
 
             {/* Steel Tension Force Fs Arrow */}
-            <line x1="100" y1={startY + drawH - drawCnom} x2="145" y2={startY + drawH - drawCnom} stroke="#ef4444" strokeWidth="2" />
-            <polygon points={`145,${startY + drawH - drawCnom} 140,${startY + drawH - drawCnom - 3} 140,${startY + drawH - drawCnom + 3}`} fill="#ef4444" />
-            <text x="152" y={startY + drawH - drawCnom + 3} fill="#ef4444" fontSize="9" fontWeight="bold">Fs</text>
+            <line x1="465" y1={startY + drawH - drawCnom} x2="510" y2={startY + drawH - drawCnom} stroke="#ef4444" strokeWidth="2" />
+            <polygon points={`510,${startY + drawH - drawCnom} 505,${startY + drawH - drawCnom - 3} 505,${startY + drawH - drawCnom + 3}`} fill="#ef4444" />
+            <text x="516" y={startY + drawH - drawCnom + 3} fill="#ef4444" fontSize="8.5" fontWeight="bold">Fs</text>
 
-            {/* Lever Arm z dimension */}
-            <line x1="195" y1={startY + (drawX * 0.4)} x2="195" y2={startY + drawH - drawCnom} stroke="#a755f7" strokeWidth="1" strokeDasharray="2 2" />
-            <text x="200" y={startY + drawH / 2} fill="#c084fc" fontSize="9" fontWeight="bold">z = {z}mm</text>
+            {/* Internal Lever Arm z Dimension */}
+            <line x1="580" y1={startY + (drawX * 0.4)} x2="580" y2={startY + drawH - drawCnom} stroke="#a755f7" strokeWidth="1.2" strokeDasharray="2 2" />
+            <text x="586" y={startY + drawH / 2} fill="#c084fc" fontSize="8.5" fontWeight="bold">z = {z}mm</text>
 
-            {/* Bottom Scope / Verification Tag */}
-            <rect x="25" y="215" width="165" height="20" rx="4" fill="#0f172a" stroke="#334155" />
-            <text x="107" y="229" fill="#38bdf8" fontSize="9" textAnchor="middle" fontWeight="bold">
-              {isSlab ? `d = ${d}mm â€¢ Unreinforced VRd,c` : isBeam ? `d = ${d}mm â€¢ Shear Truss cotÎ¸=2.0` : isCol ? `eTot = ${(result?.eTot || 20).toFixed(1)}mm â€¢ NEd/NRd` : `Slender Wall â€¢ 2nd Order e2`}
+            {/* Bottom Eurocode Scope & Verification Badge Pill */}
+            <rect x="330" y="248" width="270" height="22" rx="5" fill="#0f172a" stroke="#334155" />
+            <text x="465" y="263" fill="#38bdf8" fontSize="9" textAnchor="middle" fontWeight="bold">
+              {isSlab ? `d = ${d}mm • Unreinforced VRd,c` : isBeam ? `d = ${d}mm • Shear Truss cotθ=2.0` : isCol ? `eTot = ${(result?.eTot || 20).toFixed(1)}mm • NEd/NRd` : `Slender Wall • 2nd Order e2`}
             </text>
           </g>
         </svg>
@@ -934,76 +968,82 @@ export const CrossSection3DViewer: React.FC<CrossSection3DViewerProps> = ({
       const sClass = result?.sectionClass || 1;
 
       return (
-        <svg viewBox="0 0 440 260" className="w-full h-64 select-none">
+        <svg viewBox="0 0 620 280" className="w-full h-auto select-none" preserveAspectRatio="xMidYMid meet">
+          {/* Vertical Panel Divider */}
+          <line x1="305" y1="15" x2="305" y2="265" stroke="#334155" strokeWidth="1" strokeDasharray="3 3" />
+
           {/* ----------------- LEFT: SCALED PROFILE CAD ----------------- */}
           <g>
-            <text x="110" y="16" fill="#94a3b8" fontSize="10" fontWeight="bold" textAnchor="middle">
+            <text x="145" y="22" fill="#94a3b8" fontSize="11" fontWeight="bold" textAnchor="middle">
               1. Steel Cross-Section ({prof.profile})
             </text>
 
             {prof.type === 'CHS' ? (
-              <g transform="translate(110, 115)">
-                <circle cx="0" cy="0" r="60" fill="#1e293b" stroke="#38bdf8" strokeWidth="2" />
-                <circle cx="0" cy="0" r={Math.max(10, 60 - prof.tf * 2)} fill="#0b1120" stroke="#38bdf8" strokeWidth="1" />
+              <g transform="translate(145, 125)">
+                <circle cx="0" cy="0" r="55" fill="#1e293b" stroke="#38bdf8" strokeWidth="2" />
+                <circle cx="0" cy="0" r={Math.max(10, 55 - prof.tf * 2)} fill="#0b1120" stroke="#38bdf8" strokeWidth="1" />
                 <text x="0" y="4" fill="#38bdf8" fontSize="10" textAnchor="middle" fontWeight="bold">D = {prof.h}mm</text>
                 <text x="0" y="20" fill="#94a3b8" fontSize="9" textAnchor="middle">t = {prof.tf}mm</text>
               </g>
             ) : prof.type === 'SHS' ? (
-              <g transform="translate(110, 115)">
-                <rect x="-55" y="-55" width="110" height="110" rx="6" fill="#1e293b" stroke="#38bdf8" strokeWidth="2" />
-                <rect x={-55 + prof.tf * 1.5} y={-55 + prof.tf * 1.5} width={110 - prof.tf * 3} height={110 - prof.tf * 3} rx="4" fill="#0b1120" stroke="#38bdf8" strokeWidth="1" />
-                <text x="0" y="4" fill="#38bdf8" fontSize="10" textAnchor="middle" fontWeight="bold">{prof.h}Ã—{prof.b}mm</text>
+              <g transform="translate(145, 125)">
+                <rect x="-50" y="-50" width="100" height="100" rx="6" fill="#1e293b" stroke="#38bdf8" strokeWidth="2" />
+                <rect x={-50 + prof.tf * 1.5} y={-50 + prof.tf * 1.5} width={100 - prof.tf * 3} height={100 - prof.tf * 3} rx="4" fill="#0b1120" stroke="#38bdf8" strokeWidth="1" />
+                <text x="0" y="4" fill="#38bdf8" fontSize="10" textAnchor="middle" fontWeight="bold">{prof.h}×{prof.b}mm</text>
                 <text x="0" y="20" fill="#94a3b8" fontSize="9" textAnchor="middle">t = {prof.tf}mm</text>
               </g>
             ) : (
-              <g transform="translate(110, 115)">
+              <g transform="translate(145, 125)">
                 {/* Top Flange */}
-                <rect x="-50" y="-70" width="100" height="15" rx="1" fill="#1e293b" stroke="#38bdf8" strokeWidth="1.5" />
+                <rect x="-48" y="-65" width="96" height="14" rx="1" fill="#1e293b" stroke="#38bdf8" strokeWidth="1.5" />
                 {/* Web */}
-                <rect x="-5" y="-55" width="10" height="110" fill="#1e293b" stroke="#38bdf8" strokeWidth="1.5" />
+                <rect x="-5" y="-51" width="10" height="102" fill="#1e293b" stroke="#38bdf8" strokeWidth="1.5" />
                 {/* Bottom Flange */}
-                <rect x="-50" y="55" width="100" height="15" rx="1" fill="#1e293b" stroke="#38bdf8" strokeWidth="1.5" />
+                <rect x="-48" y="51" width="96" height="14" rx="1" fill="#1e293b" stroke="#38bdf8" strokeWidth="1.5" />
 
-                {/* Dimension callouts */}
-                <text x="0" y="-76" fill="#94a3b8" fontSize="9" textAnchor="middle">b = {prof.b} mm (tf = {prof.tf} mm)</text>
-                <text x="-58" y="0" fill="#94a3b8" fontSize="9" textAnchor="end">h = {prof.h} mm</text>
-                <text x="12" y="0" fill="#94a3b8" fontSize="8" textAnchor="start">tw = {prof.tw} mm</text>
+                {/* Dimension callouts (Non-overlapping) */}
+                <text x="0" y="-72" fill="#94a3b8" fontSize="9" textAnchor="middle">b = {prof.b} mm (tf = {prof.tf} mm)</text>
+                <text x="-56" y="3" fill="#94a3b8" fontSize="9" textAnchor="end">h = {prof.h} mm</text>
+
+                {/* Web thickness with dark pill */}
+                <rect x="10" y="-8" width="55" height="15" rx="3" fill="#0b1120" fillOpacity="0.85" />
+                <text x="37" y="3" fill="#94a3b8" fontSize="8" textAnchor="middle">tw = {prof.tw} mm</text>
 
                 {/* Centroid / Axes */}
-                <line x1="-65" y1="0" x2="65" y2="0" stroke="#38bdf8" strokeWidth="1" strokeDasharray="2 2" />
-                <text x="68" y="3" fill="#38bdf8" fontSize="8">y-y</text>
-                <line x1="0" y1="-80" x2="0" y2="80" stroke="#f43f5e" strokeWidth="1" strokeDasharray="2 2" />
-                <text x="3" y="86" fill="#f43f5e" fontSize="8">z-z</text>
+                <line x1="-60" y1="0" x2="60" y2="0" stroke="#38bdf8" strokeWidth="1" strokeDasharray="2 2" />
+                <text x="64" y="3" fill="#38bdf8" fontSize="8">y-y</text>
+                <line x1="0" y1="-75" x2="0" y2="75" stroke="#f43f5e" strokeWidth="1" strokeDasharray="2 2" />
+                <text x="3" y="80" fill="#f43f5e" fontSize="8">z-z</text>
               </g>
             )}
 
-            <text x="110" y="215" fill="#fde047" fontSize="10" textAnchor="middle" fontWeight="bold">
-              Grade {params.grade || 'S355'} â€¢ Class {sClass} Section
+            <text x="145" y="262" fill="#fde047" fontSize="10" textAnchor="middle" fontWeight="bold">
+              Grade {params.grade || 'S355'} • Class {sClass} Cross-Section
             </text>
           </g>
 
           {/* ----------------- RIGHT: EUROCODE PLASTIC / ELASTIC STRESS ----------------- */}
-          <g transform="translate(230, 0)">
-            <text x="100" y="16" fill="#38bdf8" fontSize="10" fontWeight="bold" textAnchor="middle">
+          <g>
+            <text x="465" y="22" fill="#38bdf8" fontSize="11" fontWeight="bold" textAnchor="middle">
               2. Eurocode EN 1993 Stress Profile
             </text>
 
-            <line x1="90" y1="45" x2="90" y2="195" stroke="#475569" strokeWidth="1.5" />
+            <line x1="465" y1="45" x2="465" y2="215" stroke="#475569" strokeWidth="1.5" />
 
             {/* Top compression block */}
-            <rect x="45" y="45" width="45" height="15" fill="#ef4444" fillOpacity="0.6" stroke="#ef4444" />
-            <text x="40" y="56" fill="#ef4444" fontSize="9" textAnchor="end">-fy={fy}MPa</text>
+            <rect x="415" y="45" width="50" height="20" fill="#ef4444" fillOpacity="0.6" stroke="#ef4444" />
+            <text x="405" y="58" fill="#ef4444" fontSize="9" textAnchor="end">-fy = {fy} MPa</text>
 
             {/* Bottom tension block */}
-            <rect x="90" y="180" width="45" height="15" fill="#10b981" fillOpacity="0.6" stroke="#10b981" />
-            <text x="140" y="191" fill="#10b981" fontSize="9">+fy={fy}MPa</text>
+            <rect x="465" y="195" width="50" height="20" fill="#10b981" fillOpacity="0.6" stroke="#10b981" />
+            <text x="525" y="208" fill="#10b981" fontSize="9" textAnchor="start">+fy = {fy} MPa</text>
 
             {/* Plastic vs Elastic distribution */}
-            <line x1="45" y1="120" x2="135" y2="120" stroke="#38bdf8" strokeWidth="1.5" strokeDasharray="3 3" />
-            <text x="140" y="123" fill="#38bdf8" fontSize="9">Plastic N.A.</text>
+            <line x1="415" y1="130" x2="515" y2="130" stroke="#38bdf8" strokeWidth="1.5" strokeDasharray="3 3" />
+            <text x="522" y="133" fill="#38bdf8" fontSize="8.5">Plastic N.A.</text>
 
-            <rect x="25" y="215" width="165" height="20" rx="4" fill="#0f172a" stroke="#334155" />
-            <text x="107" y="229" fill="#fde047" fontSize="9" textAnchor="middle" fontWeight="bold">
+            <rect x="340" y="248" width="250" height="22" rx="5" fill="#0f172a" stroke="#334155" />
+            <text x="465" y="263" fill="#fde047" fontSize="9" textAnchor="middle" fontWeight="bold">
               {sClass <= 2 ? 'Full Plastic Stress Block (Mpl,Rd)' : 'Elastic Triangular Stress (Mel,Rd)'}
             </text>
           </g>
@@ -1023,73 +1063,77 @@ export const CrossSection3DViewer: React.FC<CrossSection3DViewerProps> = ({
       const em = (result?.emk || 15).toFixed(1);
 
       return (
-        <svg viewBox="0 0 440 260" className="w-full h-64 select-none">
+        <svg viewBox="0 0 620 280" className="w-full h-auto select-none" preserveAspectRatio="xMidYMid meet">
+          {/* Vertical Panel Divider */}
+          <line x1="305" y1="15" x2="305" y2="265" stroke="#334155" strokeWidth="1" strokeDasharray="3 3" />
+
           {/* ----------------- LEFT: SCALED MASONRY CAD SECTION ----------------- */}
           <g>
-            <text x="110" y="16" fill="#94a3b8" fontSize="10" fontWeight="bold" textAnchor="middle">
+            <text x="145" y="22" fill="#94a3b8" fontSize="11" fontWeight="bold" textAnchor="middle">
               1. Masonry Wall Strip (t={t} mm, l={l} mm)
             </text>
 
             {/* Wall Outline */}
-            <rect x="35" y="45" width="150" height="150" rx="2" fill="#1e293b" stroke="#64748b" strokeWidth="1.5" />
+            <rect x="70" y="55" width="150" height="145" rx="3" fill="#1e293b" stroke="#64748b" strokeWidth="1.5" />
 
             {/* Brick Courses with Mortar Bed Joints */}
             {[0, 1, 2, 3, 4, 5, 6].map((i) => (
-              <line key={i} x1="35" y1={45 + (i + 1) * 21.4} x2="185" y2={45 + (i + 1) * 21.4} stroke="#475569" strokeWidth="1" />
+              <line key={i} x1="70" y1={55 + (i + 1) * 20.7} x2="220" y2={55 + (i + 1) * 20.7} stroke="#475569" strokeWidth="1" />
             ))}
 
             {/* Head Joints */}
             {[0, 2, 4, 6].map((i) => (
               <g key={`h-${i}`}>
-                <line x1="85" y1={45 + i * 21.4} x2="85" y2={45 + (i + 1) * 21.4} stroke="#475569" strokeWidth="1" />
-                <line x1="135" y1={45 + i * 21.4} x2="135" y2={45 + (i + 1) * 21.4} stroke="#475569" strokeWidth="1" />
+                <line x1="120" y1={55 + i * 20.7} x2="120" y2={55 + (i + 1) * 20.7} stroke="#475569" strokeWidth="1" />
+                <line x1="170" y1={55 + i * 20.7} x2="170" y2={55 + (i + 1) * 20.7} stroke="#475569" strokeWidth="1" />
               </g>
             ))}
             {[1, 3, 5].map((i) => (
               <g key={`h2-${i}`}>
-                <line x1="60" y1={45 + i * 21.4} x2="60" y2={45 + (i + 1) * 21.4} stroke="#475569" strokeWidth="1" />
-                <line x1="110" y1={45 + i * 21.4} x2="110" y2={45 + (i + 1) * 21.4} stroke="#475569" strokeWidth="1" />
-                <line x1="160" y1={45 + i * 21.4} x2="160" y2={45 + (i + 1) * 21.4} stroke="#475569" strokeWidth="1" />
+                <line x1="95" y1={55 + i * 20.7} x2="95" y2={55 + (i + 1) * 20.7} stroke="#475569" strokeWidth="1" />
+                <line x1="145" y1={55 + i * 20.7} x2="145" y2={55 + (i + 1) * 20.7} stroke="#475569" strokeWidth="1" />
+                <line x1="195" y1={55 + i * 20.7} x2="195" y2={55 + (i + 1) * 20.7} stroke="#475569" strokeWidth="1" />
               </g>
             ))}
 
             {/* Compressed Length / Area lc */}
-            <rect x="35" y="45" width="112" height="150" fill="#10b981" fillOpacity="0.2" stroke="#10b981" strokeWidth="1.5" strokeDasharray="3 3" />
-            <text x="91" y="125" fill="#34d399" fontSize="10" textAnchor="middle" fontWeight="bold">Compressed lc = {lc} mm</text>
+            <rect x="70" y="55" width="105" height="145" fill="#10b981" fillOpacity="0.2" stroke="#10b981" strokeWidth="1.5" strokeDasharray="3 3" />
+            <rect x="75" y="120" width="95" height="16" rx="3" fill="#0b1120" fillOpacity="0.85" />
+            <text x="122" y="132" fill="#34d399" fontSize="8.5" textAnchor="middle" fontWeight="bold">Compressed lc = {lc} mm</text>
 
             {/* Normal Force Eccentricity Arrow */}
-            <line x1="100" y1="25" x2="100" y2="45" stroke="#f59e0b" strokeWidth="2.5" />
-            <polygon points="100,45 96,38 104,38" fill="#f59e0b" />
-            <text x="105" y="35" fill="#f59e0b" fontSize="8" fontWeight="bold">NEd (e={em}mm)</text>
+            <line x1="135" y1="35" x2="135" y2="55" stroke="#f59e0b" strokeWidth="2.5" />
+            <polygon points="135,55 131,48 139,48" fill="#f59e0b" />
+            <text x="142" y="44" fill="#f59e0b" fontSize="8" fontWeight="bold">NEd (e={em}mm)</text>
 
-            <text x="110" y="215" fill="#fde68a" fontSize="10" textAnchor="middle" fontWeight="bold">
-              {params.unitGroup || 'Clay / G1'} â€¢ fk = {fk} MPa
+            <text x="145" y="262" fill="#fde68a" fontSize="10" textAnchor="middle" fontWeight="bold">
+              {params.unitGroup || 'Clay / G1'} • fk = {fk} MPa
             </text>
           </g>
 
           {/* ----------------- RIGHT: EUROCODE EN 1996 STRESS BLOCK ----------------- */}
-          <g transform="translate(230, 0)">
-            <text x="100" y="16" fill="#38bdf8" fontSize="10" fontWeight="bold" textAnchor="middle">
+          <g>
+            <text x="465" y="22" fill="#38bdf8" fontSize="11" fontWeight="bold" textAnchor="middle">
               2. Eurocode EN 1996 Stress Block
             </text>
 
             {/* Rectangular stress block over effective width lc */}
-            <line x1="90" y1="45" x2="90" y2="195" stroke="#475569" strokeWidth="1" />
-            <rect x="50" y="45" width="40" height="110" fill="#0284c7" fillOpacity="0.75" stroke="#38bdf8" strokeWidth="1.5" />
-            <text x="40" y="105" fill="#38bdf8" fontSize="9" textAnchor="end">fd = {fd} MPa</text>
+            <line x1="445" y1="55" x2="445" y2="200" stroke="#475569" strokeWidth="1.2" />
+            <rect x="445" y="55" width="45" height="105" fill="#0284c7" fillOpacity="0.75" stroke="#38bdf8" strokeWidth="1.5" />
+            <text x="498" y="110" fill="#38bdf8" fontSize="9" fontWeight="bold">fd = {fd} MPa</text>
 
-            {/* Centroid force */}
-            <line x1="70" y1="30" x2="70" y2="45" stroke="#38bdf8" strokeWidth="2" />
-            <polygon points="70,45 67,39 73,39" fill="#38bdf8" />
-            <text x="75" y="35" fill="#38bdf8" fontSize="9" fontWeight="bold">NRd</text>
+            {/* Centroid force NRd */}
+            <line x1="467" y1="35" x2="467" y2="55" stroke="#38bdf8" strokeWidth="2" />
+            <polygon points="467,55 464,48 470,48" fill="#38bdf8" />
+            <text x="474" y="44" fill="#38bdf8" fontSize="8.5" fontWeight="bold">NRd</text>
 
             {/* Tension crack / zero tension zone */}
-            <rect x="90" y="155" width="40" height="40" fill="#ef4444" fillOpacity="0.2" stroke="#ef4444" strokeDasharray="2 2" />
-            <text x="135" y="178" fill="#ef4444" fontSize="8">Zero tension zone</text>
+            <rect x="445" y="160" width="45" height="40" fill="#ef4444" fillOpacity="0.2" stroke="#ef4444" strokeDasharray="2 2" />
+            <text x="498" y="182" fill="#ef4444" fontSize="8">Zero tension zone</text>
 
-            <rect x="25" y="215" width="165" height="20" rx="4" fill="#0f172a" stroke="#334155" />
-            <text x="107" y="229" fill="#38bdf8" fontSize="9" textAnchor="middle" fontWeight="bold">
-              EN 1996-1-1 Â§6.1 â€¢ Î¦i = {(result?.Phi_i || 0.85).toFixed(2)}
+            <rect x="340" y="248" width="250" height="22" rx="5" fill="#0f172a" stroke="#334155" />
+            <text x="465" y="263" fill="#38bdf8" fontSize="9" textAnchor="middle" fontWeight="bold">
+              EN 1996-1-1 §6.1 • Φi = {(result?.Phi_i || 0.85).toFixed(2)}
             </text>
           </g>
         </svg>
@@ -1107,11 +1151,14 @@ export const CrossSection3DViewer: React.FC<CrossSection3DViewerProps> = ({
     const fvd = (result?.fvd || 2.1).toFixed(1);
 
     return (
-      <svg viewBox="0 0 440 260" className="w-full h-64 select-none">
+      <svg viewBox="0 0 620 280" className="w-full h-auto select-none" preserveAspectRatio="xMidYMid meet">
+        {/* Vertical Panel Divider */}
+        <line x1="305" y1="15" x2="305" y2="265" stroke="#334155" strokeWidth="1" strokeDasharray="3 3" />
+
         {/* ----------------- LEFT: TIMBER SECTION & LAYUP ----------------- */}
         <g>
-          <text x="110" y="16" fill="#94a3b8" fontSize="10" fontWeight="bold" textAnchor="middle">
-            {isCLT ? `1. Cross-Laminated Layup (t=${t} mm)` : `1. Glulam Section (${b}Ã—${h} mm)`}
+          <text x="145" y="22" fill="#94a3b8" fontSize="11" fontWeight="bold" textAnchor="middle">
+            {isCLT ? `1. Cross-Laminated Layup (t=${t} mm)` : `1. Glulam Section (${b}×${h} mm)`}
           </text>
 
           {isCLT ? (
@@ -1119,10 +1166,10 @@ export const CrossSection3DViewer: React.FC<CrossSection3DViewerProps> = ({
             [0, 1, 2, 3, 4].map((i) => (
               <rect
                 key={i}
-                x="30"
-                y={45 + i * 30}
+                x="65"
+                y={55 + i * 29}
                 width="160"
-                height="27"
+                height="26"
                 fill={i % 2 === 0 ? '#d97706' : '#92400e'}
                 stroke="#78350f"
                 strokeWidth="1.5"
@@ -1130,44 +1177,45 @@ export const CrossSection3DViewer: React.FC<CrossSection3DViewerProps> = ({
             ))
           ) : (
             // Glulam laminations
-            <g transform="translate(45, 45)">
-              <rect x="0" y="0" width="130" height="150" fill="#1e293b" stroke="#b45309" strokeWidth="2" />
+            <g transform="translate(80, 55)">
+              <rect x="0" y="0" width="130" height="145" fill="#1e293b" stroke="#b45309" strokeWidth="2" />
               {[1, 2, 3, 4].map((i) => (
-                <line key={i} x1="0" y1={i * 30} x2="130" y2={i * 30} stroke="#78350f" strokeWidth="1.5" />
+                <line key={i} x1="0" y1={i * 29} x2="130" y2={i * 29} stroke="#78350f" strokeWidth="1.5" />
               ))}
-              <text x="65" y="78" fill="#fde68a" fontSize="10" textAnchor="middle" fontWeight="bold">
+              <text x="65" y="75" fill="#fde68a" fontSize="10" textAnchor="middle" fontWeight="bold">
                 {params.timberClass || 'GL24h'}
               </text>
             </g>
           )}
 
-          <text x="110" y="215" fill="#fde68a" fontSize="10" textAnchor="middle" fontWeight="bold">
-            {isCLT ? `5-Ply ETA Documented (MR,d = ${(result?.MR_d || 46).toFixed(1)} kNm)` : `${params.timberClass || 'GL24h'} â€¢ Service Class ${params.serviceClass || 1}`}
+          <text x="145" y="262" fill="#fde68a" fontSize="10" textAnchor="middle" fontWeight="bold">
+            {isCLT ? `5-Ply ETA Documented (MR,d = ${(result?.MR_d || 46).toFixed(1)} kNm)` : `${params.timberClass || 'GL24h'} • Service Class ${params.serviceClass || 1}`}
           </text>
         </g>
 
         {/* ----------------- RIGHT: SHEAR ANALOGY & BENDING STRESS ----------------- */}
-        <g transform="translate(230, 0)">
-          <text x="100" y="16" fill="#10b981" fontSize="10" fontWeight="bold" textAnchor="middle">
+        <g>
+          <text x="465" y="22" fill="#10b981" fontSize="11" fontWeight="bold" textAnchor="middle">
             2. {isCLT ? 'Shear Analogy Normal & Rolling Shear' : 'Eurocode Linear Bending & Shear'}
           </text>
 
-          <line x1="90" y1="45" x2="90" y2="195" stroke="#475569" strokeWidth="1" />
+          <line x1="465" y1="55" x2="465" y2="200" stroke="#475569" strokeWidth="1.2" />
 
           {/* Bending triangles */}
-          <polygon points="90,45 50,45 90,120" fill="#ef4444" fillOpacity="0.45" stroke="#ef4444" />
-          <polygon points="90,195 130,195 90,120" fill="#10b981" fillOpacity="0.45" stroke="#10b981" />
+          <polygon points="465,55 415,55 465,127" fill="#ef4444" fillOpacity="0.45" stroke="#ef4444" />
+          <polygon points="465,200 515,200 465,127" fill="#10b981" fillOpacity="0.45" stroke="#10b981" />
 
-          <text x="40" y="55" fill="#ef4444" fontSize="9" textAnchor="end">-fm,d = {fmd} MPa</text>
-          <text x="135" y="195" fill="#10b981" fontSize="9">+fm,d = {fmd} MPa</text>
+          <text x="405" y="65" fill="#ef4444" fontSize="9" textAnchor="end">-fm,d = {fmd} MPa</text>
+          <text x="525" y="200" fill="#10b981" fontSize="9">+fm,d = {fmd} MPa</text>
 
           {/* Shear parabola indicator */}
-          <path d="M 90,45 Q 125,120 90,195" fill="none" stroke="#f59e0b" strokeWidth="1.5" strokeDasharray="2 2" />
-          <text x="128" y="123" fill="#f59e0b" fontSize="8">Ï„max={fvd}MPa</text>
+          <path d="M 465,55 Q 515,127 465,200" fill="none" stroke="#f59e0b" strokeWidth="1.5" strokeDasharray="3 2" />
+          <rect x="520" y="120" width="60" height="16" rx="3" fill="#0b1120" fillOpacity="0.85" />
+          <text x="550" y="132" fill="#f59e0b" fontSize="8" textAnchor="middle" fontWeight="bold">τmax={fvd}MPa</text>
 
-          <rect x="25" y="215" width="165" height="20" rx="4" fill="#0f172a" stroke="#334155" />
-          <text x="107" y="229" fill="#a7f3d0" fontSize="9" textAnchor="middle" fontWeight="bold">
-            {isCLT ? 'Shear Analogy â€¢ Rolling Shear fr,d' : 'EN 1995-1-1 Â§6.1 â€¢ kmod = 0.80'}
+          <rect x="340" y="248" width="250" height="22" rx="5" fill="#0f172a" stroke="#334155" />
+          <text x="465" y="263" fill="#a7f3d0" fontSize="9" textAnchor="middle" fontWeight="bold">
+            {isCLT ? 'Shear Analogy • Rolling Shear fr,d' : 'EN 1995-1-1 §6.1 • kmod = 0.80'}
           </text>
         </g>
       </svg>
@@ -1175,7 +1223,9 @@ export const CrossSection3DViewer: React.FC<CrossSection3DViewerProps> = ({
   };
 
   return (
-    <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 space-y-3 shadow-xl">
+    <div className={`bg-slate-900 border border-slate-800 rounded-2xl p-4 space-y-3 shadow-xl transition-all duration-300 ${
+      isMaximized ? 'fixed inset-4 z-50 overflow-y-auto bg-slate-900/98 backdrop-blur-xl border-sky-600/60 shadow-2xl p-6' : ''
+    }`}>
       {/* Header & View Mode Switcher */}
       <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-800 pb-2.5">
         <div className="flex items-center gap-2">
@@ -1187,37 +1237,53 @@ export const CrossSection3DViewer: React.FC<CrossSection3DViewerProps> = ({
           </span>
         </div>
 
-        {/* View Mode Buttons */}
-        <div className="flex items-center gap-1 bg-slate-950 p-1 rounded-xl border border-slate-800 text-[11px]">
+        {/* View Mode Buttons & Maximize Toggle */}
+        <div className="flex items-center gap-1.5">
+          <div className="flex items-center gap-1 bg-slate-950 p-1 rounded-xl border border-slate-800 text-[11px]">
+            <button
+              type="button"
+              onClick={() => setViewMode('3d')}
+              className={`px-2.5 py-1 rounded-lg font-bold transition flex items-center gap-1 ${
+                viewMode === '3d' ? 'bg-sky-600 text-white shadow' : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              <Box className="w-3 h-3" />
+              3D Cutaway
+            </button>
+            <button
+              type="button"
+              onClick={() => setViewMode('2d')}
+              className={`px-2.5 py-1 rounded-lg font-bold transition flex items-center gap-1 ${
+                viewMode === '2d' ? 'bg-sky-600 text-white shadow' : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              <Sliders className="w-3 h-3" />
+              2D Stress Diagram
+            </button>
+            <button
+              type="button"
+              onClick={() => setViewMode('split')}
+              className={`px-2.5 py-1 rounded-lg font-bold transition flex items-center gap-1 ${
+                viewMode === 'split' ? 'bg-sky-600 text-white shadow' : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              <Maximize2 className="w-3 h-3" />
+              Split
+            </button>
+          </div>
+
+          {/* Fullscreen / Enlarge View Button */}
           <button
             type="button"
-            onClick={() => setViewMode('3d')}
-            className={`px-2.5 py-1 rounded-lg font-bold transition flex items-center gap-1 ${
-              viewMode === '3d' ? 'bg-sky-600 text-white shadow' : 'text-slate-400 hover:text-white'
+            onClick={() => setIsMaximized(!isMaximized)}
+            className={`p-1.5 rounded-xl border transition ${
+              isMaximized
+                ? 'bg-sky-600 text-white border-sky-400'
+                : 'bg-slate-950 text-slate-400 hover:text-white border-slate-800 hover:bg-slate-800'
             }`}
+            title={isMaximized ? 'Restore normal view' : 'Maximize detailed section view'}
           >
-            <Box className="w-3 h-3" />
-            3D Cutaway
-          </button>
-          <button
-            type="button"
-            onClick={() => setViewMode('2d')}
-            className={`px-2.5 py-1 rounded-lg font-bold transition flex items-center gap-1 ${
-              viewMode === '2d' ? 'bg-sky-600 text-white shadow' : 'text-slate-400 hover:text-white'
-            }`}
-          >
-            <Sliders className="w-3 h-3" />
-            2D Stress Diagram
-          </button>
-          <button
-            type="button"
-            onClick={() => setViewMode('split')}
-            className={`px-2.5 py-1 rounded-lg font-bold transition flex items-center gap-1 ${
-              viewMode === 'split' ? 'bg-sky-600 text-white shadow' : 'text-slate-400 hover:text-white'
-            }`}
-          >
-            <Maximize2 className="w-3 h-3" />
-            Split
+            {isMaximized ? <Minimize2 className="w-3.5 h-3.5" /> : <Maximize2 className="w-3.5 h-3.5" />}
           </button>
         </div>
       </div>
@@ -1261,7 +1327,7 @@ export const CrossSection3DViewer: React.FC<CrossSection3DViewerProps> = ({
             type="button"
             onClick={() => resetCameraRef.current?.()}
             className="text-slate-400 hover:text-sky-300 flex items-center gap-1 transition"
-            title="Reset 3D camera angle"
+            title="Reset 3D camera angle to default"
           >
             <RotateCcw className="w-3 h-3" />
             Reset Camera
@@ -1270,20 +1336,22 @@ export const CrossSection3DViewer: React.FC<CrossSection3DViewerProps> = ({
       )}
 
       {/* Main Viewport Container */}
-      <div className={`grid gap-3 ${viewMode === 'split' ? 'grid-cols-1 xl:grid-cols-2' : 'grid-cols-1'}`}>
+      <div className={`grid gap-3 ${viewMode === 'split' ? (isMaximized ? 'grid-cols-1 lg:grid-cols-2' : 'grid-cols-1') : 'grid-cols-1'}`}>
         {/* 3D WebGL Canvas */}
         {(viewMode === '3d' || viewMode === 'split') && (
-          <div className="bg-slate-950/90 rounded-xl border border-slate-800/80 overflow-hidden relative shadow-inner">
-            <div ref={mountRef} className="w-full h-64 cursor-grab active:cursor-grabbing" />
+          <div className={`bg-slate-950/90 rounded-xl border border-slate-800/80 overflow-hidden relative shadow-inner ${
+            isMaximized ? 'h-[440px]' : 'h-64'
+          }`}>
+            <div ref={mountRef} className="w-full h-full cursor-grab active:cursor-grabbing" />
             <div className="absolute bottom-2 left-2 pointer-events-none text-[10px] text-slate-400 bg-slate-900/80 px-2 py-0.5 rounded border border-slate-800 backdrop-blur-sm">
-              ðŸ–±ï¸  Drag to orbit â€¢ Scroll to zoom
+              🖱️ Drag to orbit • Scroll to zoom (Position preserved on input change)
             </div>
           </div>
         )}
 
         {/* 2D CAD & Eurocode Stress Distribution Diagram */}
         {(viewMode === '2d' || viewMode === 'split') && (
-          <div className="bg-slate-950/90 rounded-xl border border-slate-800/80 p-2 flex items-center justify-center overflow-x-auto shadow-inner">
+          <div className="bg-slate-950/90 rounded-xl border border-slate-800/80 p-3 flex items-center justify-center overflow-x-auto shadow-inner">
             {render2DCadAndStressDiagram()}
           </div>
         )}
@@ -1293,7 +1361,7 @@ export const CrossSection3DViewer: React.FC<CrossSection3DViewerProps> = ({
       <div className="space-y-1.5 pt-1">
         <div className="flex items-center justify-between text-xs">
           <div className="flex items-center gap-2">
-            <span className="font-semibold text-slate-300">Governing Utilisation (Î·max):</span>
+            <span className="font-semibold text-slate-300">Governing Utilisation (ηmax):</span>
             {getStatusBadge()}
           </div>
           <span className={`font-mono font-extrabold ${eta <= 0.8 ? 'text-emerald-400' : eta <= 1.0 ? 'text-amber-400' : 'text-rose-400'}`}>

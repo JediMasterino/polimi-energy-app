@@ -50,6 +50,14 @@ export const StructuralBay3DViewer: React.FC<StructuralBay3DViewerProps> = ({
   const cameraRef = useRef<THREE.PerspectiveCamera | null>(null);
   const raycasterRef = useRef<THREE.Raycaster>(new THREE.Raycaster());
   const mouseRef = useRef<THREE.Vector2>(new THREE.Vector2());
+  const resetCameraRef = useRef<(() => void) | null>(null);
+
+  // Persistent camera orbit & zoom state across parameter updates
+  const cameraStateRef = useRef<{ theta: number; phi: number; distance: number | null }>({
+    theta: 0.8,
+    phi: 0.6,
+    distance: null
+  });
 
   // Interactive UI toggles
   const [showLoads, setShowLoads] = useState(true);
@@ -267,12 +275,13 @@ export const StructuralBay3DViewer: React.FC<StructuralBay3DViewerProps> = ({
       }
     }
 
-    // 5. Mouse Orbit / Drag Controls
+    // 5. Mouse Orbit / Drag Controls (Persistent Across Param Updates)
     let isDragging = false;
     let previousMousePosition = { x: 0, y: 0 };
-    let cameraAngleTheta = 0.8;
-    let cameraAnglePhi = 0.6;
-    let cameraDistance = Math.max(L, B, H * nFloors) * 1.8;
+    let cameraAngleTheta = cameraStateRef.current.theta;
+    let cameraAnglePhi = cameraStateRef.current.phi;
+    const defaultDist = Math.max(L, B, H * nFloors) * 1.8;
+    let cameraDistance = cameraStateRef.current.distance ?? defaultDist;
 
     const updateCameraPos = () => {
       const targetX = L / 2;
@@ -285,6 +294,14 @@ export const StructuralBay3DViewer: React.FC<StructuralBay3DViewerProps> = ({
       camera.lookAt(targetX, targetY, targetZ);
     };
     updateCameraPos();
+
+    resetCameraRef.current = () => {
+      cameraStateRef.current = { theta: 0.8, phi: 0.6, distance: defaultDist };
+      cameraAngleTheta = 0.8;
+      cameraAnglePhi = 0.6;
+      cameraDistance = defaultDist;
+      updateCameraPos();
+    };
 
     const onMouseDown = (e: MouseEvent) => {
       isDragging = true;
@@ -302,6 +319,8 @@ export const StructuralBay3DViewer: React.FC<StructuralBay3DViewerProps> = ({
 
         cameraAngleTheta -= deltaX * 0.008;
         cameraAnglePhi = Math.max(0.1, Math.min(Math.PI / 2 - 0.05, cameraAnglePhi + deltaY * 0.008));
+        cameraStateRef.current.theta = cameraAngleTheta;
+        cameraStateRef.current.phi = cameraAnglePhi;
 
         updateCameraPos();
         previousMousePosition = { x: e.clientX, y: e.clientY };
@@ -329,6 +348,7 @@ export const StructuralBay3DViewer: React.FC<StructuralBay3DViewerProps> = ({
     const onWheel = (e: WheelEvent) => {
       e.preventDefault();
       cameraDistance = Math.max(3, Math.min(50, cameraDistance + e.deltaY * 0.015));
+      cameraStateRef.current.distance = cameraDistance;
       updateCameraPos();
     };
 
@@ -427,6 +447,15 @@ export const StructuralBay3DViewer: React.FC<StructuralBay3DViewerProps> = ({
         >
           <Layers className="w-3.5 h-3.5" />
           Wireframe
+        </button>
+        <button
+          type="button"
+          onClick={() => resetCameraRef.current?.()}
+          className="px-2.5 py-1 rounded-lg text-xs font-bold transition flex items-center gap-1 border bg-slate-900/80 text-slate-400 border-slate-700 hover:text-white hover:bg-slate-800"
+          title="Reset 3D Bay camera view to default"
+        >
+          <RotateCcw className="w-3.5 h-3.5" />
+          Reset View
         </button>
       </div>
 
