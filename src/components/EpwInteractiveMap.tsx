@@ -13,12 +13,17 @@ import {
   Search,
   Compass,
   Database,
-  ExternalLink
+  ExternalLink,
+  FileText,
+  Download,
+  Check
 } from 'lucide-react';
 import {
   ClimateDataset,
   EpwStationSearchResult,
   OneBuildingPeriod,
+  AVAILABLE_ONEBUILDING_PERIODS,
+  getOneBuildingDownloadUrl,
   loadEnergyPlusStationCatalog,
   findNearestEpwStations,
   searchGlobalEpwStations,
@@ -115,6 +120,26 @@ export const EpwInteractiveMap: React.FC<EpwInteractiveMapProps> = ({
   const [nearestStations, setNearestStations] = useState<Array<EpwStationSearchResult & { distanceKm: number }>>([]);
   const [tileStyle, setTileStyle] = useState<TileStyleId>('esri_topo');
   const [expanded, setExpanded] = useState(false);
+
+  // Station-specific period selector (defaults to current global setting)
+  const [stationActivePeriod, setStationActivePeriod] = useState<OneBuildingPeriod>(oneBuildingPeriod);
+
+  useEffect(() => {
+    setStationActivePeriod(oneBuildingPeriod);
+  }, [oneBuildingPeriod, selectedStation?.id]);
+
+  // Find co-located alternative weather datasets (e.g. DOE EnergyPlus IGDG vs OneBuilding TMYx)
+  const coLocatedStations = React.useMemo(() => {
+    if (!selectedStation || catalog.length === 0) return [];
+    return catalog
+      .filter(
+        (s) =>
+          s.id !== selectedStation.id &&
+          ((selectedStation.wmo && s.wmo && s.wmo === selectedStation.wmo) ||
+            haversineKm(selectedStation.lat, selectedStation.lon, s.lat, s.lon) < 25)
+      )
+      .slice(0, 4);
+  }, [selectedStation, catalog]);
 
   // In-map quick filter / search (especially useful in Fullscreen mode)
   const [mapQuery, setMapQuery] = useState('');
@@ -646,17 +671,18 @@ export const EpwInteractiveMap: React.FC<EpwInteractiveMapProps> = ({
         </div>
 
         <div className="flex items-center gap-1">
-          <span className="text-slate-400 font-semibold">OneBuilding TMYx:</span>
+          <span className="text-slate-400 font-semibold">OneBuilding TMYx Baseline:</span>
           <select
             value={oneBuildingPeriod}
             onChange={(e) => onChangeOneBuildingPeriod(e.target.value as OneBuildingPeriod)}
-            className="bg-slate-800 text-sky-300 border border-slate-700 rounded px-1.5 py-0.5 font-semibold focus:outline-none cursor-pointer"
+            className="bg-slate-800 text-sky-300 border border-slate-700 rounded px-1.5 py-0.5 font-semibold focus:outline-none cursor-pointer text-xs"
             title="Select TMYx historical baseline window when loading Climate.OneBuilding.org stations"
           >
-            <option value="2009-2023">TMYx 2009–2023 (Recent 15-yr)</option>
-            <option value="2007-2021">TMYx 2007–2021</option>
-            <option value="2004-2018">TMYx 2004–2018</option>
-            <option value="full">TMYx Full Period</option>
+            {AVAILABLE_ONEBUILDING_PERIODS.map((opt) => (
+              <option key={opt.id} value={opt.id}>
+                {opt.label} ({opt.badge})
+              </option>
+            ))}
           </select>
         </div>
       </div>
@@ -668,7 +694,7 @@ export const EpwInteractiveMap: React.FC<EpwInteractiveMapProps> = ({
           className={`${
             expanded
               ? 'lg:col-span-8 h-full min-h-[380px] rounded-xl'
-              : 'w-full h-64 rounded-lg'
+              : 'w-full h-72 rounded-lg'
           } overflow-hidden border border-slate-600 relative ${
             tileStyle === 'vector_only' ? 'bg-slate-950' : 'bg-slate-200'
           }`}
@@ -681,57 +707,114 @@ export const EpwInteractiveMap: React.FC<EpwInteractiveMapProps> = ({
 
           {/* Floating In-Map Selected Station Callout (Top-Right Overlay) */}
           {selectedStation && (
-            <div className="absolute top-2.5 right-2.5 z-20 max-w-[275px] bg-slate-900/95 backdrop-blur-md text-white p-2.5 rounded-xl border border-sky-500/70 shadow-xl space-y-1.5">
+            <div className="absolute top-2.5 right-2.5 z-20 w-80 max-w-[92vw] bg-slate-900/95 backdrop-blur-md text-white p-3 rounded-xl border border-sky-500/80 shadow-2xl space-y-2">
               <div className="flex items-start justify-between gap-2">
                 <div className="truncate">
-                  <div className="text-[11px] font-bold text-sky-300 flex items-center gap-1 truncate">
-                    <Radio className="w-3 h-3 text-sky-400 shrink-0" />
+                  <div className="text-xs font-extrabold text-sky-300 flex items-center gap-1.5 truncate">
+                    <Radio className="w-3.5 h-3.5 text-sky-400 shrink-0" />
                     {selectedStation.city}, {selectedStation.country}
                   </div>
-                  <div className="text-[10px] text-slate-300 truncate">{selectedStation.title}</div>
+                  <div className="text-[10px] text-slate-300 truncate" title={selectedStation.title}>
+                    {selectedStation.title}
+                  </div>
                 </div>
+                <button
+                  type="button"
+                  onClick={() => setSelectedStation(null)}
+                  className="text-slate-400 hover:text-white p-1 rounded hover:bg-slate-800 text-xs shrink-0"
+                  title="Close callout"
+                >
+                  ✕
+                </button>
+              </div>
+
+              {/* Station Coordinates & Elevation Badge */}
+              <div className="flex items-center justify-between text-[10px] text-slate-400 font-mono bg-slate-800/70 px-2 py-1 rounded">
+                <span>{selectedStation.lat.toFixed(2)}°N, {selectedStation.lon.toFixed(2)}°E</span>
+                <span>WMO #{selectedStation.wmo || '-'}</span>
                 {selectedStation.distanceKm !== undefined && (
-                  <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-slate-800 text-teal-300 border border-slate-700 shrink-0">
-                    {selectedStation.distanceKm} km {selectedBearing || ''}
-                  </span>
+                  <span className="text-teal-300 font-bold">{selectedStation.distanceKm} km {selectedBearing || ''}</span>
                 )}
               </div>
-              <div className="flex items-center justify-between gap-1.5 pt-0.5">
+
+              {/* Station Weather Files & Period Selector (OneBuilding Multi-Period Switcher) */}
+              {selectedStation.source === 'onebuilding' && (
+                <div className="space-y-1 pt-1 border-t border-slate-800">
+                  <div className="flex items-center justify-between text-[10px]">
+                    <span className="font-bold text-slate-300 flex items-center gap-1">
+                      <FileText className="w-3 h-3 text-sky-400" />
+                      Choose Weather File / Period:
+                    </span>
+                    <span className="text-sky-300 font-bold text-[9px] font-mono">{stationActivePeriod}</span>
+                  </div>
+                  <div className="grid grid-cols-2 gap-1">
+                    {AVAILABLE_ONEBUILDING_PERIODS.map((p) => {
+                      const isSel = stationActivePeriod === p.id;
+                      return (
+                        <button
+                          key={p.id}
+                          type="button"
+                          onClick={() => {
+                            setStationActivePeriod(p.id);
+                            onChangeOneBuildingPeriod(p.id);
+                          }}
+                          className={`px-2 py-1 rounded text-[10px] text-left truncate transition ${
+                            isSel
+                              ? 'bg-sky-500 text-slate-950 font-extrabold shadow'
+                              : 'bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700'
+                          }`}
+                          title={p.description}
+                        >
+                          <span className="block truncate font-bold">{p.label}</span>
+                          <span className={`text-[8px] block ${isSel ? 'text-slate-900 font-semibold' : 'text-slate-400'}`}>
+                            {p.badge} ({p.years})
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {/* Download & Load Action Buttons */}
+              <div className="pt-1 border-t border-slate-800 space-y-1.5">
                 <div className="flex items-center gap-1.5">
-                  <span className="text-[9px] text-slate-400 font-mono">
-                    {selectedStation.lat.toFixed(2)}°N, {selectedStation.lon.toFixed(2)}°E
-                  </span>
-                  {selectedStation.epwUrl.startsWith('http') && (
+                  <button
+                    type="button"
+                    disabled={loadingStationId === selectedStation.id}
+                    onClick={() => onSelectStation(selectedStation, stationActivePeriod)}
+                    className="flex-1 py-1.5 px-3 rounded-lg bg-teal-500 hover:bg-teal-400 text-slate-950 font-extrabold text-xs flex items-center justify-center gap-1.5 transition shadow"
+                  >
+                    {loadingStationId === selectedStation.id ? (
+                      <>
+                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                        Loading 8,760h EPW...
+                      </>
+                    ) : (
+                      <>
+                        <CheckCircle2 className="w-3.5 h-3.5" />
+                        Load {selectedStation.source === 'onebuilding' ? stationActivePeriod : 'EPW'}
+                      </>
+                    )}
+                  </button>
+                  {selectedStation.epwUrl && (
                     <a
-                      href={selectedStation.epwUrl}
+                      href={
+                        selectedStation.source === 'onebuilding'
+                          ? getOneBuildingDownloadUrl(selectedStation.epwUrl, stationActivePeriod)
+                          : selectedStation.epwUrl
+                      }
                       target="_blank"
                       rel="noreferrer"
-                      className="text-[9px] text-sky-400 hover:underline flex items-center gap-0.5"
-                      title="Download raw archive from source repository"
+                      download
+                      className="px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-sky-300 font-bold text-xs flex items-center gap-1 border border-slate-700 transition"
+                      title="Download raw .zip from Climate.OneBuilding.org"
                     >
-                      <ExternalLink className="w-2.5 h-2.5" />
+                      <Download className="w-3 h-3" />
                       .zip
                     </a>
                   )}
                 </div>
-                <button
-                  type="button"
-                  disabled={loadingStationId === selectedStation.id}
-                  onClick={() => onSelectStation(selectedStation, oneBuildingPeriod)}
-                  className="px-2.5 py-1 rounded-lg bg-teal-500 hover:bg-teal-400 text-slate-950 font-bold text-[10px] flex items-center gap-1 transition shadow"
-                >
-                  {loadingStationId === selectedStation.id ? (
-                    <>
-                      <Loader2 className="w-3 h-3 animate-spin" />
-                      Loading...
-                    </>
-                  ) : (
-                    <>
-                      <CheckCircle2 className="w-3 h-3" />
-                      Load Station (.epw)
-                    </>
-                  )}
-                </button>
               </div>
             </div>
           )}
@@ -776,6 +859,118 @@ export const EpwInteractiveMap: React.FC<EpwInteractiveMapProps> = ({
                 {mapSearching ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : 'Locate'}
               </button>
             </form>
+          )}
+
+          {/* Station Weather Files & Available EPWs Explorer */}
+          {selectedStation && (
+            <div className="bg-slate-900/95 rounded-xl p-3 border border-sky-500/60 shadow-lg space-y-2 text-white">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold text-sky-400 flex items-center gap-1.5">
+                  <FileText className="w-3.5 h-3.5" />
+                  Weather Files for {selectedStation.city}
+                </span>
+                <span className="text-[10px] text-slate-400 font-mono">WMO #{selectedStation.wmo || '-'}</span>
+              </div>
+              <p className="text-[10px] text-slate-400">
+                Choose from available baseline periods (including latest 2011–2025 release) or download the official ZIP archive:
+              </p>
+
+              {/* Multi-Period Weather File Rows for OneBuilding */}
+              {selectedStation.source === 'onebuilding' && (
+                <div className="space-y-1.5">
+                  {AVAILABLE_ONEBUILDING_PERIODS.map((period) => {
+                    const fileUrl = getOneBuildingDownloadUrl(selectedStation.epwUrl, period.id);
+                    const fileName = fileUrl.split('/').pop() || '';
+                    const isCurrent = stationActivePeriod === period.id;
+                    return (
+                      <div
+                        key={period.id}
+                        className={`p-2 rounded-lg border text-xs flex items-center justify-between gap-2 transition ${
+                          isCurrent
+                            ? 'bg-sky-500/20 border-sky-400'
+                            : 'bg-slate-800/80 border-slate-700/80 hover:bg-slate-800'
+                        }`}
+                      >
+                        <div className="truncate">
+                          <div className="font-bold text-white flex items-center gap-1.5 truncate">
+                            <span>{period.label}</span>
+                            <span className="px-1.5 py-0.2 rounded text-[9px] font-extrabold bg-sky-950 text-sky-300 border border-sky-700">
+                              {period.badge}
+                            </span>
+                          </div>
+                          <div className="text-[9px] text-slate-400 font-mono truncate" title={fileName}>
+                            {fileName}
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-1.5 shrink-0">
+                          <a
+                            href={fileUrl}
+                            target="_blank"
+                            rel="noreferrer"
+                            download
+                            className="px-2 py-1 rounded bg-slate-700 hover:bg-slate-600 text-sky-300 font-semibold text-[10px] flex items-center gap-1 transition"
+                            title="Direct download .zip from OneBuilding"
+                          >
+                            <Download className="w-3 h-3" />
+                            .zip
+                          </a>
+                          <button
+                            type="button"
+                            disabled={loadingStationId === selectedStation.id}
+                            onClick={() => {
+                              setStationActivePeriod(period.id);
+                              onChangeOneBuildingPeriod(period.id);
+                              onSelectStation(selectedStation, period.id);
+                            }}
+                            className={`px-2.5 py-1 rounded font-bold text-[10px] flex items-center gap-1 transition ${
+                              isCurrent
+                                ? 'bg-teal-500 hover:bg-teal-400 text-slate-950'
+                                : 'bg-teal-600 hover:bg-teal-500 text-white'
+                            }`}
+                          >
+                            {loadingStationId === selectedStation.id && isCurrent ? (
+                              <Loader2 className="w-3 h-3 animate-spin" />
+                            ) : (
+                              <CheckCircle2 className="w-3 h-3" />
+                            )}
+                            Load
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+
+              {/* Alternative Co-located Datasets */}
+              {coLocatedStations.length > 0 && (
+                <div className="pt-2 border-t border-slate-800 space-y-1">
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-amber-400 block">
+                    Alternative Datasets / Nearby Stations:
+                  </span>
+                  {coLocatedStations.map((alt) => (
+                    <div
+                      key={alt.id}
+                      className="p-1.5 rounded bg-slate-800/60 border border-slate-700/60 flex items-center justify-between text-xs"
+                    >
+                      <div className="truncate">
+                        <span className="font-semibold text-slate-200 block truncate">{alt.title}</span>
+                        <span className="text-[10px] text-amber-400">
+                          {alt.source === 'energyplus' ? 'DOE EnergyPlus' : alt.source} • {alt.datasetType || 'EPW'}
+                        </span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => onSelectStation(alt)}
+                        className="px-2 py-0.5 rounded bg-amber-600 hover:bg-amber-500 text-slate-950 font-bold text-[10px] shrink-0"
+                      >
+                        Load
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
           )}
 
           {/* Custom Clicked Coordinate ERA5 TMY Synthesizer */}
@@ -858,7 +1053,7 @@ export const EpwInteractiveMap: React.FC<EpwInteractiveMapProps> = ({
                           type="button"
                           onClick={(ev) => {
                             ev.stopPropagation();
-                            onSelectStation(st, oneBuildingPeriod);
+                            onSelectStation(st, stationActivePeriod);
                           }}
                           className="px-2 py-0.5 rounded bg-teal-600 hover:bg-teal-500 text-white text-[10px] font-bold"
                         >

@@ -20,6 +20,9 @@ import {
   ClimateDataset,
   EpwStationSearchResult,
   OneBuildingPeriod,
+  AVAILABLE_ONEBUILDING_PERIODS,
+  getOneBuildingDownloadUrl,
+  extractEpwFromZipBuffer,
   searchGlobalEpwStations,
   fetchStationClimateDataset,
   parseEpwText,
@@ -98,20 +101,28 @@ export const EpwSearchAndUploadWidget: React.FC<EpwWidgetProps> = ({
     }
   };
 
-  const handleFileUpload = (file: File) => {
+  const handleFileUpload = async (file: File) => {
     setErrorMsg(null);
-    const reader = new FileReader();
-    reader.onload = (ev) => {
-      try {
-        const text = String(ev.target?.result || '');
-        const ds = parseEpwText(text, file.name.replace(/\.epw$/i, ''));
-        onSelectClimate(ds);
-        setStatusMsg(`Parsed ${file.name}: ${ds.name} (${ds.hourly.length} hourly records)`);
-      } catch (err: any) {
-        setErrorMsg(err?.message || 'Could not parse .epw file');
+    setStatusMsg(`Reading ${file.name}...`);
+    try {
+      let text = '';
+      if (file.name.toLowerCase().endsWith('.zip')) {
+        const buf = await file.arrayBuffer();
+        const extracted = await extractEpwFromZipBuffer(buf);
+        if (!extracted) {
+          throw new Error('No .epw file found inside the uploaded .zip archive.');
+        }
+        text = extracted;
+      } else {
+        text = await file.text();
       }
-    };
-    reader.readAsText(file);
+      const ds = parseEpwText(text, file.name.replace(/\.(epw|zip|txt)$/i, ''));
+      onSelectClimate(ds);
+      setStatusMsg(`Parsed ${file.name}: ${ds.name} (${ds.hourly.length} hourly records)`);
+    } catch (err: any) {
+      setErrorMsg(err?.message || 'Could not parse .epw / .zip file');
+      setStatusMsg(null);
+    }
   };
 
   const handleExportEpw = () => {
@@ -149,10 +160,10 @@ export const EpwSearchAndUploadWidget: React.FC<EpwWidgetProps> = ({
             type="button"
             onClick={() => fileInputRef.current?.click()}
             className="flex items-center gap-1 px-2 py-1 rounded bg-slate-800 hover:bg-slate-700 text-teal-300 border border-slate-600 text-[11px] font-semibold transition"
-            title="Upload a local EnergyPlus .epw weather file"
+            title="Upload a local EnergyPlus .epw file or Climate.OneBuilding.org .zip archive"
           >
             <Upload className="w-3 h-3" />
-            Import .epw
+            Import .epw / .zip
           </button>
           <button
             type="button"
@@ -166,7 +177,7 @@ export const EpwSearchAndUploadWidget: React.FC<EpwWidgetProps> = ({
           <input
             ref={fileInputRef}
             type="file"
-            accept=".epw,.txt,.csv"
+            accept=".epw,.zip,.txt,.csv"
             className="hidden"
             onChange={(e) => {
               const f = e.target.files?.[0];
@@ -245,6 +256,20 @@ export const EpwSearchAndUploadWidget: React.FC<EpwWidgetProps> = ({
                 </div>
               </div>
               <div className="flex items-center gap-1.5 shrink-0">
+                {st.source === 'onebuilding' && st.epwUrl && (
+                  <a
+                    href={getOneBuildingDownloadUrl(st.epwUrl, oneBuildingPeriod)}
+                    target="_blank"
+                    rel="noreferrer"
+                    download
+                    onClick={(ev) => ev.stopPropagation()}
+                    className="px-2 py-1 rounded bg-slate-700/80 hover:bg-slate-600 text-sky-300 text-[10px] font-semibold flex items-center gap-1 transition"
+                    title={`Direct download ${oneBuildingPeriod} .ZIP archive`}
+                  >
+                    <Download className="w-3 h-3" />
+                    .zip
+                  </a>
+                )}
                 <button
                   type="button"
                   onClick={(ev) => {
@@ -289,8 +314,48 @@ export const EpwSearchAndUploadWidget: React.FC<EpwWidgetProps> = ({
         </div>
       )}
       {errorMsg && (
-        <div className="text-[11px] text-rose-300 bg-rose-950/50 border border-rose-800/60 px-2.5 py-1 rounded">
-          {errorMsg}
+        <div className="text-[11px] text-rose-200 bg-rose-950/70 border border-rose-800/80 p-2.5 rounded-lg space-y-1.5">
+          <div className="font-semibold">{errorMsg}</div>
+          {focusedStation && focusedStation.epwUrl && focusedStation.source === 'onebuilding' && (
+            <div className="space-y-1.5 pt-1.5 border-t border-rose-900/60">
+              <div className="text-[10px] text-slate-300 font-semibold">
+                Direct Download from Climate.OneBuilding.org (drag-and-drop into Import .epw / .zip above):
+              </div>
+              <div className="flex flex-wrap items-center gap-1.5">
+                {AVAILABLE_ONEBUILDING_PERIODS.map((p) => (
+                  <a
+                    key={p.id}
+                    href={getOneBuildingDownloadUrl(focusedStation.epwUrl, p.id)}
+                    target="_blank"
+                    rel="noreferrer"
+                    download
+                    className="px-2 py-1 rounded bg-sky-900/70 hover:bg-sky-800 text-sky-200 text-[10px] font-semibold flex items-center gap-1 border border-sky-700/60 transition"
+                    title={`Download ${p.label} for ${focusedStation.city}`}
+                  >
+                    <Download className="w-2.5 h-2.5" />
+                    {p.badge} ({p.years}) .zip ↗
+                  </a>
+                ))}
+              </div>
+              <div className="pt-1">
+                <button
+                  type="button"
+                  onClick={() => {
+                    handleLoadRemoteStation(
+                      {
+                        ...focusedStation,
+                        source: 'open-meteo'
+                      },
+                      oneBuildingPeriod
+                    );
+                  }}
+                  className="px-2.5 py-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 font-semibold text-[10px] border border-slate-600 transition"
+                >
+                  Or synthesize Open-Meteo ERA5 2023 hourly dataset instead
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       )}
     </div>

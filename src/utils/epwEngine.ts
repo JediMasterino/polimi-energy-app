@@ -77,7 +77,68 @@ export interface ClimateDataset {
   sourceType: 'preset' | 'epw-upload' | 'energyplus-s3' | 'onebuilding' | 'open-meteo';
 }
 
-export type OneBuildingPeriod = '2009-2023' | '2007-2021' | '2004-2018' | 'full';
+export type OneBuildingPeriod =
+  | '2011-2025'
+  | '2010-2024'
+  | '2009-2023'
+  | '2008-2022'
+  | '2007-2021'
+  | '2004-2018'
+  | '1991-2005'
+  | 'full';
+
+export interface OneBuildingPeriodOption {
+  id: OneBuildingPeriod;
+  label: string;
+  badge: string;
+  years: string;
+  description: string;
+}
+
+export const AVAILABLE_ONEBUILDING_PERIODS: OneBuildingPeriodOption[] = [
+  {
+    id: '2011-2025',
+    label: 'TMYx 2011–2025',
+    badge: 'Latest',
+    years: '2011–2025',
+    description: 'Latest 15-year baseline (2011–2025) reflecting recent warming trends'
+  },
+  {
+    id: '2009-2023',
+    label: 'TMYx 2009–2023',
+    badge: 'Standard',
+    years: '2009–2023',
+    description: 'Standard 15-year baseline (2009–2023)'
+  },
+  {
+    id: '2007-2021',
+    label: 'TMYx 2007–2021',
+    badge: '15-Year',
+    years: '2007–2021',
+    description: 'Previous 15-year baseline (2007–2021)'
+  },
+  {
+    id: '2004-2018',
+    label: 'TMYx 2004–2018',
+    badge: 'Historical',
+    years: '2004–2018',
+    description: 'Historical 15-year baseline (2004–2018)'
+  },
+  {
+    id: 'full',
+    label: 'TMYx Full Period',
+    badge: 'Complete',
+    years: 'Multi-Decade',
+    description: 'All recorded years synthesized into a long-term representative year'
+  }
+];
+
+// Helper to compute direct .zip download link on Climate.OneBuilding.org for any given period
+export function getOneBuildingDownloadUrl(rawUrl: string, period: OneBuildingPeriod = '2009-2023'): string {
+  const stripPeriod = rawUrl.replace(/_TMYx(?:\.\d{4}-\d{4})?\.zip$/i, '');
+  if (stripPeriod === rawUrl) return rawUrl;
+  return period === 'full' ? `${stripPeriod}_TMYx.zip` : `${stripPeriod}_TMYx.${period}.zip`;
+}
 
 export interface EpwStationSearchResult {
   id: string;
@@ -702,40 +763,41 @@ export function parseEpwText(epwContent: string, fallbackName = 'Custom EPW Stat
 }
 
 // Official EnergyPlus .epw paths bundled in public/weather/ for instant 8,760-hour real-EPW hydration
+// Official EnergyPlus .epw paths bundled in public/weather/ for instant 8,760-hour real-EPW hydration
 const PRESET_OFFICIAL_EPW_URLS: Record<string, { localUrl: string; fallbackUrl: string; displayName: string }> = {
   milan: {
     localUrl: '/weather/milan.epw',
-    fallbackUrl: '/epw-s3/europe_wmo_region_6/ITA/ITA_Milano-Linate.160800_IGDG/ITA_Milano-Linate.160800_IGDG.epw',
+    fallbackUrl: '/onebuilding/WMO_Region_6_Europe/ITA_Italy/LM_Lombardy/ITA_LM_Milano-Linate.AP.160800_TMYx.2007-2021.zip',
     displayName: 'Milan (Linate WMO 160800), IT'
   },
   vevey: {
     localUrl: '/weather/vevey.epw',
-    fallbackUrl: '/epw-s3/europe_wmo_region_6/CHE/CHE_Geneva.067000_IWEC/CHE_Geneva.067000_IWEC.epw',
+    fallbackUrl: '/onebuilding/WMO_Region_6_Europe/CHE_Switzerland/GE_Geneva/CHE_GE_Geneva.Intl.AP.067000_TMYx.2007-2021.zip',
     displayName: 'Vevey / Lake Geneva (WMO 067000), CH'
   },
   rome: {
     localUrl: '/weather/rome.epw',
-    fallbackUrl: '/epw-s3/europe_wmo_region_6/ITA/ITA_Roma-Fiumicino.162420_IGDG/ITA_Roma-Fiumicino.162420_IGDG.epw',
+    fallbackUrl: '/onebuilding/WMO_Region_6_Europe/ITA_Italy/LZ_Lazio/ITA_LZ_Rome-Fiumicino-da.Vinci.AP.162420_TMYx.2007-2021.zip',
     displayName: 'Rome (Fiumicino WMO 162420), IT'
   },
   stockholm: {
     localUrl: '/weather/stockholm.epw',
-    fallbackUrl: '/epw-s3/europe_wmo_region_6/SWE/SWE_Stockholm.Arlanda.024600_IWEC/SWE_Stockholm.Arlanda.024600_IWEC.epw',
+    fallbackUrl: '/onebuilding/WMO_Region_6_Europe/SWE_Sweden/ST_Stockholm/SWE_ST_Stockholm.Arlanda.AP.024600_TMYx.2007-2021.zip',
     displayName: 'Stockholm (Arlanda WMO 024600), SE'
   },
   cairo: {
     localUrl: '/weather/cairo.epw',
-    fallbackUrl: '/epw-s3/africa_wmo_region_1/EGY/EGY_Cairo.623660_IWEC/EGY_Cairo.623660_IWEC.epw',
+    fallbackUrl: '/onebuilding/WMO_Region_1_Africa/EGY_Egypt/QH_Al_Qahirah_Cairo/EGY_QH_Cairo.Intl.AP.623660_TMYx.2007-2021.zip',
     displayName: 'Cairo (Intl WMO 623660), EG'
   },
   palermo: {
     localUrl: '/weather/palermo.epw',
-    fallbackUrl: '/epw-s3/europe_wmo_region_6/ITA/ITA_Palermo-Boccadifalco.164000_IGDG/ITA_Palermo-Boccadifalco.164000_IGDG.epw',
-    displayName: 'Palermo (Boccadifalco WMO 164000), IT'
+    fallbackUrl: '/onebuilding/WMO_Region_6_Europe/ITA_Italy/SC_Sicily/ITA_SC_Palermo-Falcone.Borsellino.AP.164050_TMYx.2007-2021.zip',
+    displayName: 'Palermo (Falcone Borsellino WMO 164050), IT'
   },
   bormio: {
     localUrl: '/weather/bormio.epw',
-    fallbackUrl: '/epw-s3/europe_wmo_region_6/ITA/ITA_Bolzano.160200_IGDG/ITA_Bolzano.160200_IGDG.epw',
+    fallbackUrl: '/onebuilding/WMO_Region_6_Europe/ITA_Italy/TT_Trentino-Alto_Adige/ITA_TT_Bolzano.AP.160200_TMYx.2007-2021.zip',
     displayName: 'Alpine Valley (Bolzano/Bormio WMO 160200), IT'
   }
 };
@@ -745,7 +807,7 @@ export async function fetchPresetOfficialEpw(presetId: string): Promise<ClimateD
   if (!entry) return null;
   try {
     let text = '';
-    // Try bundled local static file in /weather/ first
+    // 1. Try bundled local static file in /weather/ first (pre-loaded official OneBuilding TMYx)
     try {
       const localResp = await fetch(entry.localUrl);
       if (localResp.ok) {
@@ -755,18 +817,25 @@ export async function fetchPresetOfficialEpw(presetId: string): Promise<ClimateD
       // Fallback
     }
 
-    // If local fetch failed, try fallback proxy URL
+    // 2. If local fetch failed, try fallback proxy URL
     if (!text || !text.includes('LOCATION,')) {
       const resp = await fetch(entry.fallbackUrl);
-      if (!resp.ok) return null;
-      text = await resp.text();
+      if (resp.ok) {
+        if (entry.fallbackUrl.toLowerCase().endsWith('.zip')) {
+          const buf = await resp.arrayBuffer();
+          const extracted = await extractEpwFromZipBuffer(buf);
+          if (extracted) text = extracted;
+        } else {
+          text = await resp.text();
+        }
+      }
     }
 
     if (!text.includes('LOCATION,')) return null;
     const parsed = parseEpwText(text, entry.displayName);
     parsed.id = presetId;
     parsed.name = entry.displayName;
-    parsed.sourceType = 'energyplus-s3';
+    parsed.sourceType = 'onebuilding';
     return parsed;
   } catch {
     return null;
@@ -1008,6 +1077,32 @@ export async function findNearestEpwStations(
     .slice(0, limit);
 }
 
+// European and Italian city name alias dictionary for intelligent weather station search
+const SEARCH_CITY_ALIASES: Record<string, string[]> = {
+  milan: ['milano', 'milan', 'linate', 'malpensa'],
+  milano: ['milan', 'milano', 'linate', 'malpensa'],
+  rome: ['roma', 'rome', 'fiumicino', 'ciampino'],
+  roma: ['rome', 'roma', 'fiumicino', 'ciampino'],
+  turin: ['torino', 'turin', 'caselle'],
+  torino: ['turin', 'torino', 'caselle'],
+  geneva: ['geneve', 'geneva', 'vevey', 'lausanne'],
+  geneve: ['geneve', 'geneva', 'vevey', 'lausanne'],
+  vevey: ['geneve', 'geneva', 'vevey', 'lausanne'],
+  lausanne: ['geneve', 'geneva', 'vevey', 'lausanne'],
+  florence: ['firenze', 'florence', 'peretola'],
+  firenze: ['florence', 'firenze', 'peretola'],
+  venice: ['venezia', 'venice', 'tessera'],
+  venezia: ['venice', 'venezia', 'tessera'],
+  naples: ['napoli', 'naples', 'capodichino'],
+  napoli: ['naples', 'napoli', 'capodichino'],
+  bologna: ['bologna', 'borgo panigale'],
+  bolzano: ['bolzano', 'bozen', 'bormio'],
+  bormio: ['bolzano', 'bozen', 'bormio'],
+  cairo: ['cairo', 'al qahirah', 'qahirah'],
+  stockholm: ['stockholm', 'arlanda', 'bromma'],
+  palermo: ['palermo', 'falcone borsellino', 'boccadifalco', 'punta raisi']
+};
+
 export async function searchGlobalEpwStations(
   query: string,
   sourceFilter: 'all' | 'onebuilding' | 'energyplus' = 'all'
@@ -1023,53 +1118,90 @@ export async function searchGlobalEpwStations(
     const pool =
       sourceFilter === 'all' ? catalog : catalog.filter((s) => s.source === sourceFilter);
 
-    const exactOrPrefix: EpwStationSearchResult[] = [];
-    const substringMatches: EpwStationSearchResult[] = [];
+    const scored: Array<{ station: EpwStationSearchResult; score: number }> = [];
+    const searchTerms = Array.from(new Set([q, ...(SEARCH_CITY_ALIASES[q] || [])]));
 
     for (const s of pool) {
       const cityLower = s.city.toLowerCase();
       const titleLower = s.title.toLowerCase();
       const wmoLower = (s.wmo || '').toLowerCase();
-      if (cityLower.startsWith(q) || wmoLower === q) {
-        exactOrPrefix.push(s);
-        if (exactOrPrefix.length >= 16) break;
-      } else if (
-        substringMatches.length < 16 &&
-        (titleLower.includes(q) || cityLower.includes(q) || s.country.toLowerCase() === q)
-      ) {
-        substringMatches.push(s);
+      const countryLower = s.country.toLowerCase();
+
+      let matchScore = 0;
+      if (wmoLower === q) {
+        matchScore = 120;
+      } else {
+        for (const term of searchTerms) {
+          // Check for word-boundary match (e.g. "Milano" in "Milano-Linate AP LM ITA")
+          const isWordMatch =
+            cityLower === term ||
+            new RegExp(`(?:^|[\\s_-])${term}(?:$|[\\s_-])`, 'i').test(s.title);
+
+          if (isWordMatch) {
+            matchScore = Math.max(matchScore, 100);
+          } else if (cityLower.startsWith(term)) {
+            matchScore = Math.max(matchScore, 80);
+          } else if (titleLower.includes(term) || cityLower.includes(term)) {
+            matchScore = Math.max(matchScore, 50);
+          } else if (countryLower === term) {
+            matchScore = Math.max(matchScore, 30);
+          }
+        }
+      }
+
+      if (matchScore > 0) {
+        // High bonus for official Climate.OneBuilding.org TMYx datasets over legacy IGDG/IWEC
+        if (s.source === 'onebuilding') matchScore += 15;
+        // Minor bonus for Italian / Mediterranean reference stations when query matches
+        if (s.country === 'ITA' || s.country === 'CHE') matchScore += 5;
+        scored.push({ station: s, score: matchScore });
       }
     }
 
-    results.push(...exactOrPrefix, ...substringMatches.slice(0, Math.max(0, 20 - exactOrPrefix.length)));
+    scored.sort((a, b) => b.score - a.score);
+    results.push(...scored.slice(0, 20).map((item) => item.station));
   }
 
-  // 2. Also query Open-Meteo Global Geocoding API for any town/city worldwide
-  try {
-    const geoResp = await fetch(
-      `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(query.trim())}&count=4&language=en&format=json`
-    );
-    if (geoResp.ok) {
-      const geoData = await geoResp.json();
-      for (const item of geoData.results || []) {
-        results.push({
-          id: `om_${item.id}`,
-          title: `${item.name}, ${item.admin1 ? item.admin1 + ', ' : ''}${item.country_code || item.country || ''} (ERA5 TMY)`,
-          city: item.name,
-          country: item.country_code || item.country || '',
-          lat: item.latitude,
-          lon: item.longitude,
-          epwUrl: `open-meteo://${item.latitude},${item.longitude},${item.elevation || 50}`,
-          source: 'open-meteo'
-        });
+  // 2. Also query Open-Meteo Global Geocoding API if fewer than 5 results
+  if (results.length < 5) {
+    try {
+      const geoResp = await fetch(
+        `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(query.trim())}&count=4&language=en&format=json`
+      );
+      if (geoResp.ok) {
+        const geoData = await geoResp.json();
+        for (const item of geoData.results || []) {
+          results.push({
+            id: `om_${item.id}`,
+            title: `${item.name}, ${item.admin1 ? item.admin1 + ', ' : ''}${item.country_code || item.country || ''} (Open-Meteo ERA5 2023)`,
+            city: item.name,
+            country: item.country_code || item.country || '',
+            lat: item.latitude,
+            lon: item.longitude,
+            epwUrl: `open-meteo://${item.latitude},${item.longitude},${item.elevation || 50}`,
+            source: 'open-meteo'
+          });
+        }
       }
+    } catch {
+      // Ignore
     }
-  } catch {
-    // Ignore
   }
 
   return results;
 }
+
+// Map of major WMO stations to bundled official OneBuilding TMYx 8,760h weather files in public/weather/
+const WMO_TO_BUNDLED_TMYX: Record<string, { localUrl: string; displayName: string }> = {
+  '160800': { localUrl: '/weather/milan.epw', displayName: 'Milan (Linate WMO 160800), IT' },
+  '162420': { localUrl: '/weather/rome.epw', displayName: 'Rome (Fiumicino WMO 162420), IT' },
+  '067000': { localUrl: '/weather/vevey.epw', displayName: 'Vevey / Lake Geneva (WMO 067000), CH' },
+  '067100': { localUrl: '/weather/lausanne.epw', displayName: 'Lausanne (Intl AP WMO 067100), CH' },
+  '024600': { localUrl: '/weather/stockholm.epw', displayName: 'Stockholm (Arlanda WMO 024600), SE' },
+  '623660': { localUrl: '/weather/cairo.epw', displayName: 'Cairo (Intl WMO 623660), EG' },
+  '164050': { localUrl: '/weather/palermo.epw', displayName: 'Palermo (Falcone Borsellino WMO 164050), IT' },
+  '160200': { localUrl: '/weather/bormio.epw', displayName: 'Alpine Valley (Bolzano WMO 160200), IT' }
+};
 
 // Helper to build candidate OneBuilding .zip URLs for a chosen TMYx period with automatic fallback
 function buildOneBuildingCandidateUrls(rawUrl: string, period: OneBuildingPeriod): string[] {
@@ -1082,8 +1214,10 @@ function buildOneBuildingCandidateUrls(rawUrl: string, period: OneBuildingPeriod
     period === 'full' ? `${stripPeriod}_TMYx.zip` : `${stripPeriod}_TMYx.${period}.zip`;
   const candidates = [
     periodUrl,
+    `${stripPeriod}_TMYx.2011-2025.zip`,
     `${stripPeriod}_TMYx.2009-2023.zip`,
     `${stripPeriod}_TMYx.2007-2021.zip`,
+    `${stripPeriod}_TMYx.2004-2018.zip`,
     proxiedBase,
     `${stripPeriod}_TMYx.zip`
   ];
@@ -1092,13 +1226,33 @@ function buildOneBuildingCandidateUrls(rawUrl: string, period: OneBuildingPeriod
 
 // Fetch and build a full 8,760-hour ClimateDataset from an EpwStationSearchResult
 // Supports:
+//  - Bundled high-resolution reference TMYx files (Milan, Rome, Geneva, Stockholm, Cairo, Palermo, Bolzano)
 //  - Climate.OneBuilding.org (.zip containing .epw via /onebuilding proxy + native ZIP deflate extractor)
 //  - Official DOE/NREL EnergyPlus S3 (.epw or .zip via /epw-s3 proxy)
-//  - Open-Meteo ERA5 8,760-hour Archive fallback
+//  - Open-Meteo ERA5 8,760-hour Archive (when explicitly selected)
 export async function fetchStationClimateDataset(
   station: EpwStationSearchResult,
   oneBuildingPeriod: OneBuildingPeriod = '2009-2023'
 ): Promise<ClimateDataset> {
+  // Case 0: If station matches one of our pre-bundled official OneBuilding TMYx reference datasets
+  if (station.wmo && WMO_TO_BUNDLED_TMYX[station.wmo]) {
+    const bundled = WMO_TO_BUNDLED_TMYX[station.wmo];
+    try {
+      const resp = await fetch(bundled.localUrl);
+      if (resp.ok) {
+        const text = await resp.text();
+        if (text && text.includes('LOCATION,')) {
+          const parsed = parseEpwText(text, bundled.displayName);
+          parsed.id = station.id;
+          parsed.sourceType = 'onebuilding';
+          return parsed;
+        }
+      }
+    } catch {
+      // Continue to remote streaming
+    }
+  }
+
   // Case A: Climate.OneBuilding.org (.zip -> extract .epw in browser)
   if (station.source === 'onebuilding' && station.epwUrl.includes('climate.onebuilding.org')) {
     const candidateUrls = buildOneBuildingCandidateUrls(station.epwUrl, oneBuildingPeriod);
@@ -1119,6 +1273,11 @@ export async function fetchStationClimateDataset(
         // Try next candidate URL
       }
     }
+
+    // If all candidate URLs failed for Climate.OneBuilding.org, DO NOT silently fall back to ERA5!
+    throw new Error(
+      `Direct streaming for "${station.city}" from Climate.OneBuilding.org was blocked by browser CORS. Download the official .zip file directly from: ${station.epwUrl} and drop it into the upload box above for 100% fidelity.`
+    );
   }
 
   // Case B: Official DOE / NREL EnergyPlus S3 (.epw or .zip via Vite /epw-s3 proxy)
@@ -1155,12 +1314,16 @@ export async function fetchStationClimateDataset(
           }
         }
       } catch {
-        // Fall through to Open-Meteo ERA5 hourly fetch
+        // Fail
       }
     }
+
+    throw new Error(
+      `Could not stream EnergyPlus weather file for "${station.city}". Download the file from ${station.epwUrl} and drop it in above.`
+    );
   }
 
-  // Case C: Fetch full 8,760-hour ERA5 Reanalysis Year from Open-Meteo Archive API (CORS-enabled globally)
+  // Case C: Explicit Open-Meteo ERA5 8,760-hour Reanalysis (only when source is open-meteo)
   const url = `https://archive-api.open-meteo.com/v1/archive?latitude=${station.lat.toFixed(4)}&longitude=${station.lon.toFixed(4)}&start_date=2023-01-01&end_date=2023-12-31&hourly=temperature_2m,relative_humidity_2m,shortwave_radiation,direct_normal_irradiance,diffuse_radiation,wind_speed_10m,wind_direction_10m&timezone=UTC`;
   const resp = await fetch(url);
   if (!resp.ok) {
@@ -1220,7 +1383,7 @@ export async function fetchStationClimateDataset(
   return buildClimateFromHourly(
     {
       id: station.id,
-      name: `${station.city}, ${station.country}`,
+      name: `${station.city}, ${station.country} (ERA5 2023 Reanalysis)`,
       country: station.country,
       lat: station.lat,
       lon: station.lon,
