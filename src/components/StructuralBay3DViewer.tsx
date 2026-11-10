@@ -92,6 +92,22 @@ const getAvailableMembersForSystem = (system: string): { id: SelectedMemberType;
   ];
 };
 
+// Priority hierarchy so that roof/floor slabs (which cover the entire footprint)
+// do not intercept or shadow clicks aimed at columns, beams, or walls underneath!
+const MEMBER_PICK_PRIORITY: Record<string, number> = {
+  rc_column: 10,
+  steel_column: 10,
+  wood_column: 10,
+  rc_beam: 8,
+  steel_beam: 8,
+  wood_beam: 8,
+  masonry_wall: 6,
+  rc_wall: 6,
+  clt_wall: 6,
+  rc_slab: 2,
+  clt_slab: 2
+};
+
 interface StructuralBay3DViewerProps {
   config: StructuralBayConfig;
   memberUtilisations: Record<string, { eta_max: number; status: string }>;
@@ -198,6 +214,9 @@ export const StructuralBay3DViewer: React.FC<StructuralBay3DViewerProps> = ({
     // 4. Build 3D Bay Geometry (Columns, Beams, Slabs, Walls)
     const interactiveMeshes: THREE.Mesh[] = [];
 
+    // Invisible hit proxy material (transparent with depthWrite=false so it doesn't affect graphics)
+    const hitProxyMat = new THREE.MeshBasicMaterial({ transparent: true, opacity: 0.0, depthWrite: false });
+
     const attachActiveHighlight = (mesh: THREE.Mesh, geo: THREE.BufferGeometry, memberId: string) => {
       if (memberId === activeMember) {
         if (mesh.material instanceof THREE.MeshStandardMaterial) {
@@ -219,6 +238,13 @@ export const StructuralBay3DViewer: React.FC<StructuralBay3DViewerProps> = ({
     const B = config.tributaryWidthBtr;
     const H = config.storeyHeightH;
     const nFloors = config.numberOfStoreys;
+
+    // Material theme colors
+    let baseMatColor = 0x94a3b8;
+    if (config.materialSystem === 'RC') baseMatColor = 0x94a3b8;
+    else if (config.materialSystem === 'Steel') baseMatColor = 0x64748b;
+    else if (config.materialSystem === 'Timber') baseMatColor = 0xd97706;
+    else if (config.materialSystem === 'Masonry') baseMatColor = 0xb45309;
 
     // Build storeys
     for (let fl = 0; fl < nFloors; fl++) {
@@ -277,6 +303,9 @@ export const StructuralBay3DViewer: React.FC<StructuralBay3DViewerProps> = ({
           metalness: config.materialSystem === 'Steel' ? 0.6 : 0.1
         });
 
+        // Generous invisible hit-box proxy (0.65m wide) so columns are effortless to tap on touchscreens or with mouse
+        const colHitGeo = new THREE.BoxGeometry(Math.max(0.65, colSize * 1.6), H * 1.05, Math.max(0.65, colSize * 1.6));
+
         colPositions.forEach(([cx, cz]) => {
           const colMesh = new THREE.Mesh(colGeo, colMat);
           colMesh.position.set(cx, baseY + H / 2, cz);
@@ -286,6 +315,12 @@ export const StructuralBay3DViewer: React.FC<StructuralBay3DViewerProps> = ({
           attachActiveHighlight(colMesh, colGeo, colId);
           scene.add(colMesh);
           interactiveMeshes.push(colMesh);
+
+          const colHitProxy = new THREE.Mesh(colHitGeo, hitProxyMat);
+          colHitProxy.position.set(cx, baseY + H / 2, cz);
+          colHitProxy.userData = { id: colId, name: `${config.materialSystem} Column`, eta: colEta };
+          scene.add(colHitProxy);
+          interactiveMeshes.push(colHitProxy);
         });
       }
 
@@ -304,6 +339,9 @@ export const StructuralBay3DViewer: React.FC<StructuralBay3DViewerProps> = ({
         metalness: config.materialSystem === 'Steel' ? 0.7 : 0.15
       });
 
+      // Generous invisible hit-box proxy for beams (0.6m wide)
+      const pBeamHitGeo = new THREE.BoxGeometry(L * 1.02, Math.max(0.65, bHeight * 1.2), Math.max(0.6, bWidth * 1.8));
+
       // Primary Beam along X-axis (span L) at Z = 0 and Z = B
       const pBeamGeo = new THREE.BoxGeometry(L, bHeight, bWidth);
       const b1 = new THREE.Mesh(pBeamGeo, beamMat);
@@ -314,6 +352,12 @@ export const StructuralBay3DViewer: React.FC<StructuralBay3DViewerProps> = ({
       scene.add(b1);
       interactiveMeshes.push(b1);
 
+      const b1Hit = new THREE.Mesh(pBeamHitGeo, hitProxyMat);
+      b1Hit.position.set(L / 2, topY - bHeight / 2, 0);
+      b1Hit.userData = { id: beamId, name: `Primary Beam (Span ${L}m)`, eta: beamEta };
+      scene.add(b1Hit);
+      interactiveMeshes.push(b1Hit);
+
       const b2 = new THREE.Mesh(pBeamGeo, beamMat);
       b2.position.set(L / 2, topY - bHeight / 2, B);
       b2.castShadow = true;
@@ -322,8 +366,16 @@ export const StructuralBay3DViewer: React.FC<StructuralBay3DViewerProps> = ({
       scene.add(b2);
       interactiveMeshes.push(b2);
 
+      const b2Hit = new THREE.Mesh(pBeamHitGeo, hitProxyMat);
+      b2Hit.position.set(L / 2, topY - bHeight / 2, B);
+      b2Hit.userData = { id: beamId, name: `Primary Beam (Span ${L}m)`, eta: beamEta };
+      scene.add(b2Hit);
+      interactiveMeshes.push(b2Hit);
+
       // Transverse Edge Beams along Z at X = 0 and X = L
       const secBeamGeo = new THREE.BoxGeometry(bWidth, bHeight, B);
+      const secBeamHitGeo = new THREE.BoxGeometry(Math.max(0.6, bWidth * 1.8), Math.max(0.65, bHeight * 1.2), B * 1.02);
+
       const b3 = new THREE.Mesh(secBeamGeo, beamMat);
       b3.position.set(0, topY - bHeight / 2, B / 2);
       b3.castShadow = true;
@@ -332,12 +384,25 @@ export const StructuralBay3DViewer: React.FC<StructuralBay3DViewerProps> = ({
       scene.add(b3);
       interactiveMeshes.push(b3);
 
+      const b3Hit = new THREE.Mesh(secBeamHitGeo, hitProxyMat);
+      b3Hit.position.set(0, topY - bHeight / 2, B / 2);
+      b3Hit.userData = { id: beamId, name: `${config.materialSystem} Secondary Beam`, eta: beamEta };
+      scene.add(b3Hit);
+      interactiveMeshes.push(b3Hit);
+
       const b4 = new THREE.Mesh(secBeamGeo, beamMat);
       b4.position.set(L, topY - bHeight / 2, B / 2);
       b4.castShadow = true;
       b4.userData = { id: beamId, name: `${config.materialSystem} Secondary Beam`, eta: beamEta };
       attachActiveHighlight(b4, secBeamGeo, beamId);
       scene.add(b4);
+      interactiveMeshes.push(b4);
+
+      const b4Hit = new THREE.Mesh(secBeamHitGeo, hitProxyMat);
+      b4Hit.position.set(L, topY - bHeight / 2, B / 2);
+      b4Hit.userData = { id: beamId, name: `${config.materialSystem} Secondary Beam`, eta: beamEta };
+      scene.add(b4Hit);
+      interactiveMeshes.push(b4Hit);
 
       // SLAB (One-Way Spanning Floor)
       const slabId = config.materialSystem === 'RC' ? 'rc_slab' : config.materialSystem === 'Timber' ? 'clt_slab' : 'rc_slab';
@@ -381,11 +446,55 @@ export const StructuralBay3DViewer: React.FC<StructuralBay3DViewerProps> = ({
       }
     }
 
-    // 5. Mouse Orbit / Drag Controls (Persistent Across Param Updates)
+    // Helper: Resolve the intended member from raycaster intersections
+    // Prioritizes columns > beams > walls > slabs so the roof slab never intercepts columns/beams!
+    const resolveIntersectedMember = (
+      intersects: THREE.Intersection[]
+    ): { id: SelectedMemberType; name: string; eta: number } | null => {
+      if (!intersects || intersects.length === 0) return null;
+
+      const candidates: { id: SelectedMemberType; name: string; eta: number; priority: number; distance: number }[] = [];
+
+      for (const hit of intersects) {
+        let targetObj: THREE.Object3D | null = hit.object;
+        while (targetObj && !targetObj.userData?.id && targetObj.parent) {
+          targetObj = targetObj.parent;
+        }
+        const u = targetObj?.userData;
+        if (u?.id) {
+          const id = u.id as SelectedMemberType;
+          if (!candidates.some((c) => c.id === id)) {
+            candidates.push({
+              id,
+              name: u.name || getMemberDisplayName(id),
+              eta: u.eta ?? 0.5,
+              priority: MEMBER_PICK_PRIORITY[id] || 4,
+              distance: hit.distance
+            });
+          }
+        }
+      }
+
+      if (candidates.length === 0) return null;
+      if (candidates.length === 1) return candidates[0];
+
+      // Sort by priority descending (columns 10 > beams 8 > walls 6 > slabs 2), then by distance
+      candidates.sort((a, b) => {
+        if (b.priority !== a.priority) {
+          return b.priority - a.priority;
+        }
+        return a.distance - b.distance;
+      });
+
+      return candidates[0];
+    };
+
+    // 5. Unified Pointer Orbit & Selection Controls (Touchscreen, Pen & Mouse)
     let isDragging = false;
     let startX = 0;
     let startY = 0;
-    let previousMousePosition = { x: 0, y: 0 };
+    let startTime = 0;
+    let previousPosition = { x: 0, y: 0 };
     let cameraAngleTheta = cameraStateRef.current.theta;
     let cameraAnglePhi = cameraStateRef.current.phi;
     const defaultDist = Math.max(L, B, H * nFloors) * 1.8;
@@ -411,21 +520,26 @@ export const StructuralBay3DViewer: React.FC<StructuralBay3DViewerProps> = ({
       updateCameraPos();
     };
 
-    const onMouseDown = (e: MouseEvent) => {
+    const onPointerDown = (e: PointerEvent) => {
+      // Only process primary interaction
+      if (e.button !== 0 && e.pointerType === 'mouse') return;
       isDragging = true;
       startX = e.clientX;
       startY = e.clientY;
-      previousMousePosition = { x: e.clientX, y: e.clientY };
+      startTime = Date.now();
+      previousPosition = { x: e.clientX, y: e.clientY };
     };
 
-    const onMouseMove = (e: MouseEvent) => {
+    const onPointerMove = (e: PointerEvent) => {
       const rect = renderer.domElement.getBoundingClientRect();
-      mouseRef.current.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
-      mouseRef.current.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
+      const mouseX = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+      const mouseY = -((e.clientY - rect.top) / rect.height) * 2 + 1;
+      mouseRef.current.x = mouseX;
+      mouseRef.current.y = mouseY;
 
       if (isDragging) {
-        const deltaX = e.clientX - previousMousePosition.x;
-        const deltaY = e.clientY - previousMousePosition.y;
+        const deltaX = e.clientX - previousPosition.x;
+        const deltaY = e.clientY - previousPosition.y;
 
         cameraAngleTheta -= deltaX * 0.008;
         cameraAnglePhi = Math.max(0.1, Math.min(Math.PI / 2 - 0.05, cameraAnglePhi + deltaY * 0.008));
@@ -433,35 +547,32 @@ export const StructuralBay3DViewer: React.FC<StructuralBay3DViewerProps> = ({
         cameraStateRef.current.phi = cameraAnglePhi;
 
         updateCameraPos();
-        previousMousePosition = { x: e.clientX, y: e.clientY };
+        previousPosition = { x: e.clientX, y: e.clientY };
       } else {
-        // Raycasting for member hover tooltip
+        // Priority-aware hover inspection
         raycasterRef.current.setFromCamera(mouseRef.current, camera);
         const intersects = raycasterRef.current.intersectObjects(interactiveMeshes, true);
-        if (intersects.length > 0) {
-          let targetObj: THREE.Object3D | null = intersects[0].object;
-          while (targetObj && !targetObj.userData?.id && targetObj.parent) {
-            targetObj = targetObj.parent;
-          }
-          const u = targetObj?.userData;
-          if (u?.id) {
-            setHoveredMember({ id: u.id, name: u.name, eta: u.eta });
-            renderer.domElement.style.cursor = 'pointer';
-            return;
-          }
+        const resolved = resolveIntersectedMember(intersects);
+        if (resolved) {
+          setHoveredMember({ id: resolved.id, name: resolved.name, eta: resolved.eta });
+          renderer.domElement.style.cursor = 'pointer';
+        } else {
+          setHoveredMember(null);
+          renderer.domElement.style.cursor = 'grab';
         }
-        setHoveredMember(null);
-        renderer.domElement.style.cursor = 'grab';
       }
     };
 
-    const onMouseUp = (e: MouseEvent) => {
+    const onPointerUp = (e: PointerEvent) => {
+      if (!isDragging) return;
       isDragging = false;
-      const moveDist = Math.hypot(e.clientX - startX, e.clientY - startY);
 
-      // Always select element on deliberate click (moveDist <= 12px)
-      // Never redirects to another tab on 3D click!
-      if (moveDist <= 12) {
+      const moveDist = Math.hypot(e.clientX - startX, e.clientY - startY);
+      const elapsed = Date.now() - startTime;
+
+      // Deliberate click or touch tap:
+      // Accepts normal mouse click or finger tap (up to 18px movement or < 400ms quick tap)
+      if (moveDist <= 18 || (elapsed < 400 && moveDist <= 35)) {
         const rect = renderer.domElement.getBoundingClientRect();
         const clickMouse = new THREE.Vector2(
           ((e.clientX - rect.left) / rect.width) * 2 - 1,
@@ -469,16 +580,9 @@ export const StructuralBay3DViewer: React.FC<StructuralBay3DViewerProps> = ({
         );
         raycasterRef.current.setFromCamera(clickMouse, camera);
         const intersects = raycasterRef.current.intersectObjects(interactiveMeshes, true);
-        if (intersects.length > 0) {
-          let targetObj: THREE.Object3D | null = intersects[0].object;
-          while (targetObj && !targetObj.userData?.id && targetObj.parent) {
-            targetObj = targetObj.parent;
-          }
-          const u = targetObj?.userData;
-          if (u?.id) {
-            const memberId = u.id as SelectedMemberType;
-            onSelectMemberRef.current?.(memberId);
-          }
+        const resolved = resolveIntersectedMember(intersects);
+        if (resolved) {
+          onSelectMemberRef.current?.(resolved.id);
         }
       }
     };
@@ -491,9 +595,10 @@ export const StructuralBay3DViewer: React.FC<StructuralBay3DViewerProps> = ({
     };
 
     const dom = renderer.domElement;
-    dom.addEventListener('mousedown', onMouseDown);
-    window.addEventListener('mousemove', onMouseMove);
-    window.addEventListener('mouseup', onMouseUp);
+    dom.style.touchAction = 'none'; // Critical for immediate touchscreen responsiveness
+    dom.addEventListener('pointerdown', onPointerDown);
+    window.addEventListener('pointermove', onPointerMove);
+    window.addEventListener('pointerup', onPointerUp);
     dom.addEventListener('wheel', onWheel, { passive: false });
 
     // Animation Loop
@@ -516,9 +621,9 @@ export const StructuralBay3DViewer: React.FC<StructuralBay3DViewerProps> = ({
 
     return () => {
       cancelAnimationFrame(animId);
-      dom.removeEventListener('mousedown', onMouseDown);
-      window.removeEventListener('mousemove', onMouseMove);
-      window.removeEventListener('mouseup', onMouseUp);
+      dom.removeEventListener('pointerdown', onPointerDown);
+      window.removeEventListener('pointermove', onPointerMove);
+      window.removeEventListener('pointerup', onPointerUp);
       dom.removeEventListener('wheel', onWheel);
       window.removeEventListener('resize', handleResize);
       renderer.dispose();
