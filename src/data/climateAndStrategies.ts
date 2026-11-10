@@ -24,6 +24,24 @@ const RAW_CLIMATE_PRESETS = {
     solarWest: [28, 45, 76, 96, 118, 126, 136, 118, 86, 52, 29, 23],
     solarNorth: [14, 21, 34, 46, 65, 76, 78, 58, 38, 24, 15, 12]
   },
+  vevey: {
+    id: 'vevey',
+    name: 'Vevey / Lausanne, CH (Lake Geneva)',
+    koppen: 'Cfb',
+    koppenDesc: 'Temperate Oceanic / Alpine Foothills — Cool winters, mild temperate summers',
+    hdd: 2890,
+    cdd: 210,
+    lat: 46.46,
+    lon: 6.84,
+    elev: 383,
+    runningMeanTemp: 20.6,
+    monthlyTemp: [1.8, 3.1, 7.0, 10.8, 15.2, 18.9, 21.1, 20.5, 16.4, 11.5, 6.1, 2.6],
+    solarHoriz: [38, 62, 108, 142, 176, 194, 206, 176, 124, 74, 40, 31],
+    solarSouth: [72, 92, 116, 110, 104, 98, 104, 114, 120, 96, 68, 62],
+    solarEast: [25, 42, 72, 94, 114, 124, 132, 112, 82, 48, 26, 20],
+    solarWest: [25, 42, 72, 94, 114, 124, 132, 112, 82, 48, 26, 20],
+    solarNorth: [13, 20, 33, 45, 64, 75, 76, 56, 36, 22, 14, 11]
+  },
   rome: {
     id: 'rome',
     name: 'Roma / Central Italy, IT',

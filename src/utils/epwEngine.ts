@@ -14,13 +14,16 @@ export interface HourlyWeatherRecord {
   dayOfYear: number;  // 1 - 365
   hour: number;       // 0 - 23
   dryBulb: number;    // °C
+  dewPoint?: number;  // °C
   relHum: number;     // %
   humRatio: number;   // g_w / kg_da
+  pressurePa?: number;// Pa (standard 101325)
   ghi: number;        // Global Horizontal Irradiance (Wh/m2)
   dni: number;        // Direct Normal Irradiance (Wh/m2)
   dhi: number;        // Diffuse Horizontal Irradiance (Wh/m2)
   windSpeed: number;  // m/s
   windDir: number;    // deg (0 = N, 90 = E, 180 = S, 270 = W)
+  skyCover?: number;  // tenths (0 - 10)
   utci: number;       // Universal Thermal Climate Index (°C)
   solarAlt: number;   // deg
   solarAz: number;    // deg (0 = N, 90 = E, 180 = S, 270 = W)
@@ -455,6 +458,10 @@ export function synthesizeHourlyFromPreset(preset: {
         const prevailingAngle = preset.lat > 45 ? 240 : 95;
         const windDir = Math.round((prevailingAngle + (pseudoRand(hourOfYear * 7) - 0.5) * 160 + 360) % 360);
         const utci = calcApproxUtci(dryBulb, relHum, windSpeed, ghi);
+        const gamma = (17.27 * dryBulb) / (dryBulb + 237.3) + Math.log(Math.max(0.05, relHum / 100));
+        const dewPoint = +((237.3 * gamma) / (17.27 - gamma)).toFixed(1);
+        const pressurePa = Math.round(101325 * Math.pow(1 - 2.25577e-5 * (preset.elev ?? 65), 5.25588));
+        const skyCover = Math.round(Math.max(0, Math.min(10, ((relHum - 30) / 70) * 7 + pseudoRand(hourOfYear * 5) * 3)));
 
         hourly.push({
           hourOfYear,
@@ -463,13 +470,16 @@ export function synthesizeHourlyFromPreset(preset: {
           dayOfYear,
           hour: h,
           dryBulb,
+          dewPoint,
           relHum,
           humRatio,
+          pressurePa,
           ghi,
           dni,
           dhi,
           windSpeed,
           windDir,
+          skyCover,
           utci,
           solarAlt: +alt.toFixed(1),
           solarAz: +az.toFixed(1)
@@ -554,8 +564,14 @@ export function parseEpwText(epwContent: string, fallbackName = 'Custom EPW Stat
 
     const rawTemp = parseFloat(cols[6]);
     const dryBulb = !isNaN(rawTemp) && rawTemp < 70 && rawTemp > -70 ? rawTemp : 15;
+    const rawDew = parseFloat(cols[7]);
     const rawRh = parseFloat(cols[8]);
     const relHum = !isNaN(rawRh) && rawRh <= 110 && rawRh >= 0 ? Math.min(100, rawRh) : 55;
+    const gamma = (17.27 * dryBulb) / (dryBulb + 237.3) + Math.log(Math.max(0.05, relHum / 100));
+    const calcDew = +((237.3 * gamma) / (17.27 - gamma)).toFixed(1);
+    const dewPoint = !isNaN(rawDew) && rawDew < 60 && rawDew > -70 ? +rawDew.toFixed(1) : calcDew;
+    const rawPress = parseFloat(cols[9]);
+    const pressurePa = !isNaN(rawPress) && rawPress > 50000 && rawPress < 120000 ? Math.round(rawPress) : 101325;
 
     const rawGhi = parseFloat(cols[13]);
     const ghi = !isNaN(rawGhi) && rawGhi < 2000 && rawGhi >= 0 ? rawGhi : 0;
@@ -568,9 +584,11 @@ export function parseEpwText(epwContent: string, fallbackName = 'Custom EPW Stat
     const windDir = !isNaN(rawWindDir) && rawWindDir <= 360 && rawWindDir >= 0 ? rawWindDir : 180;
     const rawWindSpd = parseFloat(cols[21]);
     const windSpeed = !isNaN(rawWindSpd) && rawWindSpd < 60 && rawWindSpd >= 0 ? rawWindSpd : 2.0;
+    const rawSky = parseFloat(cols[22]);
+    const skyCover = !isNaN(rawSky) && rawSky >= 0 && rawSky <= 10 ? Math.round(rawSky) : 5;
 
     const { alt, az } = calcSolarPosition(lat, dayOfYear, hour + 0.5);
-    const humRatio = +calcHumidityRatio(dryBulb, relHum).toFixed(2);
+    const humRatio = +calcHumidityRatio(dryBulb, relHum, pressurePa).toFixed(2);
     const utci = calcApproxUtci(dryBulb, relHum, windSpeed, ghi);
 
     hourly.push({
@@ -580,13 +598,16 @@ export function parseEpwText(epwContent: string, fallbackName = 'Custom EPW Stat
       dayOfYear,
       hour,
       dryBulb: +dryBulb.toFixed(1),
+      dewPoint,
       relHum: Math.round(relHum),
       humRatio,
+      pressurePa,
       ghi: Math.round(ghi),
       dni: Math.round(dni),
       dhi: Math.round(dhi),
       windSpeed: +windSpeed.toFixed(1),
       windDir: Math.round(windDir),
+      skyCover,
       utci,
       solarAlt: +alt.toFixed(1),
       solarAz: +az.toFixed(1)

@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useMemo } from 'react';
 import { ClimateDataset } from '../utils/epwEngine';
+import { morphClimateDataset } from '../utils/epwParser';
 import {
   INITIAL_CLIMATE_PRESETS,
   CLIMATE_SCOUT_STRATEGIES,
@@ -76,6 +77,15 @@ export interface DesignProjectContextValue {
   setLegislativeTarget: (t: LegislativeTargetType) => void;
   activeStrategies: string[];
   toggleStrategy: (id: string) => void;
+  setActiveStrategiesList: (ids: string[]) => void;
+  morphTempOffsetC: number;
+  setMorphTempOffsetC: (v: number) => void;
+  morphWindMult: number;
+  setMorphWindMult: (v: number) => void;
+  morphRhOffsetPct: number;
+  setMorphRhOffsetPct: (v: number) => void;
+  globalValueRanges: boolean;
+  setGlobalValueRanges: (b: boolean) => void;
 
   // Stage 2: Urban 2.5D District
   neighborHeightN: number;
@@ -326,6 +336,10 @@ export const DesignProjectProvider: React.FC<{ children: React.ReactNode }> = ({
     'cross_stack_vent',
     'thermal_mass'
   ]);
+  const [morphTempOffsetC, setMorphTempOffsetC] = useState<number>(0);
+  const [morphWindMult, setMorphWindMult] = useState<number>(1.0);
+  const [morphRhOffsetPct, setMorphRhOffsetPct] = useState<number>(0);
+  const [globalValueRanges, setGlobalValueRanges] = useState<boolean>(false);
 
   const addAndSelectClimate = (ds: ClimateDataset) => {
     setCustomClimates((prev) => ({ ...prev, [ds.id]: ds }));
@@ -338,8 +352,17 @@ export const DesignProjectProvider: React.FC<{ children: React.ReactNode }> = ({
     );
   };
 
-  const climate: ClimateDataset =
+  const setActiveStrategiesList = (ids: string[]) => {
+    setActiveStrategies(Array.from(new Set(ids)));
+  };
+
+  const baseClimate: ClimateDataset =
     customClimates[climateId] || INITIAL_CLIMATE_PRESETS[climateId] || INITIAL_CLIMATE_PRESETS.milan;
+
+  const climate: ClimateDataset = useMemo(
+    () => morphClimateDataset(baseClimate, morphTempOffsetC, morphWindMult, morphRhOffsetPct),
+    [baseClimate, morphTempOffsetC, morphWindMult, morphRhOffsetPct]
+  );
 
   // Stage 2: Urban 2.5D District
   const [neighborHeightN, setNeighborHeightN] = useState<number>(18);
@@ -1300,6 +1323,15 @@ export const DesignProjectProvider: React.FC<{ children: React.ReactNode }> = ({
         setLegislativeTarget,
         activeStrategies,
         toggleStrategy,
+        setActiveStrategiesList,
+        morphTempOffsetC,
+        setMorphTempOffsetC,
+        morphWindMult,
+        setMorphWindMult,
+        morphRhOffsetPct,
+        setMorphRhOffsetPct,
+        globalValueRanges,
+        setGlobalValueRanges,
         neighborHeightN,
         setNeighborHeightN,
         neighborHeightS,
