@@ -191,9 +191,9 @@ export const StructuralBay3DViewer: React.FC<StructuralBay3DViewerProps> = ({
     fillLight.position.set(-15, 10, -15);
     scene.add(fillLight);
 
-    // 3. Ground Grid
+    // 3. Ground Grid (offset by 1cm below ground to prevent coplanar z-fighting with footings)
     const gridHelper = new THREE.GridHelper(Math.max(config.spanL, config.tributaryWidthBtr) * 3, 20, 0x1e293b, 0x0f172a);
-    gridHelper.position.y = 0;
+    gridHelper.position.y = -0.01;
     scene.add(gridHelper);
 
     // 4. Build 3D Bay Geometry (Columns, Beams, Slabs, Walls)
@@ -263,15 +263,22 @@ export const StructuralBay3DViewer: React.FC<StructuralBay3DViewerProps> = ({
       }
     }
 
+    const slabThickness = config.materialSystem === 'RC' ? 0.22 : 0.16;
+    const colHeight = Math.max(0.5, H - slabThickness);
+    const colDim = config.materialSystem === 'RC' ? 0.4 : config.materialSystem === 'Steel' ? 0.24 : 0.22;
+    const bWidth = config.materialSystem === 'RC' ? 0.3 : 0.15;
+    const bHeight = config.materialSystem === 'RC' ? 0.55 : 0.35;
+
     // Build storeys
     for (let fl = 0; fl < nFloors; fl++) {
       const baseY = fl * H;
-      const topY = (fl + 1) * H;
+      const topFloorY = (fl + 1) * H;
+      const underSlabY = topFloorY - slabThickness;
 
       // COLUMNS or WALLS
       if (config.materialSystem === 'Masonry') {
         // Load-bearing wall strips along Z=0 and Z=B
-        const wallGeo = new THREE.BoxGeometry(L, H, 0.25);
+        const wallGeo = new THREE.BoxGeometry(L, colHeight, 0.25);
         const wallRes = memberUtilisations['masonry_wall'];
         const wallEta = wallRes?.eta_max || 0.85;
         const storeyLoadRatio = (showStoreyGradient && nFloors > 1) ? (nFloors - fl) / nFloors : 1.0;
@@ -287,7 +294,7 @@ export const StructuralBay3DViewer: React.FC<StructuralBay3DViewerProps> = ({
 
         // Front Wall (Z = 0)
         const wallFront = new THREE.Mesh(wallGeo, wallMat);
-        wallFront.position.set(L / 2, baseY + H / 2, 0);
+        wallFront.position.set(L / 2, baseY + colHeight / 2, 0);
         wallFront.castShadow = true;
         wallFront.receiveShadow = true;
         wallFront.userData = { id: 'masonry_wall', name: 'Masonry Wall Strip (250mm)', eta: wallEtaFloor };
@@ -296,7 +303,7 @@ export const StructuralBay3DViewer: React.FC<StructuralBay3DViewerProps> = ({
 
         // Back Wall (Z = B)
         const wallBack = new THREE.Mesh(wallGeo, wallMat);
-        wallBack.position.set(L / 2, baseY + H / 2, B);
+        wallBack.position.set(L / 2, baseY + colHeight / 2, B);
         wallBack.castShadow = true;
         wallBack.receiveShadow = true;
         wallBack.userData = { id: 'masonry_wall', name: 'Masonry Wall Strip (250mm)', eta: wallEtaFloor };
@@ -310,7 +317,7 @@ export const StructuralBay3DViewer: React.FC<StructuralBay3DViewerProps> = ({
           [0, B],
           [L, B]
         ];
-        const colSize = config.materialSystem === 'RC' ? 0.4 : config.materialSystem === 'Steel' ? 0.24 : 0.22;
+        const colSize = colDim;
         const colId = config.materialSystem === 'RC' ? 'rc_column' : config.materialSystem === 'Steel' ? 'steel_column' : 'wood_column';
         const colRes = memberUtilisations[colId];
         const colEta = colRes?.eta_max || 0.35;
@@ -318,7 +325,7 @@ export const StructuralBay3DViewer: React.FC<StructuralBay3DViewerProps> = ({
         const colEtaFloor = colEta * storeyLoadRatio;
         const colColor = getEtaColorHex(colEtaFloor, fl === 0 ? colRes?.status : (colEtaFloor > 1.0 ? 'EXCEEDS SCREEN' : 'OK'));
 
-        const colGeo = new THREE.BoxGeometry(colSize, H, colSize);
+        const colGeo = new THREE.BoxGeometry(colSize, colHeight, colSize);
         const colMat = new THREE.MeshStandardMaterial({
           color: colColor,
           wireframe,
@@ -328,7 +335,7 @@ export const StructuralBay3DViewer: React.FC<StructuralBay3DViewerProps> = ({
 
         colPositions.forEach(([cx, cz]) => {
           const colMesh = new THREE.Mesh(colGeo, colMat);
-          colMesh.position.set(cx, baseY + H / 2, cz);
+          colMesh.position.set(cx, baseY + colHeight / 2, cz);
           colMesh.castShadow = true;
           colMesh.receiveShadow = true;
           colMesh.userData = { id: colId, name: `${config.materialSystem} Column`, eta: colEtaFloor };
@@ -337,14 +344,11 @@ export const StructuralBay3DViewer: React.FC<StructuralBay3DViewerProps> = ({
         });
       }
 
-      // PRIMARY & SECONDARY BEAMS (at floor level topY)
+      // PRIMARY & SECONDARY BEAMS (framing under the slab at level underSlabY)
       const beamId = config.materialSystem === 'RC' ? 'rc_beam' : config.materialSystem === 'Steel' ? 'steel_beam' : 'wood_beam';
       const beamRes = memberUtilisations[beamId];
       const beamEta = beamRes?.eta_max || 0.55;
       const beamColor = getEtaColorHex(beamEta, beamRes?.status);
-
-      const bWidth = config.materialSystem === 'RC' ? 0.3 : 0.15;
-      const bHeight = config.materialSystem === 'RC' ? 0.55 : 0.35;
 
       const beamMat = new THREE.MeshStandardMaterial({
         color: beamColor,
@@ -353,146 +357,151 @@ export const StructuralBay3DViewer: React.FC<StructuralBay3DViewerProps> = ({
         metalness: config.materialSystem === 'Steel' ? 0.7 : 0.15
       });
 
-      // Primary Beam along X-axis (span L) at Z = 0 and Z = B
-      const pBeamGeo = new THREE.BoxGeometry(L, bHeight, bWidth);
-      const b1 = new THREE.Mesh(pBeamGeo, beamMat);
-      b1.position.set(L / 2, topY - bHeight / 2, 0);
-      b1.castShadow = true;
-      b1.userData = { id: beamId, name: `Primary Beam (Span ${L}m)`, eta: beamEta };
-      attachActiveHighlight(b1, pBeamGeo, beamId);
-      scene.add(b1);
+      // In framed systems, add primary beams with clear span between column faces to prevent clipping
+      if (config.materialSystem !== 'Masonry') {
+        const clearSpanL = Math.max(0.5, L - colDim);
+        const pBeamGeo = new THREE.BoxGeometry(clearSpanL, bHeight, bWidth);
+        const beamY = underSlabY - bHeight / 2;
 
-      const b2 = new THREE.Mesh(pBeamGeo, beamMat);
-      b2.position.set(L / 2, topY - bHeight / 2, B);
-      b2.castShadow = true;
-      b2.userData = { id: beamId, name: `Primary Beam (Span ${L}m)`, eta: beamEta };
-      attachActiveHighlight(b2, pBeamGeo, beamId);
-      scene.add(b2);
+        const b1 = new THREE.Mesh(pBeamGeo, beamMat);
+        b1.position.set(L / 2, beamY, 0);
+        b1.castShadow = true;
+        b1.userData = { id: beamId, name: `Primary Beam (Span ${L}m)`, eta: beamEta };
+        attachActiveHighlight(b1, pBeamGeo, beamId);
+        scene.add(b1);
 
-      // Internal Force Overlays (Bending Moment M_Ed or Shear Force V_Ed)
-      if (diagramMode !== 'none') {
-        const segments = 24;
-        const beamY = topY - bHeight / 2;
-        [0, B].forEach((bz) => {
-          if (diagramMode === 'moment') {
-            const maxDrop = Math.min(1.2, L * 0.12);
-            const geom = new THREE.BufferGeometry();
-            const positions: number[] = [];
-            const colors: number[] = [];
-            for (let i = 0; i < segments; i++) {
-              const x1 = (i / segments) * L;
-              const x2 = ((i + 1) / segments) * L;
-              const m1 = 4 * maxDrop * (x1 / L) * (1 - x1 / L);
-              const m2 = 4 * maxDrop * (x2 / L) * (1 - x2 / L);
+        const b2 = new THREE.Mesh(pBeamGeo, beamMat);
+        b2.position.set(L / 2, beamY, B);
+        b2.castShadow = true;
+        b2.userData = { id: beamId, name: `Primary Beam (Span ${L}m)`, eta: beamEta };
+        attachActiveHighlight(b2, pBeamGeo, beamId);
+        scene.add(b2);
 
-              positions.push(
-                x1, beamY, bz,
-                x1, beamY - m1, bz,
-                x2, beamY - m2, bz,
+        // Internal Force Overlays (Bending Moment M_Ed or Shear Force V_Ed) - rendered on top/governing floor only
+        if (diagramMode !== 'none' && fl === nFloors - 1) {
+          const segments = 24;
+          [0, B].forEach((bz) => {
+            if (diagramMode === 'moment') {
+              const maxDrop = Math.min(1.2, L * 0.12);
+              const geom = new THREE.BufferGeometry();
+              const positions: number[] = [];
+              const colors: number[] = [];
+              for (let i = 0; i < segments; i++) {
+                const x1 = (i / segments) * L;
+                const x2 = ((i + 1) / segments) * L;
+                const m1 = 4 * maxDrop * (x1 / L) * (1 - x1 / L);
+                const m2 = 4 * maxDrop * (x2 / L) * (1 - x2 / L);
 
-                x1, beamY, bz,
-                x2, beamY - m2, bz,
-                x2, beamY, bz
-              );
+                positions.push(
+                  x1, beamY, bz,
+                  x1, beamY - m1, bz,
+                  x2, beamY - m2, bz,
 
-              const c1 = new THREE.Color().setHSL(0.55 - (m1 / maxDrop) * 0.45, 0.95, 0.5);
-              const c2 = new THREE.Color().setHSL(0.55 - (m2 / maxDrop) * 0.45, 0.95, 0.5);
+                  x1, beamY, bz,
+                  x2, beamY - m2, bz,
+                  x2, beamY, bz
+                );
 
-              colors.push(
-                0.2, 0.8, 0.9,
-                c1.r, c1.g, c1.b,
-                c2.r, c2.g, c2.b,
+                const c1 = new THREE.Color().setHSL(0.55 - (m1 / maxDrop) * 0.45, 0.95, 0.5);
+                const c2 = new THREE.Color().setHSL(0.55 - (m2 / maxDrop) * 0.45, 0.95, 0.5);
 
-                0.2, 0.8, 0.9,
-                c2.r, c2.g, c2.b,
-                0.2, 0.8, 0.9
-              );
+                colors.push(
+                  0.2, 0.8, 0.9,
+                  c1.r, c1.g, c1.b,
+                  c2.r, c2.g, c2.b,
+
+                  0.2, 0.8, 0.9,
+                  c2.r, c2.g, c2.b,
+                  0.2, 0.8, 0.9
+                );
+              }
+              geom.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+              geom.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+              const ribbonMat = new THREE.MeshBasicMaterial({
+                vertexColors: true,
+                side: THREE.DoubleSide,
+                transparent: true,
+                opacity: 0.75
+              });
+              scene.add(new THREE.Mesh(geom, ribbonMat));
+
+              // Parabolic contour line
+              const linePts: THREE.Vector3[] = [];
+              for (let i = 0; i <= segments; i++) {
+                const x = (i / segments) * L;
+                const m = 4 * maxDrop * (x / L) * (1 - x / L);
+                linePts.push(new THREE.Vector3(x, beamY - m, bz));
+              }
+              const lineGeo = new THREE.BufferGeometry().setFromPoints(linePts);
+              const lineMat = new THREE.LineBasicMaterial({ color: 0xf59e0b, linewidth: 2 });
+              scene.add(new THREE.Line(lineGeo, lineMat));
+            } else if (diagramMode === 'shear') {
+              const maxV = Math.min(0.9, L * 0.09);
+              const geom = new THREE.BufferGeometry();
+              const positions: number[] = [];
+              const colors: number[] = [];
+              for (let i = 0; i < segments; i++) {
+                const x1 = (i / segments) * L;
+                const x2 = ((i + 1) / segments) * L;
+                const v1 = maxV * (1 - (2 * x1) / L);
+                const v2 = maxV * (1 - (2 * x2) / L);
+
+                positions.push(
+                  x1, beamY, bz,
+                  x1, beamY + v1, bz,
+                  x2, beamY + v2, bz,
+
+                  x1, beamY, bz,
+                  x2, beamY + v2, bz,
+                  x2, beamY, bz
+                );
+
+                const col1 = v1 >= 0 ? [0.2, 0.8, 0.4] : [0.9, 0.3, 0.3];
+                const col2 = v2 >= 0 ? [0.2, 0.8, 0.4] : [0.9, 0.3, 0.3];
+
+                colors.push(
+                  0.3, 0.5, 0.6, col1[0], col1[1], col1[2], col2[0], col2[1], col2[2],
+                  0.3, 0.5, 0.6, col2[0], col2[1], col2[2], 0.3, 0.5, 0.6
+                );
+              }
+              geom.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+              geom.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+              const ribbonMat = new THREE.MeshBasicMaterial({
+                vertexColors: true,
+                side: THREE.DoubleSide,
+                transparent: true,
+                opacity: 0.7
+              });
+              scene.add(new THREE.Mesh(geom, ribbonMat));
             }
-            geom.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
-            geom.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
-            const ribbonMat = new THREE.MeshBasicMaterial({
-              vertexColors: true,
-              side: THREE.DoubleSide,
-              transparent: true,
-              opacity: 0.75
-            });
-            scene.add(new THREE.Mesh(geom, ribbonMat));
-
-            // Parabolic contour line
-            const linePts: THREE.Vector3[] = [];
-            for (let i = 0; i <= segments; i++) {
-              const x = (i / segments) * L;
-              const m = 4 * maxDrop * (x / L) * (1 - x / L);
-              linePts.push(new THREE.Vector3(x, beamY - m, bz));
-            }
-            const lineGeo = new THREE.BufferGeometry().setFromPoints(linePts);
-            const lineMat = new THREE.LineBasicMaterial({ color: 0xf59e0b, linewidth: 2 });
-            scene.add(new THREE.Line(lineGeo, lineMat));
-          } else if (diagramMode === 'shear') {
-            const maxV = Math.min(0.9, L * 0.09);
-            const geom = new THREE.BufferGeometry();
-            const positions: number[] = [];
-            const colors: number[] = [];
-            for (let i = 0; i < segments; i++) {
-              const x1 = (i / segments) * L;
-              const x2 = ((i + 1) / segments) * L;
-              const v1 = maxV * (1 - (2 * x1) / L);
-              const v2 = maxV * (1 - (2 * x2) / L);
-
-              positions.push(
-                x1, beamY, bz,
-                x1, beamY + v1, bz,
-                x2, beamY + v2, bz,
-
-                x1, beamY, bz,
-                x2, beamY + v2, bz,
-                x2, beamY, bz
-              );
-
-              const col1 = v1 >= 0 ? [0.2, 0.8, 0.4] : [0.9, 0.3, 0.3];
-              const col2 = v2 >= 0 ? [0.2, 0.8, 0.4] : [0.9, 0.3, 0.3];
-
-              colors.push(
-                0.3, 0.5, 0.6, col1[0], col1[1], col1[2], col2[0], col2[1], col2[2],
-                0.3, 0.5, 0.6, col2[0], col2[1], col2[2], 0.3, 0.5, 0.6
-              );
-            }
-            geom.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
-            geom.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
-            const ribbonMat = new THREE.MeshBasicMaterial({
-              vertexColors: true,
-              side: THREE.DoubleSide,
-              transparent: true,
-              opacity: 0.7
-            });
-            scene.add(new THREE.Mesh(geom, ribbonMat));
-          }
-        });
+          });
+        }
       }
 
-      // Transverse Edge Beams along Z at X = 0 and X = L
-      const secBeamGeo = new THREE.BoxGeometry(bWidth, bHeight, B);
+      // Transverse Edge Beams along Z at X = 0 and X = L with clear span
+      const clearSpanB = Math.max(0.5, B - (config.materialSystem === 'Masonry' ? 0.25 : colDim));
+      const secBeamGeo = new THREE.BoxGeometry(bWidth, bHeight, clearSpanB);
+      const secBeamY = underSlabY - bHeight / 2;
 
       const b3 = new THREE.Mesh(secBeamGeo, beamMat);
-      b3.position.set(0, topY - bHeight / 2, B / 2);
+      b3.position.set(0, secBeamY, B / 2);
       b3.castShadow = true;
       b3.userData = { id: beamId, name: `${config.materialSystem} Secondary Beam`, eta: beamEta };
       attachActiveHighlight(b3, secBeamGeo, beamId);
       scene.add(b3);
 
       const b4 = new THREE.Mesh(secBeamGeo, beamMat);
-      b4.position.set(L, topY - bHeight / 2, B / 2);
+      b4.position.set(L, secBeamY, B / 2);
       b4.castShadow = true;
       b4.userData = { id: beamId, name: `${config.materialSystem} Secondary Beam`, eta: beamEta };
       attachActiveHighlight(b4, secBeamGeo, beamId);
       scene.add(b4);
 
-      // SLAB (One-Way Spanning Floor)
+      // SLAB (One-Way Spanning Floor) - sitting flush on top of beams and columns
       const slabId = config.materialSystem === 'RC' ? 'rc_slab' : config.materialSystem === 'Timber' ? 'clt_slab' : 'rc_slab';
       const slabRes = memberUtilisations[slabId];
       const slabEta = slabRes?.eta_max || 0.60;
       const slabColor = getEtaColorHex(slabEta, slabRes?.status);
-      const slabThickness = config.materialSystem === 'RC' ? 0.22 : 0.16;
 
       const slabGeo = new THREE.BoxGeometry(L, slabThickness, B);
       const slabMat = new THREE.MeshStandardMaterial({
@@ -503,7 +512,7 @@ export const StructuralBay3DViewer: React.FC<StructuralBay3DViewerProps> = ({
         roughness: 0.6
       });
       const slabMesh = new THREE.Mesh(slabGeo, slabMat);
-      slabMesh.position.set(L / 2, topY + slabThickness / 2, B / 2);
+      slabMesh.position.set(L / 2, topFloorY - slabThickness / 2, B / 2);
       slabMesh.castShadow = true;
       slabMesh.receiveShadow = true;
       slabMesh.userData = { id: slabId, name: `Floor Slab (${slabThickness * 1000}mm)`, eta: slabEta };
@@ -520,8 +529,8 @@ export const StructuralBay3DViewer: React.FC<StructuralBay3DViewerProps> = ({
             const px = (ax / arrowCols) * L;
             const pz = (az / arrowRows) * B;
             const dir = new THREE.Vector3(0, -1, 0);
-            const origin = new THREE.Vector3(px, topY + slabThickness + 0.8, pz);
-            const arrow = new THREE.ArrowHelper(dir, origin, 0.7, 0x38bdf8, 0.2, 0.12);
+            const origin = new THREE.Vector3(px, topFloorY + 0.8, pz);
+            const arrow = new THREE.ArrowHelper(dir, origin, 0.65, 0x38bdf8, 0.18, 0.1);
             arrowGroup.add(arrow);
           }
         }
@@ -640,224 +649,224 @@ export const StructuralBay3DViewer: React.FC<StructuralBay3DViewerProps> = ({
       {/* 3D WebGL Canvas */}
       <div ref={mountRef} className="w-full h-full cursor-grab active:cursor-grabbing" />
 
-      {/* Top Left Floating Bar: Dimensions + Component Quick Selection Pills */}
-      <div className="absolute top-3 left-3 z-10 flex flex-wrap items-center gap-2 max-w-[70%]">
-        <div className="bg-slate-900/90 backdrop-blur-md px-3 py-1.5 rounded-xl border border-slate-700/80 shadow-lg text-xs flex items-center gap-2">
-          <span className="font-extrabold text-sky-400 flex items-center gap-1.5 uppercase tracking-wider text-[11px]">
-            <Box className="w-3.5 h-3.5 text-sky-400" />
-            3D Multi-Storey Bay: {config.spanL}m × {config.tributaryWidthBtr}m
-          </span>
-          <span className="text-slate-600">|</span>
-          <span className="text-slate-300 font-semibold text-[11px]">
-            {config.numberOfStoreys} Fl ({config.storeyHeightH}m)
-          </span>
-        </div>
-
-        {/* Quick Component Selector Pills */}
-        <div className="bg-slate-900/90 backdrop-blur-md px-2 py-1 rounded-xl border border-slate-700/80 shadow-lg flex items-center gap-1 text-xs">
-          <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider px-1">Select:</span>
-          <button
-            type="button"
-            onClick={() => onSelectMemberRef.current?.('none')}
-            className={`px-2 py-0.5 rounded-lg text-[11px] font-bold transition flex items-center gap-1 border ${
-              activeMember === 'none'
-                ? 'bg-slate-700 text-white border-slate-400 shadow'
-                : 'bg-slate-800/80 text-slate-400 border-slate-700 hover:bg-slate-700 hover:text-slate-200'
-            }`}
-            title="Deselect element to view the full structural bay frame"
-          >
-            None
-          </button>
-          {availableMembers.map((m) => {
-            const isSel = m.id === activeMember;
-            const res = memberUtilisations[m.id];
-            const eta = res?.eta_max || 0.5;
-            const isFailed = res?.status === 'EXCEEDS SCREEN' || res?.status === 'OUT OF SCOPE' || eta > 1.0;
-            const dotColor = isFailed ? '#ef4444' : eta > 0.8 ? '#f59e0b' : '#10b981';
-            return (
-              <button
-                key={m.id}
-                type="button"
-                onClick={() => onSelectMemberRef.current?.(isSel ? 'none' : m.id)}
-                className={`px-2 py-0.5 rounded-lg text-[11px] font-bold transition flex items-center gap-1 border ${
-                  isSel
-                    ? 'bg-sky-600 text-white border-sky-400 shadow'
-                    : 'bg-slate-800/80 text-slate-300 border-slate-700 hover:bg-slate-700'
-                }`}
-                title={isSel ? 'Click to deselect (None)' : `Select ${m.label}`}
-              >
-                <span
-                  className="w-1.5 h-1.5 rounded-full"
-                  style={{
-                    backgroundColor: dotColor
-                  }}
-                />
-                {m.label}
-              </button>
-            );
-          })}
-        </div>
-      </div>
-
-      {/* Top Right Quick Toggles */}
-      <div className="absolute top-3 right-3 z-10 flex flex-wrap items-center justify-end gap-1.5 max-w-[50%]">
-        <button
-          type="button"
-          onClick={() => setShowStoreyGradient((v) => !v)}
-          className={`px-2.5 py-1 rounded-lg text-xs font-bold transition flex items-center gap-1 border ${
-            showStoreyGradient
-              ? 'bg-emerald-600/30 text-emerald-300 border-emerald-500/50'
-              : 'bg-slate-900/80 text-slate-400 border-slate-700'
-          }`}
-          title="Toggle multi-storey axial stress gradient (lighter load on upper floors, cumulative at ground)"
-        >
-          <TrendingDown className="w-3.5 h-3.5" />
-          Storey Gradient
-        </button>
-        <button
-          type="button"
-          onClick={() => setDiagramMode((m) => (m === 'none' ? 'moment' : m === 'moment' ? 'shear' : 'none'))}
-          className={`px-2.5 py-1 rounded-lg text-xs font-bold transition flex items-center gap-1 border ${
-            diagramMode !== 'none'
-              ? 'bg-amber-600/30 text-amber-300 border-amber-500/50'
-              : 'bg-slate-900/80 text-slate-400 border-slate-700'
-          }`}
-          title="Toggle internal force diagram overlays along primary beams (Moment M_Ed, Shear V_Ed, or Off)"
-        >
-          <Activity className="w-3.5 h-3.5" />
-          {diagramMode === 'none' ? 'Diagrams: Off' : diagramMode === 'moment' ? 'M(x) Moment' : 'V(x) Shear'}
-        </button>
-        <button
-          type="button"
-          onClick={() => setShowFootings((v) => !v)}
-          className={`px-2.5 py-1 rounded-lg text-xs font-bold transition flex items-center gap-1 border ${
-            showFootings
-              ? 'bg-teal-600/30 text-teal-300 border-teal-500/50'
-              : 'bg-slate-900/80 text-slate-400 border-slate-700'
-          }`}
-          title="Toggle concrete pad footings at column bases"
-        >
-          <Footprints className="w-3.5 h-3.5" />
-          Footings
-        </button>
-        <button
-          type="button"
-          onClick={() => setShowLoads((v) => !v)}
-          className={`px-2.5 py-1 rounded-lg text-xs font-bold transition flex items-center gap-1 border ${
-            showLoads
-              ? 'bg-sky-600/30 text-sky-300 border-sky-500/50'
-              : 'bg-slate-900/80 text-slate-400 border-slate-700'
-          }`}
-          title="Toggle characteristic load takedown vectors"
-        >
-          <ArrowDown className="w-3.5 h-3.5" />
-          Load Path
-        </button>
-        <button
-          type="button"
-          onClick={() => setWireframe((v) => !v)}
-          className={`px-2.5 py-1 rounded-lg text-xs font-bold transition flex items-center gap-1 border ${
-            wireframe
-              ? 'bg-amber-600/30 text-amber-300 border-amber-500/50'
-              : 'bg-slate-900/80 text-slate-400 border-slate-700'
-          }`}
-          title="Toggle wireframe mode"
-        >
-          <Layers className="w-3.5 h-3.5" />
-          Wireframe
-        </button>
-        <button
-          type="button"
-          onClick={() => resetCameraRef.current?.()}
-          className="px-2.5 py-1 rounded-lg text-xs font-bold transition flex items-center gap-1 border bg-slate-900/80 text-slate-400 border-slate-700 hover:text-white hover:bg-slate-800"
-          title="Reset 3D Bay camera view to default"
-        >
-          <RotateCcw className="w-3.5 h-3.5" />
-          Reset View
-        </button>
-      </div>
-
-      {/* Permanently Pinned Member Inspector Card with Step 3 Direct Button */}
-      <div className={`absolute bottom-4 left-4 z-10 bg-slate-900/95 backdrop-blur-md p-3.5 rounded-2xl border shadow-2xl text-xs space-y-2.5 max-w-xs transition-all ${
-        activeMember === 'none' ? 'border-slate-800' : 'border-sky-500/70'
-      }`}>
-        <div className="flex items-center justify-between gap-2 border-b border-slate-800 pb-1.5">
-          <span className="text-[10px] uppercase font-bold text-sky-400 tracking-wider flex items-center gap-1.5">
-            <Box className="w-3.5 h-3.5 text-sky-400" />
-            3D Component Inspector
-          </span>
-          <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-slate-800 text-teal-300 font-bold border border-slate-700">
-            {activeMember === 'none' ? 'None' : activeMember}
-          </span>
-        </div>
-
-        {activeMember === 'none' ? (
-          <div className="space-y-2">
-            <div className="font-extrabold text-white flex items-center gap-2 text-sm">
-              <span className="w-2.5 h-2.5 rounded-full shrink-0 bg-sky-400 shadow" />
-              <span>Full Bay Overview</span>
-            </div>
-            <p className="text-[11px] text-slate-400 leading-relaxed bg-slate-950/60 p-2 rounded-xl border border-slate-800">
-              No component selected. The full multi-storey bay is visible without focus highlights.
-            </p>
-            <div className="text-[10.5px] text-slate-500 text-center flex items-center justify-center gap-1 pt-0.5">
-              <span>Select a pill above to inspect & design in Step 3</span>
-            </div>
+      {/* Top Floating Control Bar - Flex column layout ensures no elements ever overlap */}
+      <div className="absolute top-3 inset-x-3 z-10 flex flex-col gap-2 pointer-events-none">
+        {/* Row 1: Bay Dimensions Badge & Actions/Toggles */}
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          {/* Bay Dimensions Badge */}
+          <div className="bg-slate-900/90 backdrop-blur-md px-3 py-1.5 rounded-xl border border-slate-700/80 shadow-lg text-xs flex items-center gap-2 pointer-events-auto shrink-0">
+            <span className="font-extrabold text-sky-400 flex items-center gap-1.5 uppercase tracking-wider text-[11px]">
+              <Box className="w-3.5 h-3.5 text-sky-400" />
+              3D Bay: {config.spanL}m × {config.tributaryWidthBtr}m
+            </span>
+            <span className="text-slate-600">|</span>
+            <span className="text-slate-300 font-semibold text-[11px]">
+              {config.numberOfStoreys} Fl ({config.storeyHeightH}m)
+            </span>
           </div>
-        ) : (
-          <>
-            <div className="space-y-1.5">
-              <div className="font-extrabold text-white flex items-center gap-2 text-sm">
-                <span
-                  className="w-3 h-3 rounded-full shrink-0 shadow"
-                  style={{
-                    backgroundColor: currentEta <= 0.8 ? '#10b981' : currentEta <= 1.0 ? '#f59e0b' : '#ef4444'
-                  }}
-                />
-                <span className="truncate">{getMemberDisplayName(activeMember, config.materialSystem)}</span>
-              </div>
 
-              <div className="flex items-center justify-between text-[11px] bg-slate-950/80 px-2.5 py-1.5 rounded-xl border border-slate-800">
-                <span className="text-slate-400 font-semibold">Eurocode Utilisation:</span>
-                <span
-                  className={`font-mono font-bold text-xs ${
-                    currentEta <= 0.8 ? 'text-emerald-400' : currentEta <= 1.0 ? 'text-amber-400' : 'text-rose-400'
-                  }`}
-                >
-                  ηmax = {currentEta.toFixed(3)} ({Math.round(currentEta * 100)}%)
-                </span>
-              </div>
-            </div>
-
-            {/* Dedicated card button to direct the user to Step 3 for this element */}
+          {/* Quick Display & Analysis Toggles */}
+          <div className="flex flex-wrap items-center justify-end gap-1.5 pointer-events-auto ml-auto">
             <button
               type="button"
-              onClick={() => onNavigateToStep3Ref.current?.(activeMember)}
-              className="w-full px-3.5 py-2 rounded-xl bg-teal-500 hover:bg-teal-400 active:scale-[0.98] text-slate-950 font-extrabold text-xs flex items-center justify-center gap-2 shadow-lg transition group cursor-pointer"
+              onClick={() => setShowStoreyGradient((v) => !v)}
+              className={`px-2.5 py-1 rounded-lg text-xs font-bold transition flex items-center gap-1 border ${
+                showStoreyGradient
+                  ? 'bg-emerald-600/30 text-emerald-300 border-emerald-500/50'
+                  : 'bg-slate-900/80 text-slate-400 border-slate-700 hover:text-white hover:bg-slate-850'
+              }`}
+              title="Toggle multi-storey axial stress gradient (lighter load on upper floors, cumulative at ground)"
             >
-              <span>Open in Step 3 Studio</span>
-              <ArrowRight className="w-4 h-4 transition-transform group-hover:translate-x-1" />
+              <TrendingDown className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">Gradient</span>
             </button>
+            <button
+              type="button"
+              onClick={() => setDiagramMode((m) => (m === 'none' ? 'moment' : m === 'moment' ? 'shear' : 'none'))}
+              className={`px-2.5 py-1 rounded-lg text-xs font-bold transition flex items-center gap-1 border ${
+                diagramMode !== 'none'
+                  ? 'bg-amber-600/30 text-amber-300 border-amber-500/50'
+                  : 'bg-slate-900/80 text-slate-400 border-slate-700 hover:text-white hover:bg-slate-850'
+              }`}
+              title="Toggle internal force diagram overlays along primary beams (Moment M_Ed, Shear V_Ed, or Off)"
+            >
+              <Activity className="w-3.5 h-3.5" />
+              <span>{diagramMode === 'none' ? 'Diagrams' : diagramMode === 'moment' ? 'M(x)' : 'V(x)'}</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setShowFootings((v) => !v)}
+              className={`px-2.5 py-1 rounded-lg text-xs font-bold transition flex items-center gap-1 border ${
+                showFootings
+                  ? 'bg-teal-600/30 text-teal-300 border-teal-500/50'
+                  : 'bg-slate-900/80 text-slate-400 border-slate-700 hover:text-white hover:bg-slate-850'
+              }`}
+              title="Toggle concrete pad footings at column bases"
+            >
+              <Footprints className="w-3.5 h-3.5" />
+              <span className="hidden md:inline">Footings</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setShowLoads((v) => !v)}
+              className={`px-2.5 py-1 rounded-lg text-xs font-bold transition flex items-center gap-1 border ${
+                showLoads
+                  ? 'bg-sky-600/30 text-sky-300 border-sky-500/50'
+                  : 'bg-slate-900/80 text-slate-400 border-slate-700 hover:text-white hover:bg-slate-850'
+              }`}
+              title="Toggle characteristic load takedown vectors"
+            >
+              <ArrowDown className="w-3.5 h-3.5" />
+              <span className="hidden md:inline">Loads</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setWireframe((v) => !v)}
+              className={`px-2.5 py-1 rounded-lg text-xs font-bold transition flex items-center gap-1 border ${
+                wireframe
+                  ? 'bg-amber-600/30 text-amber-300 border-amber-500/50'
+                  : 'bg-slate-900/80 text-slate-400 border-slate-700 hover:text-white hover:bg-slate-850'
+              }`}
+              title="Toggle wireframe mode"
+            >
+              <Layers className="w-3.5 h-3.5" />
+              <span className="hidden md:inline">Wireframe</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => resetCameraRef.current?.()}
+              className="px-2.5 py-1 rounded-lg text-xs font-bold transition flex items-center gap-1 border bg-slate-900/80 text-slate-400 border-slate-700 hover:text-white hover:bg-slate-800"
+              title="Reset 3D Bay camera view to default"
+            >
+              <RotateCcw className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">Reset</span>
+            </button>
+          </div>
+        </div>
 
-            <div className="text-[10.5px] text-slate-400 text-center flex items-center justify-center gap-1">
-              <span>Select component using pills above • Button opens Step 3</span>
-            </div>
-          </>
-        )}
+        {/* Row 2: Quick Component Selector Pills */}
+        <div className="flex items-center">
+          <div className="bg-slate-900/90 backdrop-blur-md px-2 py-1 rounded-xl border border-slate-700/80 shadow-lg flex flex-wrap items-center gap-1 text-xs pointer-events-auto max-w-full">
+            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider px-1">Select:</span>
+            <button
+              type="button"
+              onClick={() => onSelectMemberRef.current?.('none')}
+              className={`px-2 py-0.5 rounded-lg text-[11px] font-bold transition flex items-center gap-1 border ${
+                activeMember === 'none'
+                  ? 'bg-slate-700 text-white border-slate-400 shadow'
+                  : 'bg-slate-800/80 text-slate-400 border-slate-700 hover:bg-slate-700 hover:text-slate-200'
+              }`}
+              title="Deselect element to view the full structural bay frame"
+            >
+              None
+            </button>
+            {availableMembers.map((m) => {
+              const isSel = m.id === activeMember;
+              const res = memberUtilisations[m.id];
+              const eta = res?.eta_max || 0.5;
+              const isFailed = res?.status === 'EXCEEDS SCREEN' || res?.status === 'OUT OF SCOPE' || eta > 1.0;
+              const dotColor = isFailed ? '#ef4444' : eta > 0.8 ? '#f59e0b' : '#10b981';
+              return (
+                <button
+                  key={m.id}
+                  type="button"
+                  onClick={() => onSelectMemberRef.current?.(isSel ? 'none' : m.id)}
+                  className={`px-2 py-0.5 rounded-lg text-[11px] font-bold transition flex items-center gap-1 border ${
+                    isSel
+                      ? 'bg-sky-600 text-white border-sky-400 shadow'
+                      : 'bg-slate-800/80 text-slate-300 border-slate-700 hover:bg-slate-700'
+                  }`}
+                  title={isSel ? 'Click to deselect (None)' : `Select ${m.label}`}
+                >
+                  <span
+                    className="w-1.5 h-1.5 rounded-full"
+                    style={{
+                      backgroundColor: dotColor
+                    }}
+                  />
+                  {m.label}
+                </button>
+              );
+            })}
+          </div>
+        </div>
       </div>
 
-      {/* Bottom Right Legend */}
-      <div className="absolute bottom-4 right-4 z-10 bg-slate-900/85 backdrop-blur-md px-3 py-2 rounded-xl border border-slate-800 text-[11px] space-y-1 text-slate-300 shadow">
-        <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Eurocode Utilisation ηmax</div>
-        <div className="flex items-center gap-3">
-          <span className="flex items-center gap-1">
-            <span className="w-2.5 h-2.5 rounded-full bg-emerald-500" /> &le; 0.80 Optimal
+      {/* Bottom Floating Info & Legend Bar - flex layout ensures no overlap on small screens */}
+      <div className="absolute bottom-3 inset-x-3 z-10 flex flex-col sm:flex-row items-start sm:items-end justify-between gap-3 pointer-events-none">
+        {/* Permanently Pinned Member Inspector Card with Step 3 Direct Button */}
+        <div className={`pointer-events-auto bg-slate-900/95 backdrop-blur-md p-3 rounded-2xl border shadow-2xl text-xs space-y-2 max-w-xs transition-all ${
+          activeMember === 'none' ? 'border-slate-800' : 'border-sky-500/70'
+        }`}>
+          <div className="flex items-center justify-between gap-2 border-b border-slate-800 pb-1.5">
+            <span className="text-[10px] uppercase font-bold text-sky-400 tracking-wider flex items-center gap-1.5">
+              <Box className="w-3.5 h-3.5 text-sky-400" />
+              Component Inspector
+            </span>
+            <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-slate-800 text-teal-300 font-bold border border-slate-700">
+              {activeMember === 'none' ? 'None' : activeMember}
+            </span>
+          </div>
+
+          {activeMember === 'none' ? (
+            <div className="space-y-1.5">
+              <div className="font-extrabold text-white flex items-center gap-2 text-xs">
+                <span className="w-2 h-2 rounded-full shrink-0 bg-sky-400 shadow" />
+                <span>Full Bay Overview</span>
+              </div>
+              <p className="text-[10.5px] text-slate-400 leading-relaxed bg-slate-950/60 p-1.5 rounded-lg border border-slate-800">
+                Click any component in 3D or use the select pills above.
+              </p>
+            </div>
+          ) : (
+            <>
+              <div className="space-y-1">
+                <div className="font-extrabold text-white flex items-center gap-2 text-xs">
+                  <span
+                    className="w-2.5 h-2.5 rounded-full shrink-0 shadow"
+                    style={{
+                      backgroundColor: currentEta <= 0.8 ? '#10b981' : currentEta <= 1.0 ? '#f59e0b' : '#ef4444'
+                    }}
+                  />
+                  <span className="truncate">{getMemberDisplayName(activeMember, config.materialSystem)}</span>
+                </div>
+
+                <div className="flex items-center justify-between text-[10.5px] bg-slate-950/80 px-2 py-1 rounded-lg border border-slate-800">
+                  <span className="text-slate-400 font-semibold">Eurocode ηmax:</span>
+                  <span
+                    className={`font-mono font-bold text-[11px] ${
+                      currentEta <= 0.8 ? 'text-emerald-400' : currentEta <= 1.0 ? 'text-amber-400' : 'text-rose-400'
+                    }`}
+                  >
+                    η = {currentEta.toFixed(3)} ({Math.round(currentEta * 100)}%)
+                  </span>
+                </div>
+              </div>
+
+              {/* Dedicated card button to direct the user to Step 3 for this element */}
+              <button
+                type="button"
+                onClick={() => onNavigateToStep3Ref.current?.(activeMember)}
+                className="w-full px-3 py-1.5 rounded-xl bg-teal-500 hover:bg-teal-400 active:scale-[0.98] text-slate-950 font-extrabold text-xs flex items-center justify-center gap-1.5 shadow-lg transition group cursor-pointer"
+              >
+                <span>Open in Step 3 Studio</span>
+                <ArrowRight className="w-3.5 h-3.5 transition-transform group-hover:translate-x-1" />
+              </button>
+            </>
+          )}
+        </div>
+
+        {/* Bottom Right Legend */}
+        <div className="pointer-events-auto bg-slate-900/85 backdrop-blur-md px-3 py-1.5 rounded-xl border border-slate-800 text-[11px] text-slate-300 shadow flex items-center gap-3">
+          <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider hidden sm:inline">Utilisation:</span>
+          <span className="flex items-center gap-1 text-[10.5px]">
+            <span className="w-2 h-2 rounded-full bg-emerald-500" /> &le; 0.80
           </span>
-          <span className="flex items-center gap-1">
-            <span className="w-2.5 h-2.5 rounded-full bg-amber-500" /> 0.80–1.00 High
+          <span className="flex items-center gap-1 text-[10.5px]">
+            <span className="w-2 h-2 rounded-full bg-amber-500" /> 0.80–1.00
           </span>
-          <span className="flex items-center gap-1">
-            <span className="w-2.5 h-2.5 rounded-full bg-rose-500" /> &gt; 1.00 Exceeded
+          <span className="flex items-center gap-1 text-[10.5px]">
+            <span className="w-2 h-2 rounded-full bg-rose-500" /> &gt; 1.00
           </span>
         </div>
       </div>
