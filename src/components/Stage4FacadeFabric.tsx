@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import {
   Layers,
   Sun,
@@ -8,7 +8,8 @@ import {
   Plus,
   Trash2,
   ArrowRight,
-  Sliders
+  Sliders,
+  Sparkles
 } from 'lucide-react';
 import {
   useDesignProject,
@@ -16,6 +17,7 @@ import {
 } from '../context/DesignProjectContext';
 import { ENVELOPE_MATERIALS } from '../data/climateAndStrategies';
 import { GLAZING_LIBRARY, SHADING_LIBRARY } from '../data/componentLibraries';
+import { StageDalecPlusStudio } from './StageDalecPlusStudio';
 
 export const Stage4FacadeFabric: React.FC = () => {
   const {
@@ -54,6 +56,7 @@ export const Stage4FacadeFabric: React.FC = () => {
 
   const activeZoneData = sim.zones[selectedZone];
   const zoneOrder: ThermalZoneName[] = ['South', 'North', 'East', 'West', 'Core'];
+  const [facadeViewMode, setFacadeViewMode] = useState<'dalec_plus' | 'iso_shoebox'>('dalec_plus');
 
   const handleLayerChange = (id: string, field: 'materialId' | 'thicknessMm', value: string | number) => {
     setWallLayers((prev) =>
@@ -108,6 +111,43 @@ export const Stage4FacadeFabric: React.FC = () => {
         </button>
       </div>
 
+      {/* Studio Sub-Navigation Switcher */}
+      <div className="flex flex-wrap items-center justify-between gap-3 bg-white p-2.5 rounded-2xl border border-slate-200 shadow-sm">
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setFacadeViewMode('dalec_plus')}
+            className={`px-3.5 py-2 rounded-xl font-bold text-xs flex items-center gap-2 transition ${
+              facadeViewMode === 'dalec_plus'
+                ? 'bg-gradient-to-r from-teal-600 via-indigo-600 to-sky-600 text-white shadow-md'
+                : 'bg-slate-50 text-slate-700 hover:bg-slate-100 border border-slate-200'
+            }`}
+          >
+            <Sparkles className="w-4 h-4 text-amber-300" />
+            DALEC+ 3D Studio & 8,760h Coupled Engine
+            <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-white/20 text-white font-extrabold">
+              NEW
+            </span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setFacadeViewMode('iso_shoebox')}
+            className={`px-3.5 py-2 rounded-xl font-bold text-xs flex items-center gap-2 transition ${
+              facadeViewMode === 'iso_shoebox'
+                ? 'bg-slate-900 text-white shadow-md'
+                : 'bg-slate-50 text-slate-700 hover:bg-slate-100 border border-slate-200'
+            }`}
+          >
+            <Layers className="w-4 h-4 text-teal-400" />
+            Single-Aspect Shoebox & ISO 13786 Stratigraphy
+          </button>
+        </div>
+      </div>
+
+      {facadeViewMode === 'dalec_plus' ? (
+        <StageDalecPlusStudio />
+      ) : (
+        <>
       {/* Zone Selector Bar + Legislative Compliance Badges */}
       <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-3.5 flex flex-wrap items-center justify-between gap-3">
         <div className="flex flex-wrap items-center gap-1.5">
@@ -623,6 +663,8 @@ export const Stage4FacadeFabric: React.FC = () => {
           </table>
         </div>
       </div>
+      </>
+      )}
     </div>
   );
 };

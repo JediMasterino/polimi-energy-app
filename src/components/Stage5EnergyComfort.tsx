@@ -15,6 +15,7 @@ import {
 } from '../context/DesignProjectContext';
 import { AdvancedHvacRenewableModal } from './AdvancedHvacRenewableModal';
 import { HourlySimulationTab } from './HourlySimulationTab';
+import { StageDalecPlusStudio } from './StageDalecPlusStudio';
 
 export const Stage5EnergyComfort: React.FC = () => {
   const {
@@ -45,6 +46,7 @@ export const Stage5EnergyComfort: React.FC = () => {
 
   const [showHvacModal, setShowHvacModal] = useState(false);
   const [engineMode, setEngineMode] = useState<'monthly_iso' | 'hourly_8760'>('monthly_iso');
+  const [hourlyEngineType, setHourlyEngineType] = useState<'dalec_plus' | 'fast_2r1c'>('dalec_plus');
 
   return (
     <div className="space-y-5">
@@ -112,7 +114,43 @@ export const Stage5EnergyComfort: React.FC = () => {
         </div>
       </div>
 
-      {engineMode === 'hourly_8760' && <HourlySimulationTab />}
+      {engineMode === 'hourly_8760' && (
+        <div className="space-y-4">
+          <div className="flex flex-wrap items-center justify-between gap-3 bg-white p-2.5 rounded-2xl border border-slate-200 shadow-sm">
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setHourlyEngineType('dalec_plus')}
+                className={`px-3.5 py-2 rounded-xl font-bold text-xs flex items-center gap-2 transition ${
+                  hourlyEngineType === 'dalec_plus'
+                    ? 'bg-gradient-to-r from-teal-600 via-indigo-600 to-sky-600 text-white shadow-md'
+                    : 'bg-slate-50 text-slate-700 hover:bg-slate-100 border border-slate-200'
+                }`}
+              >
+                <Sparkles className="w-4 h-4 text-amber-300" />
+                DALEC+ 3D Studio & 8,760h Coupled Engine
+                <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-white/20 text-white font-extrabold">
+                  NEW
+                </span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setHourlyEngineType('fast_2r1c')}
+                className={`px-3.5 py-2 rounded-xl font-bold text-xs flex items-center gap-2 transition ${
+                  hourlyEngineType === 'fast_2r1c'
+                    ? 'bg-slate-900 text-white shadow-md'
+                    : 'bg-slate-50 text-slate-700 hover:bg-slate-100 border border-slate-200'
+                }`}
+              >
+                <Activity className="w-4 h-4 text-teal-400" />
+                Whole-Building Lumped 2R1C Quick View
+              </button>
+            </div>
+          </div>
+
+          {hourlyEngineType === 'dalec_plus' ? <StageDalecPlusStudio /> : <HourlySimulationTab />}
+        </div>
+      )}
 
       {/* Row 1: ISO 52000-1 Sankey / Energy Boundary Flow Diagram + HVAC & Ventilation Controls */}
       <div className="grid grid-cols-1 xl:grid-cols-12 gap-5">
