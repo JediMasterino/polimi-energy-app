@@ -346,9 +346,9 @@ export const Stage1Climate: React.FC<Stage1ClimateProps> = ({
         </div>
 
         {/* Improvement #1 Bar: Global vs Local Value Ranges + Elements-Style Weather Morphing */}
-        <div className="pt-2.5 border-t border-slate-700/80 grid grid-cols-1 lg:grid-cols-12 gap-3 items-center text-xs">
-          {/* Global vs Local Y-Axis Toggle (3 cols) */}
-          <div className="lg:col-span-3 flex items-center justify-between bg-slate-950/60 px-3 py-2 rounded-xl border border-slate-700">
+        <div className={`pt-2.5 border-t border-slate-700/80 grid grid-cols-1 ${stage1WideMode ? 'lg:grid-cols-12' : ''} gap-3 items-center text-xs`}>
+          {/* Global vs Local Y-Axis Toggle */}
+          <div className={`${stage1WideMode ? 'lg:col-span-3' : 'w-full'} flex items-center justify-between bg-slate-950/60 px-3 py-2 rounded-xl border border-slate-700`}>
             <div>
               <span className="text-[10px] uppercase tracking-wider text-teal-300 font-bold block">
                 Chart Axis Scaling
@@ -370,8 +370,8 @@ export const Stage1Climate: React.FC<Stage1ClimateProps> = ({
             </button>
           </div>
 
-          {/* Weather Morphing Sliders (9 cols) */}
-          <div className="lg:col-span-9 bg-slate-950/60 px-3.5 py-2 rounded-xl border border-slate-700 flex flex-wrap xl:flex-nowrap items-center justify-between gap-3">
+          {/* Weather Morphing Sliders */}
+          <div className={`${stage1WideMode ? 'lg:col-span-9' : 'w-full'} bg-slate-950/60 px-3.5 py-2 rounded-xl border border-slate-700 flex flex-wrap items-center justify-between gap-3`}>
             <div className="flex items-center gap-2 shrink-0">
               <Sliders className="w-4 h-4 text-amber-400 shrink-0" />
               <div>
@@ -402,8 +402,8 @@ export const Stage1Climate: React.FC<Stage1ClimateProps> = ({
               </div>
             </div>
 
-            <div className="flex items-center gap-3 shrink-0">
-              <label className="w-32 xl:w-36 shrink-0">
+            <div className="flex flex-wrap items-center gap-3 flex-1 justify-end">
+              <label className="flex-1 min-w-[105px] max-w-[150px]">
                 <div className="flex justify-between text-[10px] text-slate-300 mb-0.5">
                   <span>Temp Offset ΔT</span>
                   <span className="font-bold text-amber-300 font-mono tabular-nums inline-block text-right w-14">
@@ -421,7 +421,7 @@ export const Stage1Climate: React.FC<Stage1ClimateProps> = ({
                 />
               </label>
 
-              <label className="w-28 xl:w-32 shrink-0">
+              <label className="flex-1 min-w-[95px] max-w-[140px]">
                 <div className="flex justify-between text-[10px] text-slate-300 mb-0.5">
                   <span>Wind Speed ×</span>
                   <span className="font-bold text-sky-300 font-mono tabular-nums inline-block text-right w-12">
@@ -439,7 +439,7 @@ export const Stage1Climate: React.FC<Stage1ClimateProps> = ({
                 />
               </label>
 
-              <label className="w-28 xl:w-32 shrink-0">
+              <label className="flex-1 min-w-[95px] max-w-[140px]">
                 <div className="flex justify-between text-[10px] text-slate-300 mb-0.5">
                   <span>Humidity Shift</span>
                   <span className="font-bold text-teal-300 font-mono tabular-nums inline-block text-right w-12">
@@ -515,9 +515,9 @@ export const Stage1Climate: React.FC<Stage1ClimateProps> = ({
       {activeSubTab === 'station_map' && (
         <div className="space-y-5">
           {/* Row 1: Drag-and-Drop .EPW Upload Zone + Active Weather Station Overview */}
-          <div className="grid grid-cols-1 xl:grid-cols-12 gap-5">
-            {/* Drag-and-Drop .EPW Upload & Validator Card (6 cols) */}
-            <div className="xl:col-span-6 bg-white rounded-2xl border border-slate-200 shadow-sm p-4 space-y-3 flex flex-col justify-between">
+          <div className={`grid grid-cols-1 ${stage1WideMode ? 'xl:grid-cols-12' : ''} gap-5`}>
+            {/* Drag-and-Drop .EPW Upload & Validator Card */}
+            <div className={`${stage1WideMode ? 'xl:col-span-6' : 'w-full'} bg-white rounded-2xl border border-slate-200 shadow-sm p-4 space-y-3 flex flex-col justify-between`}>
               <div>
                 <h3 className="text-sm font-bold text-slate-800 flex items-center gap-1.5">
                   <Upload className="w-4 h-4 text-teal-600" />
@@ -612,8 +612,8 @@ export const Stage1Climate: React.FC<Stage1ClimateProps> = ({
               </div>
             </div>
 
-            {/* Currently Active Weather Station & EPW Boundary Card (6 cols) */}
-            <div className="xl:col-span-6 bg-white rounded-2xl border border-slate-200 shadow-sm p-4 space-y-3 flex flex-col justify-between">
+            {/* Currently Active Weather Station & EPW Boundary Card */}
+            <div className={`${stage1WideMode ? 'xl:col-span-6' : 'w-full'} bg-white rounded-2xl border border-slate-200 shadow-sm p-4 space-y-3 flex flex-col justify-between`}>
               <div>
                 <div className="flex items-center justify-between gap-2">
                   <h3 className="text-sm font-bold text-slate-800 flex items-center gap-1.5">
@@ -709,7 +709,7 @@ export const Stage1Climate: React.FC<Stage1ClimateProps> = ({
               </span>
             </div>
 
-            <div className="grid grid-cols-2 sm:grid-cols-4 xl:grid-cols-8 gap-2.5 text-xs">
+            <div className={`grid grid-cols-2 sm:grid-cols-4 ${stage1WideMode ? 'xl:grid-cols-8' : ''} gap-2.5 text-xs`}>
               <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-200 flex flex-col justify-between">
                 <span className="text-[10px] text-slate-400 font-bold uppercase block">Coordinates</span>
                 <span className="font-extrabold text-slate-800 text-xs block leading-tight my-1">
@@ -1068,7 +1068,7 @@ export const Stage1Climate: React.FC<Stage1ClimateProps> = ({
           </ClimaChartCard>
 
           {/* 4 Distribution Histograms / Density Plots (T_db, RH, GHI, Wind Speed) */}
-          <div className={`grid grid-cols-1 ${chartDensity === 'spacious' ? 'md:grid-cols-2' : 'sm:grid-cols-2 xl:grid-cols-4'} gap-4`}>
+          <div className={`grid grid-cols-1 ${stage1WideMode && chartDensity !== 'spacious' ? 'sm:grid-cols-2 xl:grid-cols-4' : 'sm:grid-cols-2'} gap-4`}>
             {[
               {
                 key: 'temp',
@@ -1189,7 +1189,7 @@ export const Stage1Climate: React.FC<Stage1ClimateProps> = ({
       {activeSubTab === 'temp_rh' && (
         <div className="space-y-5">
           {/* 1. Yearly Dry-Bulb Temp & Yearly Relative Humidity Charts (365 Days) */}
-          <div className={`grid grid-cols-1 ${chartDensity === 'spacious' ? 'gap-6' : 'xl:grid-cols-2 gap-5'}`}>
+          <div className={`grid grid-cols-1 ${stage1WideMode && chartDensity !== 'spacious' ? 'xl:grid-cols-2 gap-5' : 'gap-6'}`}>
             <ClimaChartCard
               title="Yearly Dry-Bulb Temperature (365d) & ASHRAE 55 Adaptive Bands"
               subtitle="Daily Min–Max bars, daily mean curve, and 7-day running mean (α = 0.9) 80% (±3.5K) & 90% (±2.5K) bands"
@@ -1916,7 +1916,7 @@ export const Stage1Climate: React.FC<Stage1ClimateProps> = ({
           </ClimaChartCard>
 
           {/* 3. 24h x 365d Timetable Heatmaps for T_db and RH */}
-          <div className={`grid grid-cols-1 ${chartDensity === 'spacious' ? 'gap-6' : 'xl:grid-cols-2 gap-5'}`}>
+          <div className={`grid grid-cols-1 ${stage1WideMode && chartDensity !== 'spacious' ? 'xl:grid-cols-2 gap-5' : 'gap-6'}`}>
             <ClimaChartCard
               title="24h × 365d Dry-Bulb Temperature Timetable Heatmap (°C)"
               subtitle="Continuous RdYlBu_r annual hourly temperature matrix showing seasonal & diurnal thermal waves"
@@ -2023,9 +2023,9 @@ export const Stage1Climate: React.FC<Stage1ClimateProps> = ({
          ===================================================================== */}
       {activeSubTab === 'sun_clouds' && (
         <div className="space-y-5">
-          <div className={`grid grid-cols-1 ${chartDensity === 'spacious' ? 'gap-6' : 'xl:grid-cols-12 gap-5'}`}>
+          <div className={`grid grid-cols-1 ${stage1WideMode && chartDensity !== 'spacious' ? 'xl:grid-cols-12 gap-5' : 'gap-6'}`}>
             {/* Toggleable Polar / Cartesian Sun-Path + Overhang Protractor + Stage 2 Urban Skyline Mask */}
-            <div className={chartDensity === 'spacious' ? 'w-full' : 'xl:col-span-7'}>
+            <div className={stage1WideMode && chartDensity !== 'spacious' ? 'xl:col-span-7' : 'w-full'}>
               <ClimaChartCard
                 title="Interactive Sun-Path Diagram with Overhang Protractor & Stage 2 Urban Canyon Skyline Mask"
                 subtitle="Improvement #2: Inspect summer/winter solar vectors blocked by South overhangs, vertical fins, and neighboring urban buildings"
@@ -2423,7 +2423,7 @@ export const Stage1Climate: React.FC<Stage1ClimateProps> = ({
             </div>
 
             {/* 8-Orientation Vertical Facade Radiation Rose */}
-            <div className={chartDensity === 'spacious' ? 'w-full' : 'xl:col-span-5'}>
+            <div className={stage1WideMode && chartDensity !== 'spacious' ? 'xl:col-span-5' : 'w-full'}>
               <ClimaChartCard
                 title="Directional Vertical Facade Radiation Rose (kWh/m²yr)"
                 subtitle="Annual, Summer (Jun–Aug), and Winter (Dec–Feb) incident solar radiation on 8 vertical orientations"
@@ -2543,7 +2543,7 @@ export const Stage1Climate: React.FC<Stage1ClimateProps> = ({
             </div>
           </div>
           {/* Monthly Global, Direct Normal & Diffuse Solar Boxplots + Cloud Cover Regime Distribution */}
-          <div className={`grid grid-cols-1 ${chartDensity === 'spacious' ? 'gap-6' : 'xl:grid-cols-2 gap-5'}`}>
+          <div className={`grid grid-cols-1 ${stage1WideMode && chartDensity !== 'spacious' ? 'xl:grid-cols-2 gap-5' : 'gap-6'}`}>
             <ClimaChartCard
               title="Monthly Solar Radiation (kWh/m²) & Daytime Irradiance Boxplots (Wh/m²)"
               subtitle="Cumulative GHI, DNI, DHI bars (top) and daytime hourly Q25–Median–Q75–Max boxplots (bottom)"
@@ -2888,7 +2888,7 @@ export const Stage1Climate: React.FC<Stage1ClimateProps> = ({
           SUB-TABS 5, 6, 7, 8, 9
          ===================================================================== */}
       {activeSubTab === 'wind' && (
-        <SubTab5Wind climate={climate} globalValueRanges={globalValueRanges} />
+        <SubTab5Wind climate={climate} globalValueRanges={globalValueRanges} stage1WideMode={stage1WideMode} />
       )}
 
       {activeSubTab === 'psychrometric' && (
@@ -2900,14 +2900,15 @@ export const Stage1Climate: React.FC<Stage1ClimateProps> = ({
           toggleStrategy={toggleStrategy}
           setActiveStrategiesList={setActiveStrategiesList}
           strategyMods={sim.strategyMods}
+          stage1WideMode={stage1WideMode}
         />
       )}
 
-      {activeSubTab === 'nat_vent' && <SubTab7NatVent climate={climate} />}
+      {activeSubTab === 'nat_vent' && <SubTab7NatVent climate={climate} stage1WideMode={stage1WideMode} />}
 
-      {activeSubTab === 'utci' && <SubTab8Utci climate={climate} />}
+      {activeSubTab === 'utci' && <SubTab8Utci climate={climate} stage1WideMode={stage1WideMode} />}
 
-      {activeSubTab === 'explorer' && <SubTab9DataExplorer climate={climate} />}
+      {activeSubTab === 'explorer' && <SubTab9DataExplorer climate={climate} stage1WideMode={stage1WideMode} />}
 
       {/* =====================================================================
           IMPROVEMENT #5: AUTO-GENERATED ARCHITECTURAL DESIGN TAKEAWAY CARD
@@ -2945,7 +2946,7 @@ export const Stage1Climate: React.FC<Stage1ClimateProps> = ({
           </div>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-xs text-slate-200 pt-1">
+        <div className={`grid grid-cols-1 ${stage1WideMode ? 'md:grid-cols-3' : ''} gap-3 text-xs text-slate-200 pt-1`}>
           {boardCommentary.sentences.map((sent, idx) => (
             <div key={idx} className="bg-slate-950/60 p-3 rounded-xl border border-slate-800 leading-relaxed">
               <span className="text-teal-400 font-extrabold mr-1.5">0{idx + 1}.</span>

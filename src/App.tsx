@@ -765,7 +765,7 @@ const StudioWorkspace: React.FC = () => {
 
         {/* CENTRAL INTERACTIVE 2D / 2.5D / BIOCLIMATIC STAGE CANVAS */}
         <section
-          className={
+          className={`min-w-0 ${
             activeStage === 1 && stage1WideMode
               ? leftDrawerOpen
                 ? 'lg:col-span-9'
@@ -773,7 +773,7 @@ const StudioWorkspace: React.FC = () => {
               : leftDrawerOpen
               ? 'lg:col-span-6'
               : 'lg:col-span-9'
-          }
+          }`}
         >
           {activeStage === 1 && (
             <Stage1Climate

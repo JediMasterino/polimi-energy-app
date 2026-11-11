@@ -573,7 +573,8 @@ export function colorForWindDir(deg: number): string {
 export const SubTab5Wind: React.FC<{
   climate: ClimateDataset;
   globalValueRanges: boolean;
-}> = ({ climate, globalValueRanges }) => {
+  stage1WideMode?: boolean;
+}> = ({ climate, globalValueRanges, stage1WideMode = true }) => {
   const [windMode, setWindMode] = useState<WindFilterMode>('annual');
   const [monthStart, setMonthStart] = useState(5);
   const [monthEnd, setMonthEnd] = useState(9);
@@ -587,9 +588,9 @@ export const SubTab5Wind: React.FC<{
 
   return (
     <div className="space-y-5">
-      <div className="grid grid-cols-1 xl:grid-cols-12 gap-5">
-        {/* Polar Wind Rose (6 cols) */}
-        <div className="xl:col-span-6">
+      <div className={`grid grid-cols-1 ${stage1WideMode ? 'xl:grid-cols-12 gap-5' : 'gap-6'}`}>
+        {/* Polar Wind Rose */}
+        <div className={stage1WideMode ? 'xl:col-span-6' : 'w-full'}>
           <ClimaChartCard
             title="Multi-Mode 16-Sector Polar Wind Rose (Frequency % & Velocity Bins)"
             subtitle="Calm hours (≤0.5 m/s) excluded from directional sectors per CBE Clima WMO standard"
@@ -820,8 +821,8 @@ export const SubTab5Wind: React.FC<{
           </ClimaChartCard>
         </div>
 
-        {/* Monthly Wind Speed Profile & Directional Summary Table (6 cols) */}
-        <div className="xl:col-span-6">
+        {/* Monthly Wind Speed Profile & Directional Summary Table */}
+        <div className={stage1WideMode ? 'xl:col-span-6' : 'w-full'}>
           <ClimaChartCard
             title="Monthly Wind Speed Profile & 16-Sector Breakdown"
             subtitle="Monthly average wind velocity (m/s) and directional sector temperature averages"
@@ -916,7 +917,7 @@ export const SubTab5Wind: React.FC<{
       </div>
 
       {/* 24h x 365d Wind Speed & Wind Direction Heatmaps */}
-      <div className="grid grid-cols-1 xl:grid-cols-2 gap-5">
+      <div className={`grid grid-cols-1 ${stage1WideMode ? 'xl:grid-cols-2 gap-5' : 'gap-6'}`}>
         <ClimaChartCard
           title="24h × 365d Wind Speed Timetable Heatmap (m/s)"
           subtitle="Hourly wind velocity carpet plot revealing diurnal sea/mountain breeze cycles"
@@ -991,6 +992,7 @@ export const SubTab6Psychrometric: React.FC<{
   toggleStrategy: (id: string) => void;
   setActiveStrategiesList: (ids: string[]) => void;
   strategyMods: { heatingMult: number; coolingMult: number; tauBonusHours: number };
+  stage1WideMode?: boolean;
 }> = ({
   climate,
   comfortLower,
@@ -998,7 +1000,8 @@ export const SubTab6Psychrometric: React.FC<{
   activeStrategies,
   toggleStrategy,
   setActiveStrategiesList,
-  strategyMods
+  strategyMods,
+  stage1WideMode = true
 }) => {
   const [colorBy, setColorBy] = useState<'frequency' | 'ghi' | 'utci'>('frequency');
   const [enabledPolygons, setEnabledPolygons] = useState<Record<BioclimaticPolygonId, boolean>>({
@@ -1070,9 +1073,9 @@ export const SubTab6Psychrometric: React.FC<{
         </button>
       </div>
 
-      <div className="grid grid-cols-1 xl:grid-cols-12 gap-5">
-        {/* Interactive Psychrometric Chart (7 cols) */}
-        <div className="xl:col-span-7">
+      <div className={`grid grid-cols-1 ${stage1WideMode ? 'xl:grid-cols-12 gap-5' : 'gap-6'}`}>
+        {/* Interactive Psychrometric Chart */}
+        <div className={stage1WideMode ? 'xl:col-span-7' : 'w-full'}>
           <ClimaChartCard
             title="Interactive Psychrometric Chart (Dry-Bulb °C vs. Humidity Ratio g_w/kg_da)"
             subtitle="8,760h 2D frequency binning (ΔT = 1°C × ΔW = 0.5 g/kg), curved constant-RH lines & saturation-clipped polygons"
@@ -1336,8 +1339,8 @@ export const SubTab6Psychrometric: React.FC<{
           </ClimaChartCard>
         </div>
 
-        {/* 6 Bioclimatic Polygons Checkboxes (5 cols) */}
-        <div className="xl:col-span-5 bg-white rounded-2xl border border-slate-200 shadow-sm p-4 space-y-2.5">
+        {/* 6 Bioclimatic Polygons Checkboxes */}
+        <div className={`${stage1WideMode ? 'xl:col-span-5' : 'w-full'} bg-white rounded-2xl border border-slate-200 shadow-sm p-4 space-y-2.5`}>
           <h3 className="text-sm font-bold text-slate-800 flex items-center gap-1.5">
             <Sliders className="w-4 h-4 text-teal-600" />
             Climate Consultant 6.0 Strategy Polygons
@@ -1443,7 +1446,8 @@ export const SubTab6Psychrometric: React.FC<{
 // ============================================================================
 export const SubTab7NatVent: React.FC<{
   climate: ClimateDataset;
-}> = ({ climate }) => {
+  stage1WideMode?: boolean;
+}> = ({ climate, stage1WideMode = true }) => {
   const [minTempC, setMinTempC] = useState(12);
   const [maxTempC, setMaxTempC] = useState(26);
   const [maxDewPointC, setMaxDewPointC] = useState(17);
@@ -1457,7 +1461,7 @@ export const SubTab7NatVent: React.FC<{
   return (
     <div className="space-y-5">
       {/* Filter Controls Banner */}
-      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-4 grid grid-cols-1 md:grid-cols-5 gap-4 items-center">
+      <div className={`bg-white rounded-2xl border border-slate-200 shadow-sm p-4 grid grid-cols-1 ${stage1WideMode ? 'md:grid-cols-5' : 'sm:grid-cols-2 md:grid-cols-3'} gap-4 items-center`}>
         <div>
           <span className="text-[10px] font-bold uppercase text-teal-700 block">Annual NatVent Potential</span>
           <span className="text-2xl font-extrabold text-slate-900">{nvStats.annualSuitablePct}%</span>
@@ -1531,9 +1535,9 @@ export const SubTab7NatVent: React.FC<{
         </label>
       </div>
 
-      <div className="grid grid-cols-1 xl:grid-cols-12 gap-5">
-        {/* Monthly NatVent Stacked Bar Chart (5 cols) */}
-        <div className="xl:col-span-5">
+      <div className={`grid grid-cols-1 ${stage1WideMode ? 'xl:grid-cols-12 gap-5' : 'gap-6'}`}>
+        {/* Monthly NatVent Stacked Bar Chart */}
+        <div className={stage1WideMode ? 'xl:col-span-5' : 'w-full'}>
           <ClimaChartCard
             title="Monthly Natural Ventilation Suitability (%)"
             subtitle="Share of monthly hours suitable for window / night-flush cooling vs. too cold, too humid, or too hot"
@@ -1626,8 +1630,8 @@ export const SubTab7NatVent: React.FC<{
           </ClimaChartCard>
         </div>
 
-        {/* 24h x 365d Natural Ventilation Carpet Heatmap (7 cols) */}
-        <div className="xl:col-span-7">
+        {/* 24h x 365d Natural Ventilation Carpet Heatmap */}
+        <div className={stage1WideMode ? 'xl:col-span-7' : 'w-full'}>
           <ClimaChartCard
             title="24h × 365d Natural Ventilation Regime Carpet Heatmap"
             subtitle={`Green = Suitable (${minTempC}–${maxTempC}°C, T_dp ≤ ${maxDewPointC}°C) • Blue = Too Cold • Purple = Muggy/Dew-Point > ${maxDewPointC}°C • Red = Too Hot`}
@@ -1691,7 +1695,8 @@ export const SubTab7NatVent: React.FC<{
 // ============================================================================
 export const SubTab8Utci: React.FC<{
   climate: ClimateDataset;
-}> = ({ climate }) => {
+  stage1WideMode?: boolean;
+}> = ({ climate, stage1WideMode = true }) => {
   const [scenario, setScenario] = useState<UtciScenarioId>('sun_wind');
   const [tableMode, setTableMode] = useState<'pct' | 'hours'>('pct');
   const [barNormalize, setBarNormalize] = useState<boolean>(true);
@@ -1881,7 +1886,7 @@ export const SubTab8Utci: React.FC<{
       </div>
 
       {/* 2. Microclimate Sheltering Scenario Selector Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+      <div className={`grid grid-cols-1 sm:grid-cols-2 ${stage1WideMode ? 'lg:grid-cols-4' : ''} gap-3`}>
         {UTCI_SCENARIOS.map((sc) => {
           const res = allScenariosSummary.results[sc.id];
           const isSelected = scenario === sc.id;
@@ -1930,7 +1935,7 @@ export const SubTab8Utci: React.FC<{
       </div>
 
       {/* 3. Row 1: Continuous Heatmap + Discrete 10-Band Stress Heatmap */}
-      <div className="grid grid-cols-1 xl:grid-cols-2 gap-5">
+      <div className={`grid grid-cols-1 ${stage1WideMode ? 'xl:grid-cols-2 gap-5' : 'gap-6'}`}>
         <ClimaChartCard
           title="UTCI Heatmap Chart (°C)"
           subtitle={`Scenario: ${scenario.toUpperCase()} (${utciData.meta.tag}) • Range: [${continuousRangeMin.toFixed(1)}°C, ${continuousRangeMax.toFixed(1)}°C] • Comfort Neutrality (+9°C to +26°C): ${utciData.annualComfortPct}% (${utciData.annualComfortHours.toLocaleString()} h)`}
@@ -2390,7 +2395,7 @@ export const SubTab8Utci: React.FC<{
           </p>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
+        <div className={`grid grid-cols-1 md:grid-cols-2 ${stage1WideMode ? 'xl:grid-cols-4' : ''} gap-4`}>
           {UTCI_SCENARIOS.map((sc) => {
             const res = allScenariosSummary.results[sc.id];
             const isBest = sc.id === allScenariosSummary.bestScenario;
@@ -2511,7 +2516,8 @@ function extractVar(h: HourlyWeatherRecord, id: ExplorerVarId): number {
 
 export const SubTab9DataExplorer: React.FC<{
   climate: ClimateDataset;
-}> = ({ climate }) => {
+  stage1WideMode?: boolean;
+}> = ({ climate, stage1WideMode = true }) => {
   const [xVar, setXVar] = useState<ExplorerVarId>('dryBulb');
   const [yVar, setYVar] = useState<ExplorerVarId>('relHum');
   const [zVar, setZVar] = useState<ExplorerVarId>('ghi');
@@ -2590,7 +2596,7 @@ export const SubTab9DataExplorer: React.FC<{
           </span>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-6 gap-3 text-xs">
+        <div className={`grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 ${stage1WideMode ? 'xl:grid-cols-6' : ''} gap-3 text-xs`}>
           <label>
             <span className="text-[11px] font-bold text-slate-600 block">X-Axis Variable</span>
             <select
@@ -2697,7 +2703,7 @@ export const SubTab9DataExplorer: React.FC<{
       </div>
 
       {/* Marginal Histogram Scatter Plot + 2D Simultaneous Frequency Heatmap */}
-      <div className="grid grid-cols-1 xl:grid-cols-2 gap-5">
+      <div className={`grid grid-cols-1 ${stage1WideMode ? 'xl:grid-cols-2 gap-5' : 'gap-6'}`}>
         <ClimaChartCard
           title={`Marginal Histogram Scatter Plot: ${xMeta.label} vs. ${yMeta.label}`}
           subtitle={`Colored by ${zMeta.label} (${zMeta.unit}) with Top X-Distribution & Right Y-Distribution`}
