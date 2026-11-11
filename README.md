@@ -2,7 +2,7 @@
 
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](LICENSE)
 ![Institution](https://img.shields.io/badge/Institution-Politecnico%20di%20Milano%20(DABC)-teal.svg)
-![Author](https://img.shields.io/badge/Author-Angelo%20Golloberda-indigo.svg)
+![Author](https://img.shields.io/badge/Author-Anxhelo%20Golloberda-indigo.svg)
 ![Supervisors](https://img.shields.io/badge/Supervisors-Prof.%20S.%20Viscuso%20%7C%20Prof.%20M.%20Manfren-blue.svg)
 
 > **Integrated Building Energy Modeling (BEM), Climate Studio, Whole-Life Carbon LCA & Multi-Objective Architectural Optimization Platform**  
@@ -230,10 +230,10 @@ Under the GNU General Public License v3.0:
 ### 👨‍💻 Authorship & Academic Research Team
 
 - **Author & Lead Developer**:
-  **Angelo Golloberda**  
+  **Anxhelo Golloberda**  
   *Architectural Engineering & Building Technology Research*  
   Politecnico di Milano — Department of Architecture, Built Environment and Construction Engineering (DABC)  
-  Contact: `angelo.golloberda@mail.polimi.it`
+  Contact: `anxhelo.golloberda@mail.polimi.it`
 
 - **Academic Supervisors & Scientific Advisors**:
   - **Prof. Salvatore Viscuso**  
@@ -253,19 +253,19 @@ Under the GNU General Public License v3.0:
 If you use this platform, its simulation engines (EPW parser, UTCI comfort calculator, 8,760h hourly energy balance, ISO 52000-1 solver), or the Eurocode structural pre-dimensioning studio in academic publications, journal papers, master/PhD theses, or architectural design projects, **please cite this work as follows**:
 
 #### APA 7th Edition
-> Golloberda, A., Viscuso, S., & Manfren, M. (2026). *PoliMI Early-Stage BEM & Sustainability Studio: Integrated Building Energy Modeling, Climate Studio, Whole-Life Carbon LCA & Multi-Objective Architectural Optimization Platform* (Version 1.0.0) [Computer software]. Politecnico di Milano, Department of Architecture, Built Environment and Construction Engineering (DABC). https://github.com/AngeloGolloberda/polimi-energy-app
+> Golloberda, A., Viscuso, S., & Manfren, M. (2026). *PoliMI Early-Stage BEM & Sustainability Studio: Integrated Building Energy Modeling, Climate Studio, Whole-Life Carbon LCA & Multi-Objective Architectural Optimization Platform* (Version 1.0.0) [Computer software]. Politecnico di Milano, Department of Architecture, Built Environment and Construction Engineering (DABC). https://github.com/AnxheloGolloberda/polimi-energy-app
 
 #### BibTeX Entry
 ```bibtex
 @software{golloberda2026polimi,
-  author       = {Golloberda, Angelo and Viscuso, Salvatore and Manfren, Massimiliano},
+  author       = {Golloberda, Anxhelo and Viscuso, Salvatore and Manfren, Massimiliano},
   title        = {{PoliMI Early-Stage BEM & Sustainability Studio: Integrated Building Energy Modeling, Climate Studio, Whole-Life Carbon LCA & Multi-Objective Architectural Optimization Platform}},
   month        = nov,
   year         = 2026,
   publisher    = {Politecnico di Milano},
   institution  = {Department of Architecture, Built Environment and Construction Engineering (DABC)},
   version      = {1.0.0},
-  url          = {https://github.com/AngeloGolloberda/polimi-energy-app},
+  url          = {https://github.com/AnxheloGolloberda/polimi-energy-app},
   license      = {GPL-3.0-or-later}
 }
 ```

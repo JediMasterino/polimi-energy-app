@@ -2,9 +2,9 @@ cff-version: 1.2.0
 message: "If you use this software or its computational simulation modules in academic research, papers, or architectural design projects, please cite it as below."
 authors:
   - family-names: "Golloberda"
-    given-names: "Angelo"
+    given-names: "Anxhelo"
     affiliation: "Politecnico di Milano, Department of Architecture, Built Environment and Construction Engineering (DABC)"
-    email: "angelo.golloberda@mail.polimi.it"
+    email: "anxhelo.golloberda@mail.polimi.it"
   - family-names: "Viscuso"
     given-names: "Salvatore"
     name-particle: "Prof."
