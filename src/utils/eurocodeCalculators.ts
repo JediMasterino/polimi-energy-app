@@ -524,12 +524,17 @@ export function calcRcWall(inputs: RcWallInputs, basis: SharedDesignBasis): RcWa
 
   const MEd = Math.max(M0_Ed + (NEd * ei) / 1000, (NEd * e0) / 1000) + (NEd * e2) / 1000;
 
+  // Pure axial squash capacity (EN 1992-1-1 §6.1)
+  const NRd_0 = (Ac * fcd + As * fyd) / 1000;
+  const eta_N = NEd / NRd_0;
+
   // 28-iteration bisection equilibrium solver
   const { x, MRd, residual, iterations } = solveRcSectionEquilibrium(
     b, h, a, d, As_face, fcd, fyd, basis.Es_rebar, NEd
   );
 
-  const eta_M = MRd > 0 ? MEd / MRd : 999;
+  const solverFailed = Math.abs(residual) >= 0.01 || x >= h * 0.9999 || MRd <= 0;
+  const eta_M = solverFailed ? Math.max(eta_N, 1.20) : MRd > 0 ? MEd / MRd : 999;
   const As_min = 0.002 * Ac;
   const eta_Asmin = As_min / As;
   const eta_Asmax = As / (0.04 * Ac);
@@ -537,10 +542,10 @@ export function calcRcWall(inputs: RcWallInputs, basis: SharedDesignBasis): RcWa
   const eta_Ash = Math.max(0.25 * As_face, 0.001 * Ac) / As_h;
   const eta_s = Math.max(s / Math.min(3 * h, 400), s_h / 400);
 
-  const eta_max = Math.max(eta_M, eta_Asmin, eta_Asmax, eta_Ash, eta_s);
+  const eta_max = Math.max(eta_N, eta_M, eta_Asmin, eta_Asmax, eta_Ash, eta_s);
 
   let status: EurocodeStatus = 'SCREEN ONLY';
-  if (n > 0.5 || lambda > 100 || Math.abs(residual) >= 0.01 || MRd <= 0 || x >= h * 0.9999) {
+  if (n > 0.5 || lambda > 100 || solverFailed) {
     status = 'OUT OF SCOPE';
   } else if (eta_max > 1.0) {
     status = 'EXCEEDS SCREEN';
@@ -630,19 +635,24 @@ export function calcRcColumn(inputs: RcColumnInputs, basis: SharedDesignBasis): 
 
   const MEd = Math.max(M0_Ed + (NEd * ei) / 1000, (NEd * e0) / 1000) + (NEd * e2) / 1000;
 
+  // Pure axial squash capacity (EN 1992-1-1 §6.1)
+  const NRd_0 = (Ac * fcd + As * fyd) / 1000;
+  const eta_N = NEd / NRd_0;
+
   const { x, MRd, residual, iterations } = solveRcSectionEquilibrium(
     b, h, a, d, As_face, fcd, fyd, basis.Es_rebar, NEd
   );
 
-  const eta_M = MRd > 0 ? MEd / MRd : 999;
+  const solverFailed = Math.abs(residual) >= 0.01 || x >= h * 0.9999 || MRd <= 0;
+  const eta_M = solverFailed ? Math.max(eta_N, 1.20) : MRd > 0 ? MEd / MRd : 999;
   const As_min = Math.max((0.1 * NEd * 1000) / fyd, 0.002 * Ac);
   const eta_Asmin = As_min / As;
   const eta_Asmax = As / (0.04 * Ac);
 
-  const eta_max = Math.max(eta_M, eta_Asmin, eta_Asmax);
+  const eta_max = Math.max(eta_N, eta_M, eta_Asmin, eta_Asmax);
 
   let status: EurocodeStatus = 'SCREEN ONLY';
-  if (n > 0.5 || lambda > 100 || Math.abs(residual) >= 0.01 || MRd <= 0 || x >= h * 0.9999) {
+  if (n > 0.5 || lambda > 100 || solverFailed) {
     status = 'OUT OF SCOPE';
   } else if (eta_max > 1.0) {
     status = 'EXCEEDS SCREEN';
@@ -650,12 +660,14 @@ export function calcRcColumn(inputs: RcColumnInputs, basis: SharedDesignBasis): 
 
   rows.push(
     { parameter: 'Design axial force', symbol: 'NEd', units: 'kN', value: NEd.toFixed(2), formulaText: 'γG × (NG,k + Gk,self) + γQ × NQ,k' },
+    { parameter: 'Pure axial squash resistance', symbol: 'NRd,0', units: 'kN', value: NRd_0.toFixed(1), formulaText: '(Ac × fcd + As × fyd) / 1000' },
+    { parameter: 'Axial force utilisation', symbol: 'NEd / NRd,0', units: '-', value: eta_N.toFixed(3), formulaText: 'NEd / NRd,0', isRatio: true, isExceeded: eta_N > 1 },
     { parameter: 'Geometric slenderness', symbol: 'λ', units: '-', value: lambda.toFixed(2), formulaText: 'l0 / (h / √12)' },
     { parameter: 'Total design moment', symbol: 'MEd', units: 'kNm', value: MEd.toFixed(2), formulaText: 'max(M0 + N ei; N e0) + N e2' },
     { parameter: 'Neutral axis depth (28 iters)', symbol: 'x', units: 'mm', value: x.toFixed(2), formulaText: '28-step bisection equilibrium' },
     { parameter: 'Moment resistance at NEd', symbol: 'MRd(NEd)', units: 'kNm', value: MRd.toFixed(2), formulaText: 'Equilibrium MR at design NEd' },
     { parameter: 'Axial-bending utilisation', symbol: 'MEd / MRd', units: '-', value: eta_M.toFixed(3), formulaText: 'MEd / MRd(NEd)', isRatio: true, isExceeded: eta_M > 1 },
-    { parameter: 'Governing utilisation', symbol: 'ηmax', units: '-', value: eta_max.toFixed(3), formulaText: 'max(MEd/MRd; As/0.04Ac)', isRatio: true, isExceeded: eta_max > 1 }
+    { parameter: 'Governing utilisation', symbol: 'ηmax', units: '-', value: eta_max.toFixed(3), formulaText: 'max(NEd/NRd,0; MEd/MRd; As limits)', isRatio: true, isExceeded: eta_max > 1 }
   );
 
   return {

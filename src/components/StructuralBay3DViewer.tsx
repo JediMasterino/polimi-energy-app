@@ -134,11 +134,11 @@ export const StructuralBay3DViewer: React.FC<StructuralBay3DViewerProps> = ({
 
   const availableMembers = useMemo(() => getAvailableMembersForSystem(config.materialSystem), [config.materialSystem]);
 
-  // Helper function to pick color based on utilisation eta_max
-  const getEtaColorHex = (eta: number): number => {
-    if (eta <= 0.80) return 0x10b981; // emerald-500
-    if (eta <= 1.00) return 0xf59e0b; // amber-500
-    return 0xef4444; // rose-500
+  // Helper function to pick color based on utilisation eta_max and Eurocode status
+  const getEtaColorHex = (eta: number, status?: string): number => {
+    if (status === 'EXCEEDS SCREEN' || status === 'OUT OF SCOPE' || eta > 1.0) return 0xef4444; // rose-500
+    if (eta > 0.80) return 0xf59e0b; // amber-500
+    return 0x10b981; // emerald-500
   };
 
   useEffect(() => {
@@ -229,9 +229,10 @@ export const StructuralBay3DViewer: React.FC<StructuralBay3DViewerProps> = ({
       if (config.materialSystem === 'Masonry') {
         // Load-bearing wall strips along Z=0 and Z=B
         const wallGeo = new THREE.BoxGeometry(L, H, 0.25);
-        const wallEta = memberUtilisations['masonry_wall']?.eta_max || 0.85;
+        const wallRes = memberUtilisations['masonry_wall'];
+        const wallEta = wallRes?.eta_max || 0.85;
         const wallMat = new THREE.MeshStandardMaterial({
-          color: getEtaColorHex(wallEta),
+          color: getEtaColorHex(wallEta, wallRes?.status),
           wireframe,
           roughness: 0.85,
           metalness: 0.1
@@ -264,8 +265,9 @@ export const StructuralBay3DViewer: React.FC<StructuralBay3DViewerProps> = ({
         ];
         const colSize = config.materialSystem === 'RC' ? 0.4 : config.materialSystem === 'Steel' ? 0.24 : 0.22;
         const colId = config.materialSystem === 'RC' ? 'rc_column' : config.materialSystem === 'Steel' ? 'steel_column' : 'wood_column';
-        const colEta = memberUtilisations[colId]?.eta_max || 0.35;
-        const colColor = getEtaColorHex(colEta);
+        const colRes = memberUtilisations[colId];
+        const colEta = colRes?.eta_max || 0.35;
+        const colColor = getEtaColorHex(colEta, colRes?.status);
 
         const colGeo = new THREE.BoxGeometry(colSize, H, colSize);
         const colMat = new THREE.MeshStandardMaterial({
@@ -288,8 +290,9 @@ export const StructuralBay3DViewer: React.FC<StructuralBay3DViewerProps> = ({
 
       // PRIMARY & SECONDARY BEAMS (at floor level topY)
       const beamId = config.materialSystem === 'RC' ? 'rc_beam' : config.materialSystem === 'Steel' ? 'steel_beam' : 'wood_beam';
-      const beamEta = memberUtilisations[beamId]?.eta_max || 0.55;
-      const beamColor = getEtaColorHex(beamEta);
+      const beamRes = memberUtilisations[beamId];
+      const beamEta = beamRes?.eta_max || 0.55;
+      const beamColor = getEtaColorHex(beamEta, beamRes?.status);
 
       const bWidth = config.materialSystem === 'RC' ? 0.3 : 0.15;
       const bHeight = config.materialSystem === 'RC' ? 0.55 : 0.35;
@@ -336,8 +339,9 @@ export const StructuralBay3DViewer: React.FC<StructuralBay3DViewerProps> = ({
 
       // SLAB (One-Way Spanning Floor)
       const slabId = config.materialSystem === 'RC' ? 'rc_slab' : config.materialSystem === 'Timber' ? 'clt_slab' : 'rc_slab';
-      const slabEta = memberUtilisations[slabId]?.eta_max || 0.60;
-      const slabColor = getEtaColorHex(slabEta);
+      const slabRes = memberUtilisations[slabId];
+      const slabEta = slabRes?.eta_max || 0.60;
+      const slabColor = getEtaColorHex(slabEta, slabRes?.status);
       const slabThickness = config.materialSystem === 'RC' ? 0.22 : 0.16;
 
       const slabGeo = new THREE.BoxGeometry(L, slabThickness, B);
@@ -516,7 +520,10 @@ export const StructuralBay3DViewer: React.FC<StructuralBay3DViewerProps> = ({
           </button>
           {availableMembers.map((m) => {
             const isSel = m.id === activeMember;
-            const eta = memberUtilisations[m.id]?.eta_max || 0.5;
+            const res = memberUtilisations[m.id];
+            const eta = res?.eta_max || 0.5;
+            const isFailed = res?.status === 'EXCEEDS SCREEN' || res?.status === 'OUT OF SCOPE' || eta > 1.0;
+            const dotColor = isFailed ? '#ef4444' : eta > 0.8 ? '#f59e0b' : '#10b981';
             return (
               <button
                 key={m.id}
@@ -532,7 +539,7 @@ export const StructuralBay3DViewer: React.FC<StructuralBay3DViewerProps> = ({
                 <span
                   className="w-1.5 h-1.5 rounded-full"
                   style={{
-                    backgroundColor: eta <= 0.8 ? '#10b981' : eta <= 1.0 ? '#f59e0b' : '#ef4444'
+                    backgroundColor: dotColor
                   }}
                 />
                 {m.label}
