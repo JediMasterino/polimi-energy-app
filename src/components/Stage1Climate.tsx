@@ -2235,8 +2235,10 @@ export const Stage1Climate: React.FC<Stage1ClimateProps> = ({
                                 key={i}
                                 cx={xForAz(h.solarAz)}
                                 cy={yForAlt(h.solarAlt)}
-                                r={2.5}
-                                fillOpacity={0.85}
+                                r={3.2}
+                                fillOpacity={0.9}
+                                stroke="#ffffff"
+                                strokeWidth={0.8}
                                 fill={
                                   sunColorMode === 'temp'
                                     ? colorForTempC(h.dryBulb, globalValueRanges)
@@ -2246,7 +2248,7 @@ export const Stage1Climate: React.FC<Stage1ClimateProps> = ({
                                     ? '#f59e0b'
                                     : '#0ea5e9'
                                 }
-                                className="cursor-pointer hover:scale-150 transition-all"
+                                className="cursor-pointer transition-colors hover:stroke-amber-300 hover:stroke-[2px]"
                                 onMouseEnter={(e) => {
                                   tooltipCtx.show(e, `${MONTHS[h.month]} ${h.dayOfMonth} • ${h.hour}:00`, [
                                     { label: 'Solar Altitude', value: `${h.solarAlt.toFixed(1)}°`, color: '#f59e0b' },
@@ -2342,8 +2344,10 @@ export const Stage1Climate: React.FC<Stage1ClimateProps> = ({
                               key={i}
                               cx={p.x}
                               cy={p.y}
-                              r={2.4}
-                              fillOpacity={0.85}
+                              r={3.2}
+                              fillOpacity={0.9}
+                              stroke="#ffffff"
+                              strokeWidth={0.8}
                               fill={
                                 sunColorMode === 'temp'
                                   ? colorForTempC(h.dryBulb, globalValueRanges)
@@ -2353,7 +2357,7 @@ export const Stage1Climate: React.FC<Stage1ClimateProps> = ({
                                   ? '#f59e0b'
                                   : '#0ea5e9'
                               }
-                              className="cursor-pointer hover:scale-150 transition-all"
+                              className="cursor-pointer transition-colors hover:stroke-amber-300 hover:stroke-[2px]"
                               onMouseEnter={(e) => {
                                 tooltipCtx.show(e, `${MONTHS[h.month]} ${h.dayOfMonth} • ${h.hour}:00`, [
                                   { label: 'Solar Altitude', value: `${h.solarAlt.toFixed(1)}°`, color: '#f59e0b' },
@@ -2464,7 +2468,7 @@ export const Stage1Climate: React.FC<Stage1ClimateProps> = ({
                           return (
                             <g
                               key={r.dir}
-                              className="cursor-pointer"
+                              className="cursor-pointer group"
                               onMouseEnter={(e) => {
                                 tooltipCtx.show(e, `${r.dir} Facade (${r.azDeg}°)`, [
                                   { label: 'Annual Solar Radiation', value: `${r.annualKwhM2} kWh/m²yr`, color: '#f59e0b' },
@@ -2476,8 +2480,26 @@ export const Stage1Climate: React.FC<Stage1ClimateProps> = ({
                               onMouseMove={(e) => tooltipCtx.move(e)}
                               onMouseLeave={() => tooltipCtx.hide()}
                             >
-                              <circle cx={px} cy={py} r={5} fill="#f59e0b" stroke="#ffffff" strokeWidth={1.8} className="hover:scale-125 transition" />
-                              <text x={lx} y={ly + 3.5} textAnchor="middle" fontSize="10.5" fontWeight="700" fill="#1e293b">
+                              {/* Stable invisible hit target to prevent mouseleave thrashing */}
+                              <circle cx={px} cy={py} r={16} fill="transparent" />
+                              {/* Stable visible point that highlights smoothly without moving */}
+                              <circle
+                                cx={px}
+                                cy={py}
+                                r={6}
+                                fill="#f59e0b"
+                                stroke="#ffffff"
+                                strokeWidth={2}
+                                className="transition-colors group-hover:fill-amber-400 group-hover:stroke-amber-200"
+                              />
+                              <text
+                                x={lx}
+                                y={ly + 3.5}
+                                textAnchor="middle"
+                                fontSize="10.5"
+                                fontWeight="700"
+                                className="fill-slate-800 transition-colors group-hover:fill-amber-600"
+                              >
                                 {r.dir} ({r.annualKwhM2})
                               </text>
                             </g>

@@ -2701,10 +2701,12 @@ export const SubTab9DataExplorer: React.FC<{
                       key={i}
                       cx={xFor(xv)}
                       cy={yFor(yv)}
-                      r={2.4}
+                      r={2.8}
                       fill={color}
-                      fillOpacity={0.65}
-                      className="cursor-pointer hover:r-[5] transition-all"
+                      fillOpacity={0.7}
+                      stroke="#ffffff"
+                      strokeWidth={0.6}
+                      className="cursor-pointer transition-colors hover:stroke-slate-900 hover:stroke-[1.5px] hover:fill-opacity-100"
                       onMouseEnter={(e) => {
                         tooltipCtx.show(e, `${MONTHS[h.month]} ${h.dayOfMonth} • ${h.hour}:00`, [
                           { label: xMeta.label, value: `${xv} ${xMeta.unit}`, color: '#0d9488' },

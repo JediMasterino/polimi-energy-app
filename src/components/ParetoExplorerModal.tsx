@@ -475,7 +475,7 @@ export const ParetoExplorerModal: React.FC<ParetoExplorerModalProps> = ({
                         stroke={isSelected ? '#0f766e' : c.isParetoOptimal ? '#065f46' : '#64748b'}
                         strokeWidth={isSelected ? 3 : 1}
                         opacity={isSelected ? 1 : 0.8}
-                        className="cursor-pointer transition hover:opacity-100 hover:scale-125"
+                        className="cursor-pointer transition-all hover:opacity-100 hover:stroke-teal-400 hover:stroke-[2.5px]"
                         onClick={() => setSelectedCandidate(c)}
                       >
                         <title>
