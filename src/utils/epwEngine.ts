@@ -751,8 +751,9 @@ export function parseEpwText(
     const rawSky = parseFloat(cols[22]);
     const skyCover = !isNaN(rawSky) && rawSky >= 0 && rawSky <= 10 ? Math.round(rawSky) : 5;
 
-    // EnergyPlus hour 1..24 represents interval [hour-1, hour], so solar position is evaluated at midpoint (hour + 0.5)
-    const { alt, az } = calcSolarPosition(lat, dayOfYear, hour + 0.5, lon, tz);
+    // EPW specifies hour integers 1..24; evaluate solar position at the hour timestamp to match pvlib / CBE Clima
+    const epwHour = parseInt(cols[3], 10) || (hour + 1);
+    const { alt, az } = calcSolarPosition(lat, dayOfYear, epwHour, lon, tz);
     const humRatio = +calcHumidityRatio(dryBulb, relHum, pressurePa).toFixed(2);
     const utci = calcUtciForScenario(dryBulb, relHum, windSpeed, dni, alt, 'sun_wind');
 

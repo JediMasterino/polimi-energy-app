@@ -71,98 +71,141 @@ export interface UtciCategoryDef {
 // 10 Official UTCI Thermal Stress Categories matching CBE Clima exactly
 // Edges: [-Infinity, -40, -27, -13, 0, 9, 26, 32, 38, 46, Infinity]
 // Right-closed intervals: e.g. (9, 26] = no thermal stress
+// Exact colors from CBE Clima ColorPalettes.UTCI_CATEGORIES_SCALE:
 export const UTCI_STRESS_CATEGORIES: UtciCategoryDef[] = [
   {
     id: 'extreme_cold_stress',
     code: -5,
-    label: 'Extreme cold stress',
-    shortLabel: 'Ext. Cold (≤-40°C)',
+    label: 'extreme cold stress',
+    shortLabel: 'Extreme cold (≤-40°C)',
     minC: -Infinity,
     maxC: -40,
-    color: '#2A2B72'
+    color: '#2B2977'
   },
   {
     id: 'very_strong_cold_stress',
     code: -4,
-    label: 'Very strong cold stress',
-    shortLabel: 'V.Strong Cold (-40 to -27°C)',
+    label: 'very strong cold stress',
+    shortLabel: 'Very strong cold (-40 to -27°C)',
     minC: -40,
     maxC: -27,
-    color: '#394396'
+    color: '#38429B'
   },
   {
     id: 'strong_cold_stress',
     code: -3,
-    label: 'Strong cold stress',
-    shortLabel: 'Strong Cold (-27 to -13°C)',
+    label: 'strong cold stress',
+    shortLabel: 'Strong cold (-27 to -13°C)',
     minC: -27,
     maxC: -13,
-    color: '#44549F'
+    color: '#4253A4'
   },
   {
     id: 'moderate_cold_stress',
     code: -2,
-    label: 'Moderate cold stress',
-    shortLabel: 'Mod. Cold (-13 to 0°C)',
+    label: 'moderate cold stress',
+    shortLabel: 'Moderate cold (-13 to 0°C)',
     minC: -13,
     maxC: 0,
-    color: '#4F63A8'
+    color: '#4B62AD'
   },
   {
     id: 'slight_cold_stress',
     code: -1,
-    label: 'Slight cold stress',
-    shortLabel: 'Slight Cold (0 to +9°C)',
+    label: 'slight cold stress',
+    shortLabel: 'Slight cold (0 to +9°C)',
     minC: 0,
     maxC: 9,
-    color: '#7AB7E2'
+    color: '#68B8E7'
   },
   {
     id: 'no_thermal_stress',
     code: 0,
-    label: 'No thermal stress',
-    shortLabel: 'Comfort (+9 to +26°C)',
+    label: 'no thermal stress',
+    shortLabel: 'No thermal stress (+9 to +26°C)',
     minC: 9,
     maxC: 26,
-    color: '#6EB557'
+    color: '#53B848'
   },
   {
     id: 'moderate_heat_stress',
     code: 1,
-    label: 'Moderate heat stress',
-    shortLabel: 'Mod. Heat (+26 to +32°C)',
+    label: 'moderate heat stress',
+    shortLabel: 'Moderate heat (+26 to +32°C)',
     minC: 26,
     maxC: 32,
-    color: '#E0893D'
+    color: '#EE8522'
   },
   {
     id: 'strong_heat_stress',
     code: 2,
-    label: 'Strong heat stress',
-    shortLabel: 'Strong Heat (+32 to +38°C)',
+    label: 'strong heat stress',
+    shortLabel: 'Strong heat (+32 to +38°C)',
     minC: 32,
     maxC: 38,
-    color: '#D84032'
+    color: '#EA2C24'
   },
   {
     id: 'very_strong_heat_stress',
     code: 3,
-    label: 'Very strong heat stress',
-    shortLabel: 'V.Strong Heat (+38 to +46°C)',
+    label: 'very strong heat stress',
+    shortLabel: 'Very strong heat (+38 to +46°C)',
     minC: 38,
     maxC: 46,
-    color: '#A3302B'
+    color: '#B12224'
   },
   {
     id: 'extreme_heat_stress',
     code: 4,
-    label: 'Extreme heat stress',
-    shortLabel: 'Ext. Heat (>+46°C)',
+    label: 'extreme heat stress',
+    shortLabel: 'Extreme heat (>+46°C)',
     minC: 46,
     maxC: Infinity,
-    color: '#6B1F18'
+    color: '#751613'
   }
 ];
+
+/**
+ * CBE Clima Continuous UTCI colormap matching ColorPalettes.BLUE_RED_YELLOW
+ * ["#00b3ff", "#000082", "#ff0000", "#ffff00"]
+ */
+export const CBE_UTCI_BLUE_RED_YELLOW_GRADIENT_CSS =
+  'linear-gradient(to right, #00b3ff 0%, #000082 33.333%, #ff0000 66.667%, #ffff00 100%)';
+
+export function colorForUtciContinuous(
+  val: number,
+  minVal = -10,
+  maxVal = 50
+): string {
+  if (isNaN(val)) return '#94a3b8';
+  const range = maxVal - minVal;
+  if (range <= 0) return '#00b3ff';
+  const t = Math.max(0, Math.min(1, (val - minVal) / range));
+
+  // 4 key stops at t=0, t=1/3, t=2/3, t=1
+  // Stop 0: #00b3ff -> RGB(0, 179, 255)
+  // Stop 1: #000082 -> RGB(0, 0, 130)
+  // Stop 2: #ff0000 -> RGB(255, 0, 0)
+  // Stop 3: #ffff00 -> RGB(255, 255, 0)
+  let r: number, g: number, b: number;
+  if (t <= 0.333333) {
+    const u = t / 0.333333;
+    r = Math.round(0 + u * (0 - 0));
+    g = Math.round(179 + u * (0 - 179));
+    b = Math.round(255 + u * (130 - 255));
+  } else if (t <= 0.666667) {
+    const u = (t - 0.333333) / 0.333334;
+    r = Math.round(0 + u * (255 - 0));
+    g = Math.round(0 + u * (0 - 0));
+    b = Math.round(130 + u * (0 - 130));
+  } else {
+    const u = (t - 0.666667) / 0.333333;
+    r = Math.round(255 + u * (255 - 255));
+    g = Math.round(0 + u * (255 - 0));
+    b = Math.round(0 + u * (0 - 0));
+  }
+  return `rgb(${r}, ${g}, ${b})`;
+}
 
 // Projected area factor table (standing posture) from ASHRAE 55 / pythermalcomfort
 const ALT_RANGE = [0.0, 15.0, 30.0, 45.0, 60.0, 75.0, 90.0];

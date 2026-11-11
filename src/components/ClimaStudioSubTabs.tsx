@@ -26,12 +26,15 @@ import {
   UTCI_STRESS_BANDS,
   UTCI_STRESS_CATEGORIES,
   UTCI_SCENARIOS,
+  getUtciStressCategory,
   calcUtciScenarioDataset,
   calcAllUtciScenariosSummary,
   calcDistributionHistogram,
   exportSvgNodeToFile,
   exportDataToCsvFile,
-  calcDewPointC
+  calcDewPointC,
+  colorForUtciContinuous,
+  CBE_UTCI_BLUE_RED_YELLOW_GRADIENT_CSS
 } from '../utils/epwParser';
 import { MONTHS, CLIMATE_SCOUT_STRATEGIES, scoreStrategyRelevance } from '../data/climateAndStrategies';
 
@@ -293,7 +296,15 @@ interface CarpetHeatmapProps {
   getValue: (h: HourlyWeatherRecord, idx: number) => number;
   getColor: (val: number) => string;
   unitLabel: string;
-  legendItems: Array<{ label: string; color: string }>;
+  legendItems?: Array<{ label: string; color: string }>;
+  continuousLegend?: {
+    min: number;
+    max: number;
+    unit: string;
+    gradientCss: string;
+    description?: string;
+  };
+  customTooltipRows?: (val: number, rec: HourlyWeatherRecord, idx: number) => Array<{ label: string; value: string; color?: string }>;
 }
 
 export const CarpetHeatmap24x365: React.FC<CarpetHeatmapProps> = ({
@@ -303,7 +314,9 @@ export const CarpetHeatmap24x365: React.FC<CarpetHeatmapProps> = ({
   getValue,
   getColor,
   unitLabel,
-  legendItems
+  legendItems,
+  continuousLegend,
+  customTooltipRows
 }) => {
   const W = 920;
   const H = 280;
@@ -340,13 +353,21 @@ export const CarpetHeatmap24x365: React.FC<CarpetHeatmapProps> = ({
     if (rec && tooltipCtx) {
       const val = getValue(rec, idx);
       const mName = MONTHS[rec.month];
-      tooltipCtx.show(e, `${mName} ${rec.dayOfMonth} • ${String(hour).padStart(2, '0')}:00 (DOY ${dayOfYear})`, [
-        { label: unitLabel, value: typeof val === 'number' ? val.toFixed(1) : String(val), color: getColor(val) },
-        { label: 'Dry-Bulb Temp', value: `${rec.dryBulb}°C` },
-        { label: 'Relative Humidity', value: `${rec.relHum}%` },
-        { label: 'Wind Speed', value: `${rec.windSpeed} m/s` },
-        { label: 'GHI Solar', value: `${rec.ghi} W/m²` }
-      ]);
+      if (customTooltipRows) {
+        tooltipCtx.show(
+          e,
+          `${mName} ${rec.dayOfMonth} • ${String(hour).padStart(2, '0')}:00 (DOY ${dayOfYear})`,
+          customTooltipRows(val, rec, idx)
+        );
+      } else {
+        tooltipCtx.show(e, `${mName} ${rec.dayOfMonth} • ${String(hour).padStart(2, '0')}:00 (DOY ${dayOfYear})`, [
+          { label: unitLabel, value: typeof val === 'number' ? val.toFixed(1) : String(val), color: getColor(val) },
+          { label: 'Dry-Bulb Temp', value: `${rec.dryBulb}°C` },
+          { label: 'Relative Humidity', value: `${rec.relHum}%` },
+          { label: 'Wind Speed', value: `${rec.windSpeed} m/s` },
+          { label: 'GHI Solar', value: `${rec.ghi} W/m²` }
+        ]);
+      }
     }
   };
 
@@ -446,14 +467,37 @@ export const CarpetHeatmap24x365: React.FC<CarpetHeatmapProps> = ({
         <span className="font-semibold text-slate-700">
           365 Days × 24 Hours (8,760h Annual Matrix • {unitLabel} • Crosshair active)
         </span>
-        <div className="flex flex-wrap items-center gap-3">
-          {legendItems.map((it, idx) => (
-            <span key={idx} className="flex items-center gap-1.5 font-bold text-slate-700">
-              <span className="w-3.5 h-3.5 rounded-sm inline-block shadow-sm border border-black/10" style={{ backgroundColor: it.color }} />
-              {it.label}
-            </span>
-          ))}
-        </div>
+        {continuousLegend ? (
+          <div className="flex flex-wrap items-center gap-3">
+            {continuousLegend.description && (
+              <span className="text-[10px] text-slate-500 font-medium">{continuousLegend.description}</span>
+            )}
+            <div className="flex items-center gap-2">
+              <span className="text-[11px] font-bold text-slate-800 font-mono">
+                {continuousLegend.min.toFixed(1)}{continuousLegend.unit}
+              </span>
+              <div
+                className="w-44 sm:w-60 h-3.5 rounded-md border border-slate-300 shadow-2xs"
+                style={{ background: continuousLegend.gradientCss }}
+              />
+              <span className="text-[11px] font-bold text-slate-800 font-mono">
+                {continuousLegend.max.toFixed(1)}{continuousLegend.unit}
+              </span>
+            </div>
+          </div>
+        ) : legendItems && legendItems.length > 0 ? (
+          <div className="flex flex-wrap items-center gap-2.5 sm:gap-3">
+            {legendItems.map((it, idx) => (
+              <span key={idx} className="flex items-center gap-1.5 font-bold text-slate-700">
+                <span
+                  className="w-3.5 h-3.5 rounded-sm inline-block shadow-sm border border-black/10 shrink-0"
+                  style={{ backgroundColor: it.color }}
+                />
+                <span>{it.label}</span>
+              </span>
+            ))}
+          </div>
+        ) : null}
       </div>
     </div>
   );
@@ -1651,11 +1695,29 @@ export const SubTab8Utci: React.FC<{
   const [scenario, setScenario] = useState<UtciScenarioId>('sun_wind');
   const [tableMode, setTableMode] = useState<'pct' | 'hours'>('pct');
   const [barNormalize, setBarNormalize] = useState<boolean>(true);
+  const [utciRangeMode, setUtciRangeMode] = useState<'local' | 'global'>('local');
 
   const utciData = useMemo(
     () => calcUtciScenarioDataset(climate.hourly, scenario),
     [climate.hourly, scenario]
   );
+
+  const { minUtci, maxUtci } = useMemo(() => {
+    let min = Infinity;
+    let max = -Infinity;
+    for (let i = 0; i < utciData.hourlyUtci.length; i++) {
+      const v = utciData.hourlyUtci[i];
+      if (v < min) min = v;
+      if (v > max) max = v;
+    }
+    return {
+      minUtci: min === Infinity ? -10 : min,
+      maxUtci: max === -Infinity ? 50 : max
+    };
+  }, [utciData.hourlyUtci]);
+
+  const continuousRangeMin = utciRangeMode === 'local' ? minUtci : -70;
+  const continuousRangeMax = utciRangeMode === 'local' ? maxUtci : 70;
 
   const allScenariosSummary = useMemo(
     () => calcAllUtciScenariosSummary(climate.hourly),
@@ -1870,11 +1932,33 @@ export const SubTab8Utci: React.FC<{
       {/* 3. Row 1: Continuous Heatmap + Discrete 10-Band Stress Heatmap */}
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-5">
         <ClimaChartCard
-          title="24h × 365d Continuous UTCI Equivalent Temperature Heatmap (°C)"
-          subtitle={`Scenario: ${scenario.toUpperCase()} — No Thermal Stress (+9°C to +26°C): ${utciData.annualComfortPct}% (${utciData.annualComfortHours.toLocaleString()} h)`}
+          title="UTCI Heatmap Chart (°C)"
+          subtitle={`Scenario: ${scenario.toUpperCase()} (${utciData.meta.tag}) • Range: [${continuousRangeMin.toFixed(1)}°C, ${continuousRangeMax.toFixed(1)}°C] • Comfort Neutrality (+9°C to +26°C): ${utciData.annualComfortPct}% (${utciData.annualComfortHours.toLocaleString()} h)`}
           icon={<Thermometer className="w-4 h-4 text-rose-500" />}
           svgFilename={`${climate.id}_utci_temp_${scenario}.svg`}
           csvFilename={`${climate.id}_utci_hourly_${scenario}.csv`}
+          controls={
+            <div className="flex items-center gap-1 bg-slate-100 p-0.5 rounded-lg text-[11px] font-medium">
+              <button
+                type="button"
+                onClick={() => setUtciRangeMode('local')}
+                className={`px-2.5 py-1 rounded-md transition ${
+                  utciRangeMode === 'local' ? 'bg-white text-slate-800 shadow-xs font-bold' : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                Local ({minUtci.toFixed(0)} to {maxUtci.toFixed(0)}°C)
+              </button>
+              <button
+                type="button"
+                onClick={() => setUtciRangeMode('global')}
+                className={`px-2.5 py-1 rounded-md transition ${
+                  utciRangeMode === 'global' ? 'bg-white text-slate-800 shadow-xs font-bold' : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                Global (-70 to +70°C)
+              </button>
+            </div>
+          }
           onBuildCsv={() => ({
             headers: ['HourOfYear', 'Month', 'Day', 'Hour', 'UTCI_C'],
             rows: climate.hourly.map((h, i) => [h.hourOfYear, h.month + 1, h.dayOfMonth, h.hour, utciData.hourlyUtci[i]])
@@ -1886,27 +1970,39 @@ export const SubTab8Utci: React.FC<{
               tooltipCtx={tooltipCtx}
               hourly={climate.hourly}
               getValue={(_, idx) => utciData.hourlyUtci[idx]}
-              getColor={(v) => colorForTempC(v, false)}
-              unitLabel="UTCI °C"
-              legendItems={[
-                { label: '<0°C Cold', color: '#1d4ed8' },
-                { label: '0–9°C Cool', color: '#0ea5e9' },
-                { label: '9–26°C Comfort', color: '#10b981' },
-                { label: '26–32°C Warm', color: '#f59e0b' },
-                { label: '>32°C Hot', color: '#e11d48' }
-              ]}
+              getColor={(v) => colorForUtciContinuous(v, continuousRangeMin, continuousRangeMax)}
+              unitLabel="UTCI Equivalent Temp"
+              continuousLegend={{
+                min: continuousRangeMin,
+                max: continuousRangeMax,
+                unit: '°C',
+                gradientCss: CBE_UTCI_BLUE_RED_YELLOW_GRADIENT_CSS,
+                description: `CBE Clima Continuous Gradient (${utciRangeMode === 'local' ? 'Local Range' : 'Global Range [-70, +70]°C'})`
+              }}
+              customTooltipRows={(val, rec) => {
+                const cat = getUtciStressCategory(val);
+                return [
+                  { label: 'UTCI Equivalent Temp', value: `${val.toFixed(1)}°C`, color: colorForUtciContinuous(val, continuousRangeMin, continuousRangeMax) },
+                  { label: 'Thermal Stress Band', value: cat.label, color: cat.color },
+                  { label: 'Dry-Bulb Air Temp', value: `${rec.dryBulb}°C` },
+                  { label: 'Relative Humidity', value: `${rec.relHum}%` },
+                  { label: 'Wind Speed', value: `${rec.windSpeed} m/s` },
+                  { label: 'Solar Altitude', value: `${rec.solarAlt}°` },
+                  { label: 'Microclimate Condition', value: utciData.meta.label }
+                ];
+              }}
             />
           )}
         </ClimaChartCard>
 
         <ClimaChartCard
-          title="Discrete 10-Band UTCI Thermal Stress Classification Carpet"
-          subtitle={`Cold Stress: ${utciData.annualColdStressPct}% • No Stress: ${utciData.annualComfortPct}% • Heat Stress: ${utciData.annualHeatStressPct}%`}
+          title="UTCI Thermal Stress Chart (10 Categories)"
+          subtitle={`Scenario: ${scenario.toUpperCase()} (${utciData.meta.tag}) • Cold Stress: ${utciData.annualColdStressPct}% • Comfort: ${utciData.annualComfortPct}% • Heat Stress: ${utciData.annualHeatStressPct}%`}
           icon={<Sun className="w-4 h-4 text-amber-500" />}
           svgFilename={`${climate.id}_utci_10band_${scenario}.svg`}
           csvFilename={`${climate.id}_utci_10band_${scenario}.csv`}
           onBuildCsv={() => ({
-            headers: ['Month', ...UTCI_STRESS_CATEGORIES.map((b) => b.shortLabel)],
+            headers: ['Month', ...UTCI_STRESS_CATEGORIES.map((b) => b.label)],
             rows: MONTHS.map((m, i) => [
               m,
               ...UTCI_STRESS_CATEGORIES.map((b) => utciData.monthlyBandShares[i][b.id])
@@ -1919,17 +2015,22 @@ export const SubTab8Utci: React.FC<{
               tooltipCtx={tooltipCtx}
               hourly={climate.hourly}
               getValue={(_, idx) => utciData.hourlyUtci[idx]}
-              getColor={(val) => {
-                for (const b of UTCI_STRESS_CATEGORIES) {
-                  if (val <= b.maxC && (b.minC === -Infinity || val > b.minC)) return b.color;
-                }
-                return '#6EB557';
-              }}
-              unitLabel="UTCI Stress Category"
+              getColor={(val) => getUtciStressCategory(val).color}
+              unitLabel="UTCI Thermal Stress"
               legendItems={UTCI_STRESS_CATEGORIES.map((b) => ({
-                label: b.shortLabel,
+                label: b.label,
                 color: b.color
               }))}
+              customTooltipRows={(val) => {
+                const cat = getUtciStressCategory(val);
+                return [
+                  { label: 'UTCI Equivalent Temp', value: `${val.toFixed(1)}°C`, color: cat.color },
+                  { label: 'Thermal Stress Category', value: cat.label, color: cat.color },
+                  { label: 'CBE Category Code', value: String(cat.code) },
+                  { label: 'Physiological Bounds', value: `${cat.minC === -Infinity ? '≤ -40' : cat.maxC === Infinity ? '> +46' : cat.minC + ' to ' + cat.maxC}°C` },
+                  { label: 'Microclimate Condition', value: utciData.meta.label }
+                ];
+              }}
             />
           )}
         </ClimaChartCard>
@@ -1937,7 +2038,7 @@ export const SubTab8Utci: React.FC<{
 
       {/* 4. Row 2: Monthly Stacked Bar Distribution (Normalized % vs Absolute Hours) */}
       <ClimaChartCard
-        title="Monthly Distribution of 10 UTCI Thermal Stress Categories"
+        title="UTCI Thermal Stress Distribution (Monthly)"
         subtitle={
           barNormalize
             ? 'Normalized monthly percentage of hours (%) in each physiological thermal stress band'
@@ -1988,11 +2089,11 @@ export const SubTab8Utci: React.FC<{
           const plotW = W - padL - padR;
           const plotH = H - padT - padB;
           const xForM = (i: number) => padL + (i + 0.5) * (plotW / 12);
-          const maxMonthH = 744; // Max hours in a month (31 x 24)
+          const maxMonthH = 750; // Max hours scaling in a month
 
           const yTicks = barNormalize
-            ? [0, 25, 50, 75, 100]
-            : [0, 186, 372, 558, 744];
+            ? [0, 20, 40, 60, 80, 100]
+            : [0, 150, 300, 450, 600, 750];
 
           return (
             <div className="space-y-3">
@@ -2039,11 +2140,12 @@ export const SubTab8Utci: React.FC<{
                             className="cursor-pointer hover:opacity-90 transition"
                             onMouseEnter={(e) => {
                               tooltipCtx.show(e, `${m} — ${band.label}`, [
-                                { label: 'Stress Category', value: band.label, color: band.color },
-                                { label: 'Monthly Share', value: `${pct}%`, color: band.color },
+                                { label: 'Category', value: band.label, color: band.color },
+                                { label: barNormalize ? 'Proportion' : 'Count', value: barNormalize ? `${pct.toFixed(1)}%` : `${count} h`, color: band.color },
                                 { label: 'Monthly Hours', value: `${count} h / ${mTot} h` },
-                                { label: 'Equivalent Temp Range', value: `${band.minC === -Infinity ? '< -40' : band.maxC === Infinity ? '> +46' : band.minC + '°C to ' + band.maxC + '°C'}` },
-                                { label: 'Microclimate Scenario', value: utciData.meta.label }
+                                { label: 'Monthly Share', value: `${pct.toFixed(1)}%` },
+                                { label: 'Temperature Range', value: `${band.minC === -Infinity ? '≤ -40' : band.maxC === Infinity ? '> +46' : band.minC + ' to ' + band.maxC}°C` },
+                                { label: 'Microclimate Condition', value: utciData.meta.label }
                               ]);
                             }}
                             onMouseMove={(e) => tooltipCtx.move(e)}
@@ -2063,7 +2165,7 @@ export const SubTab8Utci: React.FC<{
                 {UTCI_STRESS_CATEGORIES.map((b) => (
                   <span key={b.id} className="flex items-center gap-1.5 text-slate-700">
                     <span className="w-2.5 h-2.5 rounded-xs inline-block shrink-0 shadow-2xs" style={{ backgroundColor: b.color }} />
-                    <span className="font-medium">{b.shortLabel}</span>
+                    <span className="font-medium">{b.label}</span>
                   </span>
                 ))}
               </div>

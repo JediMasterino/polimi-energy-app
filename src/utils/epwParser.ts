@@ -23,7 +23,9 @@ import {
   calcAllUtciScenariosSummary,
   calcUtci,
   calcSolarGainMrtDelta,
-  calcVaporPressureKpa
+  calcVaporPressureKpa,
+  colorForUtciContinuous,
+  CBE_UTCI_BLUE_RED_YELLOW_GRADIENT_CSS
 } from './utciEngine';
 import { INITIAL_CLIMATE_PRESETS, MONTHS } from '../data/climateAndStrategies';
 
@@ -1220,6 +1222,8 @@ export {
   calcUtci,
   calcSolarGainMrtDelta,
   calcVaporPressureKpa,
+  colorForUtciContinuous,
+  CBE_UTCI_BLUE_RED_YELLOW_GRADIENT_CSS,
   UTCI_STRESS_CATEGORIES,
   UTCI_SCENARIOS
 };
