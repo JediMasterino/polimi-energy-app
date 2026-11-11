@@ -94,6 +94,7 @@ interface StructuralBay3DViewerProps {
   activeMember: SelectedMemberType;
   onSelectMember: (member: SelectedMemberType) => void;
   onNavigateToStep3?: (member: SelectedMemberType) => void;
+  className?: string;
 }
 
 export const StructuralBay3DViewer: React.FC<StructuralBay3DViewerProps> = ({
@@ -101,7 +102,8 @@ export const StructuralBay3DViewer: React.FC<StructuralBay3DViewerProps> = ({
   memberUtilisations,
   activeMember,
   onSelectMember,
-  onNavigateToStep3
+  onNavigateToStep3,
+  className
 }) => {
   const mountRef = useRef<HTMLDivElement | null>(null);
   const rendererRef = useRef<THREE.WebGLRenderer | null>(null);
@@ -453,12 +455,14 @@ export const StructuralBay3DViewer: React.FC<StructuralBay3DViewerProps> = ({
     const handleResize = () => {
       if (!container) return;
       const w = container.clientWidth;
-      const h = container.clientHeight || 420;
-      camera.aspect = w / h;
+      const h = container.clientHeight || 560;
+      camera.aspect = w / Math.max(1, h);
       camera.updateProjectionMatrix();
       renderer.setSize(w, h);
     };
     window.addEventListener('resize', handleResize);
+    const ro = new ResizeObserver(() => handleResize());
+    ro.observe(container);
 
     return () => {
       cancelAnimationFrame(animId);
@@ -467,6 +471,7 @@ export const StructuralBay3DViewer: React.FC<StructuralBay3DViewerProps> = ({
       window.removeEventListener('pointerup', onPointerUp);
       dom.removeEventListener('wheel', onWheel);
       window.removeEventListener('resize', handleResize);
+      ro.disconnect();
       renderer.dispose();
       while (container.firstChild) {
         container.removeChild(container.firstChild);
@@ -477,7 +482,7 @@ export const StructuralBay3DViewer: React.FC<StructuralBay3DViewerProps> = ({
   const currentEta = memberUtilisations[activeMember]?.eta_max || 0.45;
 
   return (
-    <div className="relative w-full h-[470px] bg-slate-950 rounded-2xl overflow-hidden border border-slate-800 shadow-2xl">
+    <div className={`relative w-full ${className || 'h-[560px] md:h-[620px] xl:h-[680px]'} bg-slate-950 rounded-2xl overflow-hidden border border-slate-800 shadow-2xl`}>
       {/* 3D WebGL Canvas */}
       <div ref={mountRef} className="w-full h-full cursor-grab active:cursor-grabbing" />
 

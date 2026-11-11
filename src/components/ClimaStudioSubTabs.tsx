@@ -1749,13 +1749,13 @@ export const SubTab7NatVent: React.FC<{
                   return '#e11d48';
                 }}
                 unitLabel="NatVent Regime"
-                continuousLegend={{
-                  min: 0,
-                  max: 5,
-                  unit: ' Regimes',
-                  gradientCss: CBE_NATVENT_GRADIENT_CSS,
-                  description: `NatVent Regimes (Cold: ${nvStats.tooColdPct}% • Suitable: ${nvStats.annualSuitablePct}% • Muggy: ${nvStats.tooHumidPct}% • Windy: ${nvStats.tooWindyPct}% • Hot: ${nvStats.tooHotPct}%)`
-                }}
+                legendItems={[
+                  { label: `Suitable (${nvStats.annualSuitablePct}%)`, color: '#10b981' },
+                  { label: `Too Cold (${nvStats.tooColdPct}%)`, color: '#0284c7' },
+                  { label: `Dew-Point >${maxDewPointC}°C (${nvStats.tooHumidPct}%)`, color: '#8b5cf6' },
+                  { label: `Too Windy (${nvStats.tooWindyPct}%)`, color: '#f59e0b' },
+                  { label: `Too Hot (${nvStats.tooHotPct}%)`, color: '#e11d48' }
+                ]}
                 customTooltipRows={(_, rec, idx) => {
                   const st = nvStats.hourlyStates[idx];
                   const stLabel =

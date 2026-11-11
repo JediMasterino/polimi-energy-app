@@ -21,7 +21,11 @@ import {
   BarChart3,
   LayoutGrid,
   Maximize2,
-  Calendar
+  Calendar,
+  Clock,
+  Filter,
+  Info,
+  Eye
 } from 'lucide-react';
 import { useDesignProject } from '../context/DesignProjectContext';
 import { MONTHS } from '../data/climateAndStrategies';
@@ -37,7 +41,9 @@ import {
   calcMonthlyDiurnalProfiles,
   calcSolarBoxplotsAndFacadeRose,
   calcDewPointC,
-  generateBoardReadyCommentary
+  generateBoardReadyCommentary,
+  colorForUtciContinuous,
+  CBE_UTCI_BLUE_RED_YELLOW_GRADIENT_CSS
 } from '../utils/epwParser';
 import { EpwSearchAndUploadWidget } from './ClimaAndAdvancedPanels';
 import {
@@ -139,13 +145,17 @@ export const Stage1Climate: React.FC<Stage1ClimateProps> = ({
   const [activeSolarMonthHover, setActiveSolarMonthHover] = useState<number | null>(null);
   const [activeCloudMonthHover, setActiveCloudMonthHover] = useState<number | null>(null);
 
-  // Sub-Tab 4: Sun Path & Shading Protractor controls (Improvement #2)
+  // Sub-Tab 4: Sun Path & Shading Protractor controls (Improvement #2 - Advanced Solar & Shading Mask Studio)
   const [sunProjection, setSunProjection] = useState<'polar' | 'cartesian'>('polar');
-  const [sunColorMode, setSunColorMode] = useState<'temp' | 'ghi'>('temp');
+  const [sunColorMode, setSunColorMode] = useState<'temp' | 'ghi' | 'dni' | 'utci' | 'relHum'>('temp');
+  const [facadeAzimuthDeg, setFacadeAzimuthDeg] = useState<number>(180); // 180° = South, 90° = East, 270° = West, 0° = North
   const [overhangAngleDeg, setOverhangAngleDeg] = useState<number>(58);
   const [finAngleDeg, setFinAngleDeg] = useState<number>(35);
   const [showProtractor, setShowProtractor] = useState<boolean>(true);
   const [showUrbanSkylineMask, setShowUrbanSkylineMask] = useState<boolean>(true);
+  const [selectedDayOfYear, setSelectedDayOfYear] = useState<number>(172); // Default: Summer Solstice (Jun 21)
+  const [selectedSunHour, setSelectedSunHour] = useState<number>(12); // Default: Solar Noon (12:00)
+  const [shadingFilter, setShadingFilter] = useState<'all' | 'overheated' | 'underheated'>('all');
 
   // Compute Data Quality Report for active climate
   const qualityReport = useMemo<EpwQualityReport>(() => {
@@ -2016,10 +2026,10 @@ export const Stage1Climate: React.FC<Stage1ClimateProps> = ({
         <div className="space-y-5">
           <div className={`grid grid-cols-1 ${stage1WideMode && chartDensity !== 'spacious' ? 'xl:grid-cols-12 gap-5' : 'gap-6'}`}>
             {/* Toggleable Polar / Cartesian Sun-Path + Overhang Protractor + Stage 2 Urban Skyline Mask */}
-            <div className={stage1WideMode && chartDensity !== 'spacious' ? 'xl:col-span-7' : 'w-full'}>
+            <div className={stage1WideMode && chartDensity !== 'spacious' ? 'xl:col-span-8' : 'w-full'}>
               <ClimaChartCard
-                title="Interactive Sun-Path Diagram with Overhang Protractor & Stage 2 Urban Canyon Skyline Mask"
-                subtitle="Improvement #2: Inspect summer/winter solar vectors blocked by South overhangs, vertical fins, and neighboring urban buildings"
+                title="Interactive Sun-Path & Architectural Shading Mask Studio"
+                subtitle={`Solar trajectory & shading mask for ${facadeAzimuthDeg}° orientation • Overhang θ_v = ${overhangAngleDeg}° (${(1.5 / Math.tan((overhangAngleDeg * Math.PI) / 180)).toFixed(2)}m) • Fins ±θ_h = ±${finAngleDeg}°`}
                 icon={<Sun className="w-4 h-4 text-amber-500" />}
                 svgFilename={`${climate.id}_sunpath_${sunProjection}.svg`}
                 csvFilename={`${climate.id}_solar_monthly.csv`}
@@ -2034,16 +2044,18 @@ export const Stage1Climate: React.FC<Stage1ClimateProps> = ({
                   ])
                 })}
                 controls={
-                  <div className="space-y-2 text-xs">
+                  <div className="space-y-2.5 text-xs">
+                    {/* Row 1: Projection, Color Mode & Shading Period Filter */}
                     <div className="flex flex-wrap items-center justify-between gap-2">
                       <div className="flex items-center gap-1.5">
+                        <span className="text-[11px] text-slate-500 font-semibold">View:</span>
                         <button
                           type="button"
                           onClick={() => setSunProjection('polar')}
-                          className={`px-2.5 py-1 rounded-lg font-bold text-[11px] border ${
+                          className={`px-2.5 py-1 rounded-lg font-bold text-[11px] border transition cursor-pointer ${
                             sunProjection === 'polar'
-                              ? 'bg-slate-900 text-white border-slate-900'
-                              : 'bg-slate-50 text-slate-600 border-slate-200'
+                              ? 'bg-slate-900 text-white border-slate-900 shadow-xs'
+                              : 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100'
                           }`}
                         >
                           Polar Stereographic
@@ -2051,67 +2063,119 @@ export const Stage1Climate: React.FC<Stage1ClimateProps> = ({
                         <button
                           type="button"
                           onClick={() => setSunProjection('cartesian')}
-                          className={`px-2.5 py-1 rounded-lg font-bold text-[11px] border ${
+                          className={`px-2.5 py-1 rounded-lg font-bold text-[11px] border transition cursor-pointer ${
                             sunProjection === 'cartesian'
-                              ? 'bg-slate-900 text-white border-slate-900'
-                              : 'bg-slate-50 text-slate-600 border-slate-200'
+                              ? 'bg-slate-900 text-white border-slate-900 shadow-xs'
+                              : 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100'
                           }`}
                         >
                           Cartesian (Az × Alt)
                         </button>
                       </div>
 
-                      <div className="flex items-center gap-1.5">
-                        <span className="text-[11px] text-slate-500 font-semibold">Color Analemma By:</span>
-                        <button
-                          type="button"
-                          onClick={() => setSunColorMode('temp')}
-                          className={`px-2 py-1 rounded-lg font-bold text-[11px] border ${
-                            sunColorMode === 'temp'
-                              ? 'bg-rose-600 text-white border-rose-600'
-                              : 'bg-slate-50 text-slate-600 border-slate-200'
-                          }`}
-                        >
-                          T_db (°C)
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setSunColorMode('ghi')}
-                          className={`px-2 py-1 rounded-lg font-bold text-[11px] border ${
-                            sunColorMode === 'ghi'
-                              ? 'bg-amber-500 text-white border-amber-500'
-                              : 'bg-slate-50 text-slate-600 border-slate-200'
-                          }`}
-                        >
-                          GHI (Wh/m²)
-                        </button>
+                      {/* Color By selector */}
+                      <div className="flex items-center gap-1">
+                        <span className="text-[11px] text-slate-500 font-semibold">Color:</span>
+                        {(
+                          [
+                            { id: 'temp', label: 'T_db (°C)' },
+                            { id: 'ghi', label: 'GHI (W/m²)' },
+                            { id: 'dni', label: 'DNI (W/m²)' },
+                            { id: 'utci', label: 'UTCI (°C)' },
+                            { id: 'relHum', label: 'RH (%)' }
+                          ] as const
+                        ).map((opt) => (
+                          <button
+                            key={opt.id}
+                            type="button"
+                            onClick={() => setSunColorMode(opt.id)}
+                            className={`px-2 py-0.5 rounded-md font-bold text-[10.5px] border transition cursor-pointer ${
+                              sunColorMode === opt.id
+                                ? 'bg-amber-600 text-white border-amber-600 shadow-xs'
+                                : 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100'
+                            }`}
+                          >
+                            {opt.label}
+                          </button>
+                        ))}
+                      </div>
+
+                      {/* Shading Filter */}
+                      <div className="flex items-center gap-1 bg-slate-100 p-0.5 rounded-lg text-[10.5px]">
+                        <span className="text-[10px] text-slate-500 font-bold px-1.5 uppercase">Filter:</span>
+                        {(
+                          [
+                            { id: 'all', label: 'All Hours' },
+                            { id: 'overheated', label: 'Overheated (≥24°C)' },
+                            { id: 'underheated', label: 'Underheated (<18°C)' }
+                          ] as const
+                        ).map((f) => (
+                          <button
+                            key={f.id}
+                            type="button"
+                            onClick={() => setShadingFilter(f.id)}
+                            className={`px-2 py-0.5 rounded-md font-semibold transition cursor-pointer ${
+                              shadingFilter === f.id
+                                ? 'bg-white text-slate-900 shadow-xs font-bold'
+                                : 'text-slate-600 hover:text-slate-900'
+                            }`}
+                          >
+                            {f.label}
+                          </button>
+                        ))}
                       </div>
                     </div>
 
-                    {/* Overhang & Fin Protractor + Urban Skyline Toggles */}
+                    {/* Row 2: Facade Orientation & Shading Mask Geometry Controls */}
                     <div className="grid grid-cols-1 md:grid-cols-4 gap-2.5 bg-amber-50/70 p-2.5 rounded-xl border border-amber-200 text-[11px]">
-                      <label className="flex items-center gap-1.5 font-bold text-slate-800 cursor-pointer">
-                        <input
-                          type="checkbox"
-                          checked={showProtractor}
-                          onChange={(e) => setShowProtractor(e.target.checked)}
-                          className="accent-amber-600"
-                        />
-                        Overhang Protractor
-                      </label>
-                      <label className="flex items-center gap-1.5 font-bold text-slate-800 cursor-pointer">
-                        <input
-                          type="checkbox"
-                          checked={showUrbanSkylineMask}
-                          onChange={(e) => setShowUrbanSkylineMask(e.target.checked)}
-                          className="accent-teal-600"
-                        />
-                        Stage 2 Urban Mask
-                      </label>
-                      <label>
+                      {/* Facade Azimuth */}
+                      <div>
                         <div className="flex justify-between items-center font-semibold text-slate-700">
-                          <span>Overhang Angle θ_v</span>
-                          <span className="font-bold text-amber-800 font-mono tabular-nums inline-block w-10 text-right">{overhangAngleDeg}°</span>
+                          <span className="flex items-center gap-1">
+                            <Compass className="w-3.5 h-3.5 text-amber-700" />
+                            Facade Azimuth
+                          </span>
+                          <span className="font-bold text-amber-900 font-mono tabular-nums">
+                            {facadeAzimuthDeg}° ({facadeAzimuthDeg === 180 ? 'S' : facadeAzimuthDeg === 90 ? 'E' : facadeAzimuthDeg === 270 ? 'W' : facadeAzimuthDeg === 0 ? 'N' : `${facadeAzimuthDeg}°`})
+                          </span>
+                        </div>
+                        <input
+                          type="range"
+                          min={0}
+                          max={360}
+                          step={5}
+                          value={facadeAzimuthDeg}
+                          onChange={(e) => setFacadeAzimuthDeg(Number(e.target.value))}
+                          className="w-full accent-amber-600 cursor-pointer"
+                        />
+                        <div className="flex justify-between text-[9px] text-slate-500 font-bold pt-0.5">
+                          {[
+                            { az: 180, lbl: 'S' },
+                            { az: 135, lbl: 'SE' },
+                            { az: 90, lbl: 'E' },
+                            { az: 225, lbl: 'SW' },
+                            { az: 270, lbl: 'W' },
+                            { az: 0, lbl: 'N' }
+                          ].map((p) => (
+                            <button
+                              key={p.az}
+                              type="button"
+                              onClick={() => setFacadeAzimuthDeg(p.az)}
+                              className={`px-1 py-0.2 rounded hover:bg-amber-200/60 ${facadeAzimuthDeg === p.az ? 'text-amber-900 font-black' : ''}`}
+                            >
+                              {p.lbl}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+
+                      {/* Overhang Profile Cutoff Angle */}
+                      <div>
+                        <div className="flex justify-between items-center font-semibold text-slate-700">
+                          <span>Overhang θ_v</span>
+                          <span className="font-bold text-amber-800 font-mono tabular-nums">
+                            {overhangAngleDeg}° ({+(1.5 / Math.tan((overhangAngleDeg * Math.PI) / 180)).toFixed(2)}m)
+                          </span>
                         </div>
                         <input
                           type="range"
@@ -2121,18 +2185,23 @@ export const Stage1Climate: React.FC<Stage1ClimateProps> = ({
                           onChange={(e) => {
                             const deg = Number(e.target.value);
                             setOverhangAngleDeg(deg);
-                            // Sync overhang depth (for 1.5m window height) to Stage 4
                             const depthM = +(1.5 / Math.tan((deg * Math.PI) / 180)).toFixed(2);
                             setOverhangDepth(Math.max(0.1, Math.min(2.0, depthM)));
                             setShadingMode('fixed_overhang');
                           }}
                           className="w-full accent-amber-600 cursor-pointer"
                         />
-                      </label>
-                      <label>
+                        <div className="flex justify-between text-[9.5px] text-slate-500">
+                          <span>25° (Deep 3.2m)</span>
+                          <span>80° (Shallow 0.26m)</span>
+                        </div>
+                      </div>
+
+                      {/* Fin Cutoff Angle */}
+                      <div>
                         <div className="flex justify-between items-center font-semibold text-slate-700">
-                          <span>Fin Cutoff ±θ_h</span>
-                          <span className="font-bold text-indigo-800 font-mono tabular-nums inline-block w-12 text-right">±{finAngleDeg}°</span>
+                          <span>Vertical Fins ±θ_h</span>
+                          <span className="font-bold text-indigo-800 font-mono tabular-nums">±{finAngleDeg}°</span>
                         </div>
                         <input
                           type="range"
@@ -2142,7 +2211,107 @@ export const Stage1Climate: React.FC<Stage1ClimateProps> = ({
                           onChange={(e) => setFinAngleDeg(Number(e.target.value))}
                           className="w-full accent-indigo-600 cursor-pointer"
                         />
-                      </label>
+                        <div className="flex justify-between text-[9.5px] text-slate-500">
+                          <span>±15° (Deep Louvers)</span>
+                          <span>±75° (Wide Opening)</span>
+                        </div>
+                      </div>
+
+                      {/* Mask Toggles */}
+                      <div className="flex flex-col justify-center space-y-2">
+                        <label className="flex items-center gap-1.5 font-bold text-slate-800 cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={showProtractor}
+                            onChange={(e) => setShowProtractor(e.target.checked)}
+                            className="accent-amber-600"
+                          />
+                          <span>Overhang & Fins Shading Mask</span>
+                        </label>
+                        <label className="flex items-center gap-1.5 font-bold text-slate-800 cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={showUrbanSkylineMask}
+                            onChange={(e) => setShowUrbanSkylineMask(e.target.checked)}
+                            className="accent-teal-600"
+                          />
+                          <span>Stage 2 Urban Skyline Horizon</span>
+                        </label>
+                      </div>
+                    </div>
+
+                    {/* Row 3: Day of Year Trajectory & Time Inspector (CBE Clima parity) */}
+                    <div className="flex flex-wrap items-center justify-between gap-3 bg-slate-100/90 p-2 rounded-xl border border-slate-200 text-[11px]">
+                      {/* Day of Year slider */}
+                      <div className="flex items-center gap-2 flex-1 min-w-[240px]">
+                        <span className="font-semibold text-slate-700 shrink-0 flex items-center gap-1">
+                          <Calendar className="w-3.5 h-3.5 text-rose-500" />
+                          Track Date:
+                        </span>
+                        <input
+                          type="range"
+                          min={1}
+                          max={365}
+                          value={selectedDayOfYear}
+                          onChange={(e) => setSelectedDayOfYear(Number(e.target.value))}
+                          className="flex-1 accent-rose-600 cursor-pointer"
+                        />
+                        <span className="font-bold text-slate-800 font-mono text-[11px] shrink-0 min-w-[145px]">
+                          {(() => {
+                            const dt = new Date(Date.UTC(2023, 0, selectedDayOfYear));
+                            const m = MONTHS[dt.getUTCMonth()];
+                            const d = dt.getUTCDate();
+                            if (selectedDayOfYear === 172) return `${m} ${d} (Summer Solstice)`;
+                            if (selectedDayOfYear === 355) return `${m} ${d} (Winter Solstice)`;
+                            if (selectedDayOfYear === 80) return `${m} ${d} (Spring Equinox)`;
+                            if (selectedDayOfYear === 264) return `${m} ${d} (Autumn Equinox)`;
+                            return `${m} ${d} (Day ${selectedDayOfYear})`;
+                          })()}
+                        </span>
+                      </div>
+
+                      {/* Quick Day Presets */}
+                      <div className="flex items-center gap-1 text-[10px]">
+                        {[
+                          { doy: 172, label: 'Jun 21 ☀️' },
+                          { doy: 80, label: 'Mar 21 🌿' },
+                          { doy: 355, label: 'Dec 21 ❄️' }
+                        ].map((btn) => (
+                          <button
+                            key={btn.doy}
+                            type="button"
+                            onClick={() => setSelectedDayOfYear(btn.doy)}
+                            className={`px-2 py-0.5 rounded font-bold border transition cursor-pointer ${
+                              selectedDayOfYear === btn.doy
+                                ? 'bg-slate-900 text-white border-slate-900'
+                                : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-50'
+                            }`}
+                          >
+                            {btn.label}
+                          </button>
+                        ))}
+                      </div>
+
+                      {/* Solar Time Inspector Slider */}
+                      <div className="flex items-center gap-2 shrink-0">
+                        <span className="font-semibold text-slate-700 flex items-center gap-1">
+                          <Clock className="w-3.5 h-3.5 text-amber-600" />
+                          Hour:
+                        </span>
+                        <input
+                          type="range"
+                          min={5}
+                          max={20}
+                          step={0.5}
+                          value={selectedSunHour}
+                          onChange={(e) => setSelectedSunHour(Number(e.target.value))}
+                          className="w-24 accent-amber-500 cursor-pointer"
+                        />
+                        <span className="font-bold text-amber-900 font-mono text-[11px] w-12 text-right">
+                          {Math.floor(selectedSunHour).toString().padStart(2, '0')}:
+                          {selectedSunHour % 1 === 0 ? '00' : '30'}
+                        </span>
+                      </div>
                     </div>
                   </div>
                 }
@@ -2153,26 +2322,171 @@ export const Stage1Climate: React.FC<Stage1ClimateProps> = ({
                   const canyonE = sim.canyonAnglesDeg.E;
                   const canyonW = sim.canyonAnglesDeg.W;
 
-                  // Compute summer overheated hours shaded vs winter passive solar admitted
-                  const warmSunHours = climate.hourly.filter((h) => h.solarAlt > 2 && h.dryBulb >= 24);
-                  const shadedWarmCount = warmSunHours.filter(
-                    (h) =>
-                      (showProtractor && h.solarAlt >= overhangAngleDeg && Math.abs(h.solarAz - 180) <= finAngleDeg + 25) ||
-                      (showUrbanSkylineMask && h.solarAlt <= canyonS)
-                  ).length;
-                  const shadedSummerPct = warmSunHours.length > 0 ? Math.round((shadedWarmCount / warmSunHours.length) * 100) : 0;
+                  // Helper for shading evaluation on any solar vector
+                  const evalShading = (alt: number, az: number) => {
+                    let dAz = az - facadeAzimuthDeg;
+                    while (dAz > 180) dAz -= 360;
+                    while (dAz < -180) dAz += 360;
+                    const inFront = Math.abs(dAz) < 90;
+                    const cosDelta = Math.cos((dAz * Math.PI) / 180);
+                    const radAlt = (alt * Math.PI) / 180;
+                    const profileAngle =
+                      inFront && cosDelta > 0.001
+                        ? Math.atan(Math.tan(radAlt) / cosDelta) * (180 / Math.PI)
+                        : 90;
 
+                    let canyonAlt = 0;
+                    if (az >= 135 && az <= 225) canyonAlt = canyonS;
+                    else if (az >= 45 && az < 135) canyonAlt = canyonE;
+                    else if (az > 225 && az <= 315) canyonAlt = canyonW;
+                    else canyonAlt = Math.max(canyonE, canyonW) * 0.5;
+
+                    const canyonBlocked = showUrbanSkylineMask && alt <= canyonAlt;
+                    const overhangBlocked = showProtractor && inFront && profileAngle >= overhangAngleDeg;
+                    const finBlocked = showProtractor && inFront && Math.abs(dAz) >= finAngleDeg;
+                    const selfShaded = !inFront;
+
+                    return {
+                      inFront,
+                      profileAngle,
+                      canyonBlocked,
+                      overhangBlocked,
+                      finBlocked,
+                      selfShaded,
+                      isBlocked: canyonBlocked || overhangBlocked || finBlocked || selfShaded
+                    };
+                  };
+
+                  // Performance metrics for hours in front of the active facade
+                  const facingHours = climate.hourly.filter((h) => {
+                    if (h.solarAlt <= 0.5) return false;
+                    let dAz = h.solarAz - facadeAzimuthDeg;
+                    while (dAz > 180) dAz -= 360;
+                    while (dAz < -180) dAz += 360;
+                    return Math.abs(dAz) < 90;
+                  });
+
+                  const warmFacing = facingHours.filter((h) => h.dryBulb >= 24);
+                  const warmBlocked = warmFacing.filter((h) => evalShading(h.solarAlt, h.solarAz).isBlocked).length;
+                  const summerShadedPct = warmFacing.length > 0 ? Math.round((warmBlocked / warmFacing.length) * 100) : 0;
+
+                  const coldFacing = facingHours.filter((h) => h.dryBulb < 18);
+                  const coldAdmitted = coldFacing.filter((h) => !evalShading(h.solarAlt, h.solarAz).isBlocked).length;
+                  const winterAdmittedPct = coldFacing.length > 0 ? Math.round((coldAdmitted / coldFacing.length) * 100) : 0;
+
+                  // Active Day Trajectory Points & Sunrise/Sunset
+                  const dayTrajectoryPts: Array<{ hr: number; alt: number; az: number }> = [];
+                  let sunriseHr = -1;
+                  let sunsetHr = -1;
+                  let peakSolarAlt = 0;
+                  for (let hr = 3.5; hr <= 21.0; hr += 0.25) {
+                    const pos = calcSolarPosition(climate.lat, selectedDayOfYear, hr, climate.lon, climate.tz);
+                    if (pos.alt > 0) {
+                      if (sunriseHr === -1) sunriseHr = hr;
+                      sunsetHr = hr;
+                      if (pos.alt > peakSolarAlt) peakSolarAlt = pos.alt;
+                      dayTrajectoryPts.push({ hr, alt: pos.alt, az: pos.az });
+                    }
+                  }
+
+                  // Active hour position
+                  const activeSunPos = calcSolarPosition(climate.lat, selectedDayOfYear, selectedSunHour, climate.lon, climate.tz);
+                  const activeHourShading = evalShading(activeSunPos.alt, activeSunPos.az);
+
+                  // Continuous Colormap Legend Config
+                  const legendConfig = (() => {
+                    if (sunColorMode === 'temp') {
+                      const tMin = globalValueRanges ? -20 : -5;
+                      const tMax = globalValueRanges ? 45 : 38;
+                      return {
+                        min: tMin,
+                        max: tMax,
+                        unit: '°C',
+                        gradient: CBE_RDYLBU_R_GRADIENT_CSS,
+                        description: `Dry-Bulb Air Temperature (${globalValueRanges ? 'Global' : 'Local'} RdYlBu_r)`
+                      };
+                    }
+                    if (sunColorMode === 'ghi') {
+                      return {
+                        min: 0,
+                        max: 1000,
+                        unit: ' Wh/m²',
+                        gradient: 'linear-gradient(to right, #0f172a 0%, #1e3a8a 20%, #0284c7 40%, #eab308 65%, #f97316 85%, #ef4444 100%)',
+                        description: 'Global Horizontal Solar Irradiance (GHI)'
+                      };
+                    }
+                    if (sunColorMode === 'dni') {
+                      return {
+                        min: 0,
+                        max: 950,
+                        unit: ' Wh/m²',
+                        gradient: 'linear-gradient(to right, #1e293b 0%, #0369a1 25%, #f59e0b 60%, #dc2626 100%)',
+                        description: 'Direct Normal Solar Irradiance (DNI)'
+                      };
+                    }
+                    if (sunColorMode === 'utci') {
+                      return {
+                        min: -10,
+                        max: 45,
+                        unit: '°C',
+                        gradient: CBE_UTCI_BLUE_RED_YELLOW_GRADIENT_CSS,
+                        description: 'Universal Thermal Climate Index (UTCI Equivalent Temp)'
+                      };
+                    }
+                    return {
+                      min: 0,
+                      max: 100,
+                      unit: '%',
+                      gradient: CBE_YLGNBU_GRADIENT_CSS,
+                      description: 'Continuous Relative Humidity (YlGnBu)'
+                    };
+                  })();
+
+                  // Helper point color mapper
+                  const getSunColor = (h: (typeof climate.hourly)[0]) => {
+                    if (sunColorMode === 'temp') return colorForTempC(h.dryBulb, globalValueRanges);
+                    if (sunColorMode === 'ghi') {
+                      const norm = Math.max(0, Math.min(1, h.ghi / 1000));
+                      if (norm < 0.15) return '#1e3a8a';
+                      if (norm < 0.4) return '#0284c7';
+                      if (norm < 0.65) return '#eab308';
+                      if (norm < 0.85) return '#f97316';
+                      return '#ef4444';
+                    }
+                    if (sunColorMode === 'dni') {
+                      const norm = Math.max(0, Math.min(1, (h.dni ?? 0) / 950));
+                      if (norm < 0.2) return '#334155';
+                      if (norm < 0.5) return '#0369a1';
+                      if (norm < 0.8) return '#f59e0b';
+                      return '#dc2626';
+                    }
+                    if (sunColorMode === 'utci') {
+                      return colorForUtciContinuous(h.utci);
+                    }
+                    return colorForRhPct(h.relHum);
+                  };
+
+                  // Filtered sun hours
+                  const visibleSunHours = sunHours.filter((h) => {
+                    if (shadingFilter === 'overheated') return h.dryBulb >= 24;
+                    if (shadingFilter === 'underheated') return h.dryBulb < 18;
+                    return true;
+                  });
+
+                  // -------------------------------------------------------------
+                  // 1. CARTESIAN PROJECTION VIEW
+                  // -------------------------------------------------------------
                   if (sunProjection === 'cartesian') {
                     const W = 900;
-                    const H = 420;
-                    const padL = 50;
+                    const H = 440;
+                    const padL = 52;
                     const padR = 24;
                     const padT = 24;
-                    const padB = 36;
+                    const padB = 40;
                     const plotW = W - padL - padR;
                     const plotH = H - padT - padB;
                     const xForAz = (az: number) => padL + (az / 360) * plotW;
-                    const yForAlt = (alt: number) => padT + plotH - (alt / 90) * plotH;
+                    const yForAlt = (alt: number) => padT + plotH - (Math.max(0, Math.min(90, alt)) / 90) * plotH;
 
                     const makeCartArc = (dayOfYear: number) => {
                       const pts: string[] = [];
@@ -2185,86 +2499,165 @@ export const Stage1Climate: React.FC<Stage1ClimateProps> = ({
                       return pts.join(' ');
                     };
 
+                    // Overhang shading mask curve across the hemisphere facing the facade
+                    const overhangMaskPoints: string[] = [];
+                    if (showProtractor) {
+                      for (let d = -88; d <= 88; d += 2) {
+                        const az = (facadeAzimuthDeg + d + 360) % 360;
+                        const radD = (d * Math.PI) / 180;
+                        const cutAlt = Math.atan(Math.tan((overhangAngleDeg * Math.PI) / 180) * Math.cos(radD)) * (180 / Math.PI);
+                        if (cutAlt < 90) {
+                          overhangMaskPoints.push(`${xForAz(az).toFixed(1)},${yForAlt(cutAlt).toFixed(1)}`);
+                        }
+                      }
+                    }
+
                     return (
-                      <div className="space-y-2">
-                        <svg ref={svgRef} viewBox={`0 0 ${W} ${H}`} className="w-full h-auto bg-slate-50 rounded-2xl border border-slate-200">
+                      <div className="space-y-3">
+                        <svg ref={svgRef} viewBox={`0 0 ${W} ${H}`} className="w-full h-auto bg-slate-950 rounded-2xl border border-slate-800 shadow-inner">
+                          {/* Altitude gridlines */}
                           {[0, 15, 30, 45, 60, 75, 90].map((alt) => (
                             <g key={alt}>
-                              <line x1={padL} y1={yForAlt(alt)} x2={W - padR} y2={yForAlt(alt)} stroke="#e2e8f0" />
+                              <line x1={padL} y1={yForAlt(alt)} x2={W - padR} y2={yForAlt(alt)} stroke="#1e293b" strokeDasharray="3 3" />
                               <text x={padL - 8} y={yForAlt(alt) + 3.5} textAnchor="end" fontSize="10" fontWeight="600" fill="#64748b">
                                 {alt}°
                               </text>
                             </g>
                           ))}
-                          {[0, 90, 180, 270, 360].map((az) => (
+
+                          {/* Azimuth gridlines */}
+                          {[0, 45, 90, 135, 180, 225, 270, 315, 360].map((az) => (
                             <g key={az}>
-                              <line x1={xForAz(az)} y1={padT} x2={xForAz(az)} y2={H - padB} stroke="#e2e8f0" />
-                              <text x={xForAz(az)} y={H - 12} textAnchor="middle" fontSize="10.5" fontWeight="700" fill="#475569">
-                                {az === 90 ? '90° (E)' : az === 180 ? '180° (S)' : az === 270 ? '270° (W)' : `${az}° (N)`}
+                              <line x1={xForAz(az)} y1={padT} x2={xForAz(az)} y2={H - padB} stroke="#1e293b" />
+                              <text x={xForAz(az)} y={H - 14} textAnchor="middle" fontSize="10" fontWeight="700" fill="#94a3b8">
+                                {az === 0 || az === 360
+                                  ? 'N'
+                                  : az === 90
+                                  ? 'E 90°'
+                                  : az === 180
+                                  ? 'S 180°'
+                                  : az === 270
+                                  ? 'W 270°'
+                                  : `${az}°`}
                               </text>
                             </g>
                           ))}
 
-                          {/* Stage 2 Urban Canyon Skyline Obstruction Mask along Horizon */}
+                          {/* Facade Normal Orientation Line */}
+                          <line
+                            x1={xForAz(facadeAzimuthDeg)}
+                            y1={padT}
+                            x2={xForAz(facadeAzimuthDeg)}
+                            y2={H - padB}
+                            stroke="#f59e0b"
+                            strokeWidth={2}
+                            strokeDasharray="5 3"
+                          />
+                          <text
+                            x={xForAz(facadeAzimuthDeg)}
+                            y={padT - 8}
+                            textAnchor="middle"
+                            fontSize="10"
+                            fontWeight="800"
+                            fill="#f59e0b"
+                          >
+                            ▲ Facade Normal ({facadeAzimuthDeg}°)
+                          </text>
+
+                          {/* Stage 2 Urban Canyon Obstruction Skyline along Horizon */}
                           {showUrbanSkylineMask && (
                             <polygon
-                              points={`${xForAz(45)},${yForAlt(0)} ${xForAz(45)},${yForAlt(canyonE)} ${xForAz(135)},${yForAlt(canyonS)} ${xForAz(225)},${yForAlt(canyonS)} ${xForAz(315)},${yForAlt(canyonW)} ${xForAz(315)},${yForAlt(0)}`}
-                              fill="rgba(15, 23, 42, 0.35)"
-                              stroke="#334155"
-                              strokeDasharray="3 2"
-                            />
-                          )}
-
-                          {/* Overhang & Fin Shading Protractor Mask */}
-                          {showProtractor && (
-                            <rect
-                              x={xForAz(180 - finAngleDeg)}
-                              y={padT}
-                              width={xForAz(180 + finAngleDeg) - xForAz(180 - finAngleDeg)}
-                              height={yForAlt(overhangAngleDeg) - padT}
-                              fill="rgba(245, 158, 11, 0.25)"
-                              stroke="#d97706"
+                              points={`${xForAz(0)},${yForAlt(0)} ${xForAz(45)},${yForAlt(canyonE * 0.7)} ${xForAz(90)},${yForAlt(canyonE)} ${xForAz(135)},${yForAlt((canyonE + canyonS) / 2)} ${xForAz(180)},${yForAlt(canyonS)} ${xForAz(225)},${yForAlt((canyonS + canyonW) / 2)} ${xForAz(270)},${yForAlt(canyonW)} ${xForAz(315)},${yForAlt(canyonW * 0.7)} ${xForAz(360)},${yForAlt(canyonE * 0.7)} ${xForAz(360)},${yForAlt(0)}`}
+                              fill="rgba(30, 41, 59, 0.65)"
+                              stroke="#475569"
                               strokeWidth={1.5}
-                              strokeDasharray="4 2"
                             />
                           )}
 
-                          {/* Solstice & Equinox Reference Curves */}
-                          <polyline fill="none" stroke="#e11d48" strokeWidth={1.8} strokeOpacity={0.8} points={makeCartArc(172)} />
-                          <polyline fill="none" stroke="#10b981" strokeWidth={1.5} strokeOpacity={0.8} points={makeCartArc(80)} />
-                          <polyline fill="none" stroke="#0284c7" strokeWidth={1.8} strokeOpacity={0.8} points={makeCartArc(355)} />
+                          {/* Vertical Fins Boundary Lines */}
+                          {showProtractor && (
+                            <>
+                              <line
+                                x1={xForAz((facadeAzimuthDeg - finAngleDeg + 360) % 360)}
+                                y1={padT}
+                                x2={xForAz((facadeAzimuthDeg - finAngleDeg + 360) % 360)}
+                                y2={H - padB}
+                                stroke="#818cf8"
+                                strokeWidth={1.5}
+                                strokeDasharray="4 2"
+                              />
+                              <line
+                                x1={xForAz((facadeAzimuthDeg + finAngleDeg) % 360)}
+                                y1={padT}
+                                x2={xForAz((facadeAzimuthDeg + finAngleDeg) % 360)}
+                                y2={H - padB}
+                                stroke="#818cf8"
+                                strokeWidth={1.5}
+                                strokeDasharray="4 2"
+                              />
+                            </>
+                          )}
 
-                          {/* 365-Day Analemma Points (All Daytime Hours with Spencer 1971 EoT) */}
-                          {sunHours.map((h, i) => {
-                            const isShaded = (showProtractor && h.solarAlt >= overhangAngleDeg && Math.abs(h.solarAz - 180) <= finAngleDeg + 25) ||
-                              (showUrbanSkylineMask && h.solarAlt <= canyonS);
+                          {/* Overhang Profile Shading Curve */}
+                          {showProtractor && overhangMaskPoints.length > 1 && (
+                            <polyline
+                              fill="none"
+                              stroke="#f59e0b"
+                              strokeWidth={2}
+                              strokeDasharray="4 2"
+                              points={overhangMaskPoints.join(' ')}
+                            />
+                          )}
+
+                          {/* Reference Solstice and Equinox Trajectories */}
+                          <polyline fill="none" stroke="#f43f5e" strokeWidth={2} strokeOpacity={0.85} points={makeCartArc(172)} />
+                          <polyline fill="none" stroke="#10b981" strokeWidth={1.8} strokeOpacity={0.85} points={makeCartArc(80)} />
+                          <polyline fill="none" stroke="#0ea5e9" strokeWidth={2} strokeOpacity={0.85} points={makeCartArc(355)} />
+
+                          {/* Selected Day of Year Trajectory Curve (Highlighted in Gold) */}
+                          {dayTrajectoryPts.length > 1 && (
+                            <polyline
+                              fill="none"
+                              stroke="#fbbf24"
+                              strokeWidth={3}
+                              points={dayTrajectoryPts.map((p) => `${xForAz(p.az).toFixed(1)},${yForAlt(p.alt).toFixed(1)}`).join(' ')}
+                            />
+                          )}
+
+                          {/* All Sun Data Points */}
+                          {visibleSunHours.map((h, i) => {
+                            const sh = evalShading(h.solarAlt, h.solarAz);
+                            const fill = getSunColor(h);
                             return (
                               <circle
                                 key={i}
                                 cx={xForAz(h.solarAz)}
                                 cy={yForAlt(h.solarAlt)}
-                                r={3.2}
-                                fillOpacity={0.9}
-                                stroke="#ffffff"
-                                strokeWidth={0.8}
-                                fill={
-                                  sunColorMode === 'temp'
-                                    ? colorForTempC(h.dryBulb, globalValueRanges)
-                                    : h.ghi > 550
-                                    ? '#e11d48'
-                                    : h.ghi > 250
-                                    ? '#f59e0b'
-                                    : '#0ea5e9'
-                                }
-                                className="cursor-pointer transition-colors hover:stroke-amber-300 hover:stroke-[2px]"
+                                r={sh.isBlocked ? 2.5 : 3.4}
+                                fillOpacity={sh.isBlocked ? 0.35 : 0.95}
+                                stroke={sh.isBlocked ? '#475569' : '#ffffff'}
+                                strokeWidth={sh.isBlocked ? 0.5 : 0.9}
+                                fill={fill}
+                                className="cursor-pointer transition hover:scale-150 hover:stroke-amber-300 hover:stroke-[2px]"
                                 onMouseEnter={(e) => {
+                                  const shReason = sh.selfShaded
+                                    ? 'Behind Facade (Self-Shaded)'
+                                    : sh.canyonBlocked
+                                    ? 'Blocked by Urban Canyon'
+                                    : sh.overhangBlocked
+                                    ? `Blocked by Overhang (Profile θ_v=${sh.profileAngle.toFixed(1)}°)`
+                                    : sh.finBlocked
+                                    ? 'Blocked by Vertical Fins'
+                                    : 'Direct Sun (Unobstructed)';
                                   tooltipCtx.show(e, `${MONTHS[h.month]} ${h.dayOfMonth} • ${h.hour}:00`, [
                                     { label: 'Solar Altitude', value: `${h.solarAlt.toFixed(1)}°`, color: '#f59e0b' },
                                     { label: 'Solar Azimuth', value: `${h.solarAz.toFixed(1)}°` },
+                                    { label: 'Profile Angle on Facade', value: `${sh.profileAngle.toFixed(1)}°` },
                                     { label: 'Dry-Bulb Temp', value: `${h.dryBulb}°C`, color: '#e11d48' },
                                     { label: 'Solar GHI', value: `${h.ghi} Wh/m²` },
-                                    { label: 'Direct Normal (DNI)', value: `${h.dni} Wh/m²` },
-                                    { label: 'Shading Status', value: isShaded ? 'Overhang/Canyon Blocked' : 'Direct Sun', color: isShaded ? '#f59e0b' : '#10b981' }
+                                    { label: 'Direct Normal (DNI)', value: `${h.dni ?? 0} Wh/m²` },
+                                    { label: 'UTCI Comfort', value: `${h.utci.toFixed(1)}°C` },
+                                    { label: 'Shading Status', value: shReason, color: sh.isBlocked ? '#f59e0b' : '#10b981' }
                                   ]);
                                 }}
                                 onMouseMove={(e) => tooltipCtx.move(e)}
@@ -2272,24 +2665,66 @@ export const Stage1Climate: React.FC<Stage1ClimateProps> = ({
                               />
                             );
                           })}
+
+                          {/* Active Golden Sun Marker for Selected Day & Hour */}
+                          {activeSunPos.alt > 0 && (
+                            <g className="pointer-events-none">
+                              <circle
+                                cx={xForAz(activeSunPos.az)}
+                                cy={yForAlt(activeSunPos.alt)}
+                                r={12}
+                                fill="none"
+                                stroke="#f59e0b"
+                                strokeWidth={2}
+                                strokeDasharray="3 2"
+                                className="animate-spin"
+                                style={{ transformOrigin: `${xForAz(activeSunPos.az)}px ${yForAlt(activeSunPos.alt)}px`, animationDuration: '8s' }}
+                              />
+                              <circle
+                                cx={xForAz(activeSunPos.az)}
+                                cy={yForAlt(activeSunPos.alt)}
+                                r={6}
+                                fill="#fbbf24"
+                                stroke="#ffffff"
+                                strokeWidth={2}
+                                className="shadow-lg"
+                              />
+                            </g>
+                          )}
                         </svg>
-                        <div className="text-[11px] text-slate-600 flex justify-between px-1 font-medium">
-                          <span>
-                            Shaded Overheated Hours (T_db ≥ 24°C): <strong className="text-amber-700">{shadedSummerPct}% Blocked</strong>
+
+                        {/* Continuous Legend Matching UTCI Heatmap Format */}
+                        <div className="flex flex-wrap items-center justify-between gap-2 text-[11px] text-slate-600 px-1 font-medium pt-1">
+                          <span className="font-semibold text-slate-700">
+                            Solar Vectors ({visibleSunHours.length.toLocaleString()} Daylight Hours • {legendConfig.description})
                           </span>
-                          <span>
-                            Coupled Stage 4 Overhang Depth: <strong className="text-teal-700">{overhangDepth} m</strong>
-                          </span>
+                          <div className="flex flex-wrap items-center gap-3">
+                            <span className="text-[10px] text-slate-500 font-medium">{legendConfig.description}</span>
+                            <div className="flex items-center gap-2">
+                              <span className="text-[11px] font-bold text-slate-800 font-mono">
+                                {legendConfig.min}{legendConfig.unit}
+                              </span>
+                              <div
+                                className="w-44 sm:w-60 h-3.5 rounded-md border border-slate-300 shadow-2xs"
+                                style={{ background: legendConfig.gradient }}
+                              />
+                              <span className="text-[11px] font-bold text-slate-800 font-mono">
+                                {legendConfig.max}{legendConfig.unit}
+                              </span>
+                            </div>
+                          </div>
                         </div>
                       </div>
                     );
                   }
 
-                  // Polar Stereographic Projection (True Stereographic tan((90 - alt)/2))
-                  const size = 520;
+                  // -------------------------------------------------------------
+                  // 2. POLAR STEREOGRAPHIC PROJECTION VIEW (True Stereographic)
+                  // -------------------------------------------------------------
+                  const size = 620;
                   const cx = size / 2;
                   const cy = size / 2;
-                  const R = 205;
+                  const R = 250;
                   const stereoR = (alt: number) => R * Math.tan(((90 - Math.max(0, alt)) * Math.PI) / 360);
                   const polarPt = (alt: number, az: number) => {
                     const r = stereoR(alt);
@@ -2309,70 +2744,186 @@ export const Stage1Climate: React.FC<Stage1ClimateProps> = ({
                     return pts.join(' ');
                   };
 
+                  // Overhang Stereographic Cutoff Mask
+                  const overhangStereoPts: string[] = [];
+                  if (showProtractor) {
+                    overhangStereoPts.push(`${cx},${cy}`);
+                    for (let d = -86; d <= 86; d += 4) {
+                      const az = (facadeAzimuthDeg + d + 360) % 360;
+                      const radD = (d * Math.PI) / 180;
+                      const cutAlt = Math.atan(Math.tan((overhangAngleDeg * Math.PI) / 180) * Math.cos(radD)) * (180 / Math.PI);
+                      const p = polarPt(Math.max(0, cutAlt), az);
+                      overhangStereoPts.push(`${p.x.toFixed(1)},${p.y.toFixed(1)}`);
+                    }
+                    overhangStereoPts.push(`${cx},${cy}`);
+                  }
+
                   return (
-                    <div className="flex flex-col items-center space-y-2">
-                      <svg ref={svgRef} viewBox={`0 0 ${size} ${size}`} className="w-full max-w-[520px] h-auto">
+                    <div className="flex flex-col items-center space-y-3">
+                      <svg ref={svgRef} viewBox={`0 0 ${size} ${size}`} className="w-full max-w-[620px] h-auto bg-slate-950 rounded-2xl border border-slate-800 shadow-inner">
+                        {/* Concentric Altitude Rings */}
                         {[0, 15, 30, 45, 60, 75, 90].map((alt) => (
-                          <circle
-                            key={alt}
-                            cx={cx}
-                            cy={cy}
-                            r={stereoR(alt)}
-                            fill="none"
-                            stroke={alt === 0 ? '#94a3b8' : '#e2e8f0'}
-                            strokeWidth={alt === 0 ? 1.5 : 1}
-                            strokeDasharray={alt === 0 ? undefined : '3 3'}
-                          />
+                          <g key={alt}>
+                            <circle
+                              cx={cx}
+                              cy={cy}
+                              r={stereoR(alt)}
+                              fill="none"
+                              stroke={alt === 0 ? '#475569' : '#1e293b'}
+                              strokeWidth={alt === 0 ? 2 : 1}
+                              strokeDasharray={alt === 0 ? undefined : '3 3'}
+                            />
+                            {alt > 0 && alt < 90 && (
+                              <text x={cx + 3} y={cy - stereoR(alt) - 2} fontSize="9" fontWeight="600" fill="#64748b">
+                                {alt}°
+                              </text>
+                            )}
+                          </g>
                         ))}
 
-                        {/* Stage 2 Urban Canyon Skyline Ring */}
+                        {/* Radial Azimuth Spokes */}
+                        {[0, 30, 60, 90, 120, 150, 180, 210, 240, 270, 300, 330].map((az) => {
+                          const rad = ((az - 90) * Math.PI) / 180;
+                          const x2 = cx + R * Math.cos(rad);
+                          const y2 = cy + R * Math.sin(rad);
+                          return (
+                            <line
+                              key={az}
+                              x1={cx}
+                              y1={cy}
+                              x2={x2}
+                              y2={y2}
+                              stroke="#1e293b"
+                              strokeWidth={0.8}
+                            />
+                          );
+                        })}
+
+                        {/* Cardinal Direction Markers */}
+                        <text x={cx} y={24} textAnchor="middle" fontSize="13" fontWeight="900" fill="#94a3b8">N</text>
+                        <text x={cx} y={size - 12} textAnchor="middle" fontSize="13" fontWeight="900" fill="#f43f5e">S</text>
+                        <text x={size - 18} y={cy + 4.5} textAnchor="middle" fontSize="13" fontWeight="900" fill="#94a3b8">E</text>
+                        <text x={18} y={cy + 4.5} textAnchor="middle" fontSize="13" fontWeight="900" fill="#94a3b8">W</text>
+                        <text x={cx + (R + 18) * Math.cos(Math.PI / 4)} y={cy + (R + 18) * Math.sin(Math.PI / 4) + 4} textAnchor="middle" fontSize="9.5" fontWeight="700" fill="#64748b">SE</text>
+                        <text x={cx - (R + 18) * Math.cos(Math.PI / 4)} y={cy + (R + 18) * Math.sin(Math.PI / 4) + 4} textAnchor="middle" fontSize="9.5" fontWeight="700" fill="#64748b">SW</text>
+                        <text x={cx + (R + 18) * Math.cos(Math.PI / 4)} y={cy - (R + 18) * Math.sin(Math.PI / 4) + 4} textAnchor="middle" fontSize="9.5" fontWeight="700" fill="#64748b">NE</text>
+                        <text x={cx - (R + 18) * Math.cos(Math.PI / 4)} y={cy - (R + 18) * Math.sin(Math.PI / 4) + 4} textAnchor="middle" fontSize="9.5" fontWeight="700" fill="#64748b">NW</text>
+
+                        {/* Facade Orientation Vector Pointer */}
+                        {(() => {
+                          const rad = ((facadeAzimuthDeg - 90) * Math.PI) / 180;
+                          const arrowX = cx + (R + 2) * Math.cos(rad);
+                          const arrowY = cy + (R + 2) * Math.sin(rad);
+                          return (
+                            <g>
+                              <line x1={cx} y1={cy} x2={arrowX} y2={arrowY} stroke="#f59e0b" strokeWidth={2.4} strokeDasharray="5 3" />
+                              <circle cx={arrowX} cy={arrowY} r={5} fill="#f59e0b" />
+                              <text
+                                x={cx + (R + 24) * Math.cos(rad)}
+                                y={cy + (R + 24) * Math.sin(rad) + 4}
+                                textAnchor="middle"
+                                fontSize="10.5"
+                                fontWeight="800"
+                                fill="#f59e0b"
+                              >
+                                Facade Normal ({facadeAzimuthDeg}°)
+                              </text>
+                            </g>
+                          );
+                        })()}
+
+                        {/* Stage 2 Urban Canyon Skyline Obstruction Mask */}
                         {showUrbanSkylineMask && (
                           <circle
                             cx={cx}
                             cy={cy}
                             r={R}
                             fill="none"
-                            stroke="rgba(15, 23, 42, 0.35)"
-                            strokeWidth={(canyonS / 90) * R * 2}
+                            stroke="rgba(30, 41, 59, 0.75)"
+                            strokeWidth={(Math.max(canyonS, canyonE, canyonW) / 90) * R * 2}
                           />
                         )}
 
-                        {/* Solstice & Equinox Arcs */}
-                        <polyline fill="none" stroke="#e11d48" strokeWidth={1.8} points={makeDayArc(172)} />
-                        <polyline fill="none" stroke="#10b981" strokeWidth={1.5} points={makeDayArc(80)} />
-                        <polyline fill="none" stroke="#0284c7" strokeWidth={1.8} points={makeDayArc(355)} />
+                        {/* Overhang Stereographic Shading Mask Geometry */}
+                        {showProtractor && overhangStereoPts.length > 2 && (
+                          <polygon
+                            points={overhangStereoPts.join(' ')}
+                            fill="rgba(245, 158, 11, 0.22)"
+                            stroke="#d97706"
+                            strokeWidth={1.8}
+                            strokeDasharray="4 2"
+                          />
+                        )}
 
-                        {/* 365-Day Analemma Sun Points (Figure-8 Loops via Equation of Time) */}
-                        {sunHours.map((h, i) => {
+                        {/* Vertical Fins Radial Cutoff Rays */}
+                        {showProtractor && (
+                          <>
+                            {(() => {
+                              const radL = ((facadeAzimuthDeg - finAngleDeg - 90) * Math.PI) / 180;
+                              const radR = ((facadeAzimuthDeg + finAngleDeg - 90) * Math.PI) / 180;
+                              return (
+                                <>
+                                  <line x1={cx} y1={cy} x2={cx + R * Math.cos(radL)} y2={cy + R * Math.sin(radL)} stroke="#818cf8" strokeWidth={1.6} strokeDasharray="4 2" />
+                                  <line x1={cx} y1={cy} x2={cx + R * Math.cos(radR)} y2={cy + R * Math.sin(radR)} stroke="#818cf8" strokeWidth={1.6} strokeDasharray="4 2" />
+                                </>
+                              );
+                            })()}
+                          </>
+                        )}
+
+                        {/* Solstice & Equinox Curves */}
+                        <polyline fill="none" stroke="#f43f5e" strokeWidth={2.2} strokeOpacity={0.85} points={makeDayArc(172)} />
+                        <polyline fill="none" stroke="#10b981" strokeWidth={1.8} strokeOpacity={0.85} points={makeDayArc(80)} />
+                        <polyline fill="none" stroke="#0ea5e9" strokeWidth={2.2} strokeOpacity={0.85} points={makeDayArc(355)} />
+
+                        {/* Selected Day of Year Trajectory Curve (Luminous Gold) */}
+                        {dayTrajectoryPts.length > 1 && (
+                          <polyline
+                            fill="none"
+                            stroke="#fbbf24"
+                            strokeWidth={3}
+                            points={dayTrajectoryPts.map((p) => {
+                              const pt = polarPt(p.alt, p.az);
+                              return `${pt.x.toFixed(1)},${pt.y.toFixed(1)}`;
+                            }).join(' ')}
+                          />
+                        )}
+
+                        {/* 365-Day Solar Vectors */}
+                        {visibleSunHours.map((h, i) => {
                           const p = polarPt(h.solarAlt, h.solarAz);
-                          const isShaded = (showProtractor && h.solarAlt >= overhangAngleDeg && Math.abs(h.solarAz - 180) <= finAngleDeg + 25) ||
-                            (showUrbanSkylineMask && h.solarAlt <= canyonS);
+                          const sh = evalShading(h.solarAlt, h.solarAz);
+                          const fill = getSunColor(h);
                           return (
                             <circle
                               key={i}
                               cx={p.x}
                               cy={p.y}
-                              r={3.2}
-                              fillOpacity={0.9}
-                              stroke="#ffffff"
-                              strokeWidth={0.8}
-                              fill={
-                                sunColorMode === 'temp'
-                                  ? colorForTempC(h.dryBulb, globalValueRanges)
-                                  : h.ghi > 550
-                                  ? '#e11d48'
-                                  : h.ghi > 250
-                                  ? '#f59e0b'
-                                  : '#0ea5e9'
-                              }
-                              className="cursor-pointer transition-colors hover:stroke-amber-300 hover:stroke-[2px]"
+                              r={sh.isBlocked ? 2.5 : 3.4}
+                              fillOpacity={sh.isBlocked ? 0.35 : 0.95}
+                              stroke={sh.isBlocked ? '#475569' : '#ffffff'}
+                              strokeWidth={sh.isBlocked ? 0.5 : 0.9}
+                              fill={fill}
+                              className="cursor-pointer transition hover:scale-150 hover:stroke-amber-300 hover:stroke-[2px]"
                               onMouseEnter={(e) => {
+                                const shReason = sh.selfShaded
+                                  ? 'Behind Facade (Self-Shaded)'
+                                  : sh.canyonBlocked
+                                  ? 'Blocked by Urban Canyon'
+                                  : sh.overhangBlocked
+                                  ? `Blocked by Overhang (Profile θ_v=${sh.profileAngle.toFixed(1)}°)`
+                                  : sh.finBlocked
+                                  ? 'Blocked by Vertical Fins'
+                                  : 'Direct Sun (Unobstructed)';
                                 tooltipCtx.show(e, `${MONTHS[h.month]} ${h.dayOfMonth} • ${h.hour}:00`, [
                                   { label: 'Solar Altitude', value: `${h.solarAlt.toFixed(1)}°`, color: '#f59e0b' },
                                   { label: 'Solar Azimuth', value: `${h.solarAz.toFixed(1)}°` },
+                                  { label: 'Profile Angle on Facade', value: `${sh.profileAngle.toFixed(1)}°` },
                                   { label: 'Dry-Bulb Temp', value: `${h.dryBulb}°C`, color: '#e11d48' },
                                   { label: 'Solar GHI', value: `${h.ghi} Wh/m²` },
-                                  { label: 'Shading Status', value: isShaded ? 'Overhang/Canyon Blocked' : 'Direct Sun', color: isShaded ? '#f59e0b' : '#10b981' }
+                                  { label: 'Direct Normal (DNI)', value: `${h.dni ?? 0} Wh/m²` },
+                                  { label: 'UTCI Comfort', value: `${h.utci.toFixed(1)}°C` },
+                                  { label: 'Shading Status', value: shReason, color: sh.isBlocked ? '#f59e0b' : '#10b981' }
                                 ]);
                               }}
                               onMouseMove={(e) => tooltipCtx.move(e)}
@@ -2381,36 +2932,157 @@ export const Stage1Climate: React.FC<Stage1ClimateProps> = ({
                           );
                         })}
 
-                        {/* Overhang Protractor Wedge on South Facade */}
-                        {showProtractor && (
-                          <circle
-                            cx={cx}
-                            cy={cy}
-                            r={stereoR(overhangAngleDeg)}
-                            fill="rgba(245, 158, 11, 0.25)"
-                            stroke="#d97706"
-                            strokeWidth={1.8}
-                            strokeDasharray="4 2"
-                          />
+                        {/* Active Golden Sun Marker on Selected Day */}
+                        {activeSunPos.alt > 0 && (
+                          <g className="pointer-events-none">
+                            {(() => {
+                              const p = polarPt(activeSunPos.alt, activeSunPos.az);
+                              return (
+                                <>
+                                  <circle
+                                    cx={p.x}
+                                    cy={p.y}
+                                    r={13}
+                                    fill="none"
+                                    stroke="#f59e0b"
+                                    strokeWidth={2}
+                                    strokeDasharray="3 2"
+                                    className="animate-spin"
+                                    style={{ transformOrigin: `${p.x}px ${p.y}px`, animationDuration: '8s' }}
+                                  />
+                                  <circle
+                                    cx={p.x}
+                                    cy={p.y}
+                                    r={6.5}
+                                    fill="#fbbf24"
+                                    stroke="#ffffff"
+                                    strokeWidth={2}
+                                    className="shadow-lg"
+                                  />
+                                </>
+                              );
+                            })()}
+                          </g>
                         )}
-
-                        <text x={cx} y={18} textAnchor="middle" fontSize="12" fontWeight="800" fill="#334155">N</text>
-                        <text x={cx} y={size - 10} textAnchor="middle" fontSize="12" fontWeight="800" fill="#e11d48">S</text>
-                        <text x={size - 14} y={cy + 4} textAnchor="middle" fontSize="12" fontWeight="800" fill="#334155">E</text>
-                        <text x={14} y={cy + 4} textAnchor="middle" fontSize="12" fontWeight="800" fill="#334155">W</text>
                       </svg>
-                      <div className="w-full text-[11px] text-slate-600 flex justify-between px-2 font-medium">
-                        <span>
-                          Shaded Warm Hours (≥24°C): <strong className="text-amber-700">{shadedSummerPct}% Blocked</strong>
+
+                      {/* Continuous Legend Matching UTCI Heatmap Format */}
+                      <div className="w-full flex flex-wrap items-center justify-between gap-2 text-[11px] text-slate-600 px-1 font-medium pt-1">
+                        <span className="font-semibold text-slate-700">
+                          Stereographic Sun Path ({visibleSunHours.length.toLocaleString()} Hours • {legendConfig.description})
                         </span>
-                        <span>
-                          Stage 4 Overhang synced: <strong className="text-teal-700">{overhangDepth} m</strong>
-                        </span>
+                        <div className="flex flex-wrap items-center gap-3">
+                          <span className="text-[10px] text-slate-500 font-medium">{legendConfig.description}</span>
+                          <div className="flex items-center gap-2">
+                            <span className="text-[11px] font-bold text-slate-800 font-mono">
+                              {legendConfig.min}{legendConfig.unit}
+                            </span>
+                            <div
+                              className="w-44 sm:w-60 h-3.5 rounded-md border border-slate-300 shadow-2xs"
+                              style={{ background: legendConfig.gradient }}
+                            />
+                            <span className="text-[11px] font-bold text-slate-800 font-mono">
+                              {legendConfig.max}{legendConfig.unit}
+                            </span>
+                          </div>
+                        </div>
                       </div>
                     </div>
                   );
                 }}
               </ClimaChartCard>
+
+              {/* Architectural Solar & Shading Diagnostic KPIs */}
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs bg-slate-50 p-3 rounded-2xl border border-slate-200 mt-2">
+                <div className="bg-white p-3 rounded-xl border border-slate-200 space-y-1">
+                  <span className="text-[10.5px] font-bold text-slate-500 uppercase tracking-wider block">
+                    1. Summer Overheating Protection
+                  </span>
+                  <div className="text-xl font-extrabold text-amber-700">
+                    {(() => {
+                      const facing = climate.hourly.filter((h) => {
+                        if (h.solarAlt <= 0.5) return false;
+                        let dAz = h.solarAz - facadeAzimuthDeg;
+                        while (dAz > 180) dAz -= 360;
+                        while (dAz < -180) dAz += 360;
+                        return Math.abs(dAz) < 90 && h.dryBulb >= 24;
+                      });
+                      const blocked = facing.filter((h) => {
+                        let dAz = h.solarAz - facadeAzimuthDeg;
+                        while (dAz > 180) dAz -= 360;
+                        while (dAz < -180) dAz += 360;
+                        const cosDelta = Math.cos((dAz * Math.PI) / 180);
+                        const prof = Math.atan(Math.tan((h.solarAlt * Math.PI) / 180) / Math.max(0.001, cosDelta)) * (180 / Math.PI);
+                        return (showProtractor && prof >= overhangAngleDeg) || (showProtractor && Math.abs(dAz) >= finAngleDeg);
+                      }).length;
+                      return facing.length > 0 ? `${Math.round((blocked / facing.length) * 100)}% Blocked` : 'N/A';
+                    })()}
+                  </div>
+                  <p className="text-[10px] text-slate-500">
+                    Hours with T_db ≥ 24°C successfully shaded by the overhang & vertical fins.
+                  </p>
+                </div>
+
+                <div className="bg-white p-3 rounded-xl border border-slate-200 space-y-1">
+                  <span className="text-[10.5px] font-bold text-slate-500 uppercase tracking-wider block">
+                    2. Winter Passive Solar Gains
+                  </span>
+                  <div className="text-xl font-extrabold text-teal-700">
+                    {(() => {
+                      const facing = climate.hourly.filter((h) => {
+                        if (h.solarAlt <= 0.5) return false;
+                        let dAz = h.solarAz - facadeAzimuthDeg;
+                        while (dAz > 180) dAz -= 360;
+                        while (dAz < -180) dAz += 360;
+                        return Math.abs(dAz) < 90 && h.dryBulb < 18;
+                      });
+                      const admitted = facing.filter((h) => {
+                        let dAz = h.solarAz - facadeAzimuthDeg;
+                        while (dAz > 180) dAz -= 360;
+                        while (dAz < -180) dAz += 360;
+                        const cosDelta = Math.cos((dAz * Math.PI) / 180);
+                        const prof = Math.atan(Math.tan((h.solarAlt * Math.PI) / 180) / Math.max(0.001, cosDelta)) * (180 / Math.PI);
+                        const isBlocked = (showProtractor && prof >= overhangAngleDeg) || (showProtractor && Math.abs(dAz) >= finAngleDeg);
+                        return !isBlocked;
+                      }).length;
+                      return facing.length > 0 ? `${Math.round((admitted / facing.length) * 100)}% Admitted` : 'N/A';
+                    })()}
+                  </div>
+                  <p className="text-[10px] text-slate-500">
+                    Cold hours (T_db &lt; 18°C) admitted directly into the building for natural heating.
+                  </p>
+                </div>
+
+                <div className="bg-white p-3 rounded-xl border border-slate-200 space-y-1">
+                  <span className="text-[10.5px] font-bold text-slate-500 uppercase tracking-wider block">
+                    3. Live Solar Inspector
+                  </span>
+                  {(() => {
+                    const pos = calcSolarPosition(climate.lat, selectedDayOfYear, selectedSunHour, climate.lon, climate.tz);
+                    let dAz = pos.az - facadeAzimuthDeg;
+                    while (dAz > 180) dAz -= 360;
+                    while (dAz < -180) dAz += 360;
+                    const inFront = Math.abs(dAz) < 90;
+                    const cosDelta = Math.cos((dAz * Math.PI) / 180);
+                    const prof = inFront && cosDelta > 0.001 ? Math.atan(Math.tan((pos.alt * Math.PI) / 180) / cosDelta) * (180 / Math.PI) : 90;
+                    const isShaded = (showProtractor && inFront && prof >= overhangAngleDeg) || (showProtractor && inFront && Math.abs(dAz) >= finAngleDeg) || !inFront;
+
+                    return (
+                      <div className="space-y-0.5 font-mono text-[10.5px]">
+                        <div className="font-bold text-slate-800">
+                          Alt: <span className="text-amber-600">{pos.alt.toFixed(1)}°</span> • Az: <span className="text-indigo-600">{pos.az.toFixed(1)}°</span>
+                        </div>
+                        <div className="text-slate-600">
+                          Profile Angle α: <strong className="text-slate-800">{inFront ? `${prof.toFixed(1)}°` : 'Behind'}</strong>
+                        </div>
+                        <div className="font-extrabold text-[11px] pt-0.5">
+                          Status: <span className={isShaded ? 'text-amber-700' : 'text-emerald-600'}>{isShaded ? 'Shaded / Masked' : 'Direct Sun'}</span>
+                        </div>
+                      </div>
+                    );
+                  })()}
+                </div>
+              </div>
             </div>
 
             {/* 8-Orientation Vertical Facade Radiation Rose */}

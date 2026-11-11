@@ -1076,163 +1076,201 @@ export const StructuralEurocodeStudio: React.FC = () => {
          ===================================================================== */}
       {activeStep === 2 && (
         <div className="space-y-4">
-          {/* Top Bay Controller Bar */}
-          <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 shadow-xl">
-            <div className="flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-slate-800 text-xs">
-              <div className="flex items-center gap-3">
-                <span className="font-bold text-slate-300">Material Scheme:</span>
-                {(['RC', 'Steel', 'Timber', 'Masonry'] as const).map((mat) => (
-                  <button
-                    key={mat}
-                    type="button"
-                    onClick={() => {
-                      setBayConfig({ ...bayConfig, materialSystem: mat });
-                      if (mat === 'RC') setActiveMember('rc_slab');
-                      else if (mat === 'Steel') setActiveMember('steel_beam');
-                      else if (mat === 'Timber') setActiveMember('clt_slab');
-                      else setActiveMember('masonry_wall');
-                    }}
-                    className={`px-3 py-1 rounded-xl font-bold transition ${
-                      bayConfig.materialSystem === mat
-                        ? 'bg-sky-600 text-white shadow'
-                        : 'bg-slate-800 text-slate-400 hover:text-white'
-                    }`}
-                  >
-                    {mat === 'RC' ? 'Reinforced Concrete' : mat === 'Steel' ? 'Structural Steel' : mat === 'Timber' ? 'Mass Timber / CLT' : 'Masonry'}
-                  </button>
-                ))}
+          <div className="grid grid-cols-1 xl:grid-cols-12 gap-5 items-start">
+            {/* LEFT COLUMN: 3D View (Enlarged viewport with more space on the left) */}
+            <div className="xl:col-span-8 space-y-3">
+              <StructuralBay3DViewer
+                config={bayConfig}
+                memberUtilisations={allMemberResults}
+                activeMember={activeMember}
+                onSelectMember={(m) => {
+                  setActiveMember(m);
+                }}
+                onNavigateToStep3={(m) => {
+                  if (m !== 'none') {
+                    setActiveMember(m);
+                    setActiveStep(3);
+                  }
+                }}
+                className="h-[560px] md:h-[620px] xl:h-[680px]"
+              />
+
+              {/* Tributary Cascade Summary Cards below the 3D viewport */}
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
+                <div className="bg-slate-900 border border-slate-800 p-3 rounded-xl space-y-1">
+                  <span className="font-bold text-slate-400 uppercase text-[10px] block">1. Floor Slab Action</span>
+                  <div className="font-mono text-slate-200">
+                    Gk: <span className="font-bold text-white">{takedown.slab_Gk.toFixed(1)} kN/m</span> • Qk:{' '}
+                    <span className="font-bold text-white">{takedown.slab_Qk.toFixed(1)} kN/m</span>
+                  </div>
+                  <div className="text-[11px] text-teal-400 font-mono">
+                    MEd = {takedown.slab_MEd.toFixed(1)} kNm • VEd = {takedown.slab_VEd.toFixed(1)} kN
+                  </div>
+                </div>
+
+                <div className="bg-slate-900 border border-slate-800 p-3 rounded-xl space-y-1">
+                  <span className="font-bold text-slate-400 uppercase text-[10px] block">2. Primary Beam Load</span>
+                  <div className="font-mono text-slate-200">
+                    Gk: <span className="font-bold text-white">{takedown.beam_Gk.toFixed(1)} kN/m</span> • Qk:{' '}
+                    <span className="font-bold text-white">{takedown.beam_Qk.toFixed(1)} kN/m</span>
+                  </div>
+                  <div className="text-[11px] text-teal-400 font-mono">
+                    MEd = {takedown.beam_MEd.toFixed(1)} kNm • VEd = {takedown.beam_VEd.toFixed(1)} kN
+                  </div>
+                </div>
+
+                <div className="bg-slate-900 border border-slate-800 p-3 rounded-xl space-y-1">
+                  <span className="font-bold text-slate-400 uppercase text-[10px] block">3. Column Base Takedown ({bayConfig.numberOfStoreys} Floors)</span>
+                  <div className="font-mono text-slate-200">
+                    NG,k: <span className="font-bold text-white">{takedown.column_NG_k.toFixed(0)} kN</span> • NQ,k:{' '}
+                    <span className="font-bold text-white">{takedown.column_NQ_k.toFixed(0)} kN</span>
+                  </div>
+                  <div className="text-[11px] font-mono font-extrabold text-sky-400">
+                    Factored NEd = {takedown.column_NEd.toFixed(0)} kN
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* RIGHT COLUMN: Controls (Dimensional Sliders, Framing Material, Auto Takedown, Quick Member Details) */}
+            <div className="xl:col-span-4 space-y-4">
+              {/* Framing Material System */}
+              <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 shadow-xl space-y-3">
+                <div className="flex items-center justify-between pb-2 border-b border-slate-800 text-xs">
+                  <span className="font-bold text-slate-200 uppercase tracking-wider text-[11px]">Material Scheme</span>
+                  <label className="flex items-center gap-1.5 bg-slate-800/90 px-2.5 py-1 rounded-lg border border-slate-700 text-[11px] cursor-pointer hover:bg-slate-750 transition">
+                    <input
+                      type="checkbox"
+                      checked={bayConfig.autoLoadTakedown}
+                      onChange={(e) => setBayConfig({ ...bayConfig, autoLoadTakedown: e.target.checked })}
+                      className="rounded border-slate-600 text-teal-500 focus:ring-teal-400"
+                    />
+                    <span className="font-semibold text-slate-300">Auto Takedown</span>
+                  </label>
+                </div>
+
+                <div className="grid grid-cols-2 gap-2 text-xs">
+                  {(['RC', 'Steel', 'Timber', 'Masonry'] as const).map((mat) => (
+                    <button
+                      key={mat}
+                      type="button"
+                      onClick={() => {
+                        setBayConfig({ ...bayConfig, materialSystem: mat });
+                        if (mat === 'RC') setActiveMember('rc_slab');
+                        else if (mat === 'Steel') setActiveMember('steel_beam');
+                        else if (mat === 'Timber') setActiveMember('clt_slab');
+                        else setActiveMember('masonry_wall');
+                      }}
+                      className={`px-3 py-2 rounded-xl font-bold transition text-left flex flex-col ${
+                        bayConfig.materialSystem === mat
+                          ? 'bg-sky-600 text-white shadow-md'
+                          : 'bg-slate-800 text-slate-400 hover:text-white hover:bg-slate-750'
+                      }`}
+                    >
+                      <span className="text-xs">{mat === 'RC' ? 'Reinforced Concrete' : mat === 'Steel' ? 'Structural Steel' : mat === 'Timber' ? 'Mass Timber / CLT' : 'Masonry'}</span>
+                      <span className="text-[10px] opacity-75 font-mono">{mat === 'RC' ? 'EN 1992' : mat === 'Steel' ? 'EN 1993' : mat === 'Timber' ? 'EN 1995' : 'EN 1996'}</span>
+                    </button>
+                  ))}
+                </div>
               </div>
 
-              {/* Auto Takedown Toggle */}
-              <div className="flex items-center gap-2">
-                <label className="flex items-center gap-2 bg-slate-800 px-3 py-1.5 rounded-xl border border-slate-700 text-xs cursor-pointer">
+              {/* Dimensional Sliders for the 3D Bay */}
+              <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 shadow-xl space-y-3.5 text-xs">
+                <span className="font-bold text-slate-200 text-xs uppercase tracking-wider block border-b border-slate-800 pb-2">
+                  Bay Dimensions: {bayConfig.spanL}m × {bayConfig.tributaryWidthBtr}m
+                </span>
+
+                <div>
+                  <div className="flex justify-between items-center font-semibold text-slate-300 mb-1">
+                    <span>Bay Span (L):</span>
+                    <span className="font-mono text-sky-400 font-bold tabular-nums inline-block text-right w-16">{bayConfig.spanL.toFixed(1)} m</span>
+                  </div>
                   <input
-                    type="checkbox"
-                    checked={bayConfig.autoLoadTakedown}
-                    onChange={(e) => setBayConfig({ ...bayConfig, autoLoadTakedown: e.target.checked })}
-                    className="rounded border-slate-600 text-teal-500 focus:ring-teal-400"
+                    type="range"
+                    min="3.0"
+                    max="12.0"
+                    step="0.5"
+                    value={bayConfig.spanL}
+                    onChange={(e) => setBayConfig({ ...bayConfig, spanL: parseFloat(e.target.value) })}
+                    className="w-full accent-sky-400 cursor-pointer"
                   />
-                  <span className="font-semibold text-slate-200">Auto Tributary Load Takedown</span>
-                </label>
-              </div>
-            </div>
-
-            {/* Dimensional Sliders for the 3D Bay */}
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 pt-3 text-xs">
-              <div>
-                <div className="flex justify-between items-center font-semibold text-slate-300 mb-1">
-                  <span>Bay Span (L):</span>
-                  <span className="font-mono text-sky-400 font-bold tabular-nums inline-block text-right w-16">{bayConfig.spanL.toFixed(1)} m</span>
                 </div>
-                <input
-                  type="range"
-                  min="3.0"
-                  max="12.0"
-                  step="0.5"
-                  value={bayConfig.spanL}
-                  onChange={(e) => setBayConfig({ ...bayConfig, spanL: parseFloat(e.target.value) })}
-                  className="w-full accent-sky-400 cursor-pointer"
-                />
-              </div>
 
-              <div>
-                <div className="flex justify-between items-center font-semibold text-slate-300 mb-1">
-                  <span>Tributary Width (Btr):</span>
-                  <span className="font-mono text-sky-400 font-bold tabular-nums inline-block text-right w-16">{bayConfig.tributaryWidthBtr.toFixed(1)} m</span>
+                <div>
+                  <div className="flex justify-between items-center font-semibold text-slate-300 mb-1">
+                    <span>Tributary Width (Btr):</span>
+                    <span className="font-mono text-sky-400 font-bold tabular-nums inline-block text-right w-16">{bayConfig.tributaryWidthBtr.toFixed(1)} m</span>
+                  </div>
+                  <input
+                    type="range"
+                    min="2.0"
+                    max="8.0"
+                    step="0.5"
+                    value={bayConfig.tributaryWidthBtr}
+                    onChange={(e) => setBayConfig({ ...bayConfig, tributaryWidthBtr: parseFloat(e.target.value) })}
+                    className="w-full accent-sky-400 cursor-pointer"
+                  />
                 </div>
-                <input
-                  type="range"
-                  min="2.0"
-                  max="8.0"
-                  step="0.5"
-                  value={bayConfig.tributaryWidthBtr}
-                  onChange={(e) => setBayConfig({ ...bayConfig, tributaryWidthBtr: parseFloat(e.target.value) })}
-                  className="w-full accent-sky-400 cursor-pointer"
-                />
-              </div>
 
-              <div>
-                <div className="flex justify-between items-center font-semibold text-slate-300 mb-1">
-                  <span>Storey Height (H):</span>
-                  <span className="font-mono text-sky-400 font-bold tabular-nums inline-block text-right w-16">{bayConfig.storeyHeightH.toFixed(1)} m</span>
+                <div>
+                  <div className="flex justify-between items-center font-semibold text-slate-300 mb-1">
+                    <span>Storey Height (H):</span>
+                    <span className="font-mono text-sky-400 font-bold tabular-nums inline-block text-right w-16">{bayConfig.storeyHeightH.toFixed(1)} m</span>
+                  </div>
+                  <input
+                    type="range"
+                    min="2.5"
+                    max="5.0"
+                    step="0.25"
+                    value={bayConfig.storeyHeightH}
+                    onChange={(e) => setBayConfig({ ...bayConfig, storeyHeightH: parseFloat(e.target.value) })}
+                    className="w-full accent-sky-400 cursor-pointer"
+                  />
                 </div>
-                <input
-                  type="range"
-                  min="2.5"
-                  max="5.0"
-                  step="0.25"
-                  value={bayConfig.storeyHeightH}
-                  onChange={(e) => setBayConfig({ ...bayConfig, storeyHeightH: parseFloat(e.target.value) })}
-                  className="w-full accent-sky-400 cursor-pointer"
-                />
-              </div>
 
-              <div>
-                <div className="flex justify-between items-center font-semibold text-slate-300 mb-1">
-                  <span>Supported Storeys (N):</span>
-                  <span className="font-mono text-sky-400 font-bold tabular-nums inline-block text-right w-20">{bayConfig.numberOfStoreys} Floors</span>
+                <div>
+                  <div className="flex justify-between items-center font-semibold text-slate-300 mb-1">
+                    <span>Supported Storeys (N):</span>
+                    <span className="font-mono text-sky-400 font-bold tabular-nums inline-block text-right w-20">{bayConfig.numberOfStoreys} Floors</span>
+                  </div>
+                  <input
+                    type="range"
+                    min="1"
+                    max="8"
+                    step="1"
+                    value={bayConfig.numberOfStoreys}
+                    onChange={(e) => setBayConfig({ ...bayConfig, numberOfStoreys: parseInt(e.target.value) })}
+                    className="w-full accent-sky-400 cursor-pointer"
+                  />
                 </div>
-                <input
-                  type="range"
-                  min="1"
-                  max="8"
-                  step="1"
-                  value={bayConfig.numberOfStoreys}
-                  onChange={(e) => setBayConfig({ ...bayConfig, numberOfStoreys: parseInt(e.target.value) })}
-                  className="w-full accent-sky-400 cursor-pointer"
-                />
               </div>
-            </div>
-          </div>
 
-          {/* 3D WebGL Structural Bay Viewer */}
-          <StructuralBay3DViewer
-            config={bayConfig}
-            memberUtilisations={allMemberResults}
-            activeMember={activeMember}
-            onSelectMember={(m) => {
-              setActiveMember(m);
-            }}
-            onNavigateToStep3={(m) => {
-              if (m !== 'none') {
-                setActiveMember(m);
-                setActiveStep(3);
-              }
-            }}
-          />
-
-          {/* Tributary Cascade Summary Cards */}
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
-            <div className="bg-slate-900 border border-slate-800 p-3 rounded-xl space-y-1">
-              <span className="font-bold text-slate-400 uppercase text-[10px] block">1. Floor Slab Action</span>
-              <div className="font-mono text-slate-200">
-                Gk: <span className="font-bold text-white">{takedown.slab_Gk.toFixed(1)} kN/m</span> • Qk:{' '}
-                <span className="font-bold text-white">{takedown.slab_Qk.toFixed(1)} kN/m</span>
-              </div>
-              <div className="text-[11px] text-teal-400 font-mono">
-                MEd = {takedown.slab_MEd.toFixed(1)} kNm • VEd = {takedown.slab_VEd.toFixed(1)} kN
-              </div>
-            </div>
-
-            <div className="bg-slate-900 border border-slate-800 p-3 rounded-xl space-y-1">
-              <span className="font-bold text-slate-400 uppercase text-[10px] block">2. Primary Beam Load</span>
-              <div className="font-mono text-slate-200">
-                Gk: <span className="font-bold text-white">{takedown.beam_Gk.toFixed(1)} kN/m</span> • Qk:{' '}
-                <span className="font-bold text-white">{takedown.beam_Qk.toFixed(1)} kN/m</span>
-              </div>
-              <div className="text-[11px] text-teal-400 font-mono">
-                MEd = {takedown.beam_MEd.toFixed(1)} kNm • VEd = {takedown.beam_VEd.toFixed(1)} kN
-              </div>
-            </div>
-
-            <div className="bg-slate-900 border border-slate-800 p-3 rounded-xl space-y-1">
-              <span className="font-bold text-slate-400 uppercase text-[10px] block">3. Column Base Takedown ({bayConfig.numberOfStoreys} Floors)</span>
-              <div className="font-mono text-slate-200">
-                NG,k: <span className="font-bold text-white">{takedown.column_NG_k.toFixed(0)} kN</span> • NQ,k:{' '}
-                <span className="font-bold text-white">{takedown.column_NQ_k.toFixed(0)} kN</span>
-              </div>
-              <div className="text-[11px] font-mono font-extrabold text-sky-400">
-                Factored NEd = {takedown.column_NEd.toFixed(0)} kN
+              {/* Selected Member Quick Inspector & Action */}
+              <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 shadow-xl space-y-3">
+                <div className="flex items-center justify-between">
+                  <span className="font-bold text-slate-200 text-xs uppercase tracking-wider">Active Member</span>
+                  <span className="text-[10px] font-mono font-bold text-teal-400">
+                    {activeMember === 'none' ? 'Overview' : activeMember.toUpperCase()}
+                  </span>
+                </div>
+                <div className="text-xs text-slate-300 space-y-1">
+                  <p className="font-semibold text-white">
+                    {MEMBER_SCOPE_NOTES[activeMember]?.standard || 'EN 1990 Basis of Design'}
+                  </p>
+                  <p className="text-[11px] text-slate-400 leading-relaxed">
+                    {MEMBER_SCOPE_NOTES[activeMember]?.scope || 'Multi-storey 3D structural bay framing and tributary load path.'}
+                  </p>
+                </div>
+                {activeMember !== 'none' && (
+                  <button
+                    type="button"
+                    onClick={() => setActiveStep(3)}
+                    className="w-full py-2 px-3 rounded-xl bg-gradient-to-r from-teal-500 to-sky-600 hover:from-teal-400 hover:to-sky-500 text-white font-bold text-xs shadow-lg transition flex items-center justify-center gap-2 cursor-pointer"
+                  >
+                    <span>Design & Check in Step 3</span>
+                    <ChevronRight className="w-4 h-4" />
+                  </button>
+                )}
               </div>
             </div>
           </div>
