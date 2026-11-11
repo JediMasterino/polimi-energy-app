@@ -275,7 +275,7 @@ export function calcSolarGainMrtDelta(
 ): number {
   const alt = Math.max(0, solAltitude);
   const dni = Math.max(0, solRadiationDir);
-  if (dni <= 0 || alt <= 0) return 0;
+  if (dni <= 0) return 0;
 
   const degToRad = Math.PI / 180;
   const hr = 6.0;

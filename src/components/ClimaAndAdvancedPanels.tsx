@@ -547,7 +547,7 @@ export const CbeClimaExplorerTab: React.FC<ClimaTabProps> = ({
               const makeDayTrack = (dayOfYear: number) => {
                 const pts: string[] = [];
                 for (let h = 4; h <= 20; h += 0.25) {
-                  const { alt, az } = calcSolarPosition(climate.lat, dayOfYear, h);
+                  const { alt, az } = calcSolarPosition(climate.lat, dayOfYear, h, climate.lon, climate.tz);
                   if (alt > 0) {
                     const { x, y } = toXY(alt, az);
                     pts.push(`${pts.length === 0 ? 'M' : 'L'} ${x.toFixed(1)} ${y.toFixed(1)}`);
@@ -592,7 +592,7 @@ export const CbeClimaExplorerTab: React.FC<ClimaTabProps> = ({
                   {[9, 12, 15].map((h) => {
                     const pts: string[] = [];
                     for (let d = 1; d <= 365; d += 10) {
-                      const { alt, az } = calcSolarPosition(climate.lat, d, h);
+                      const { alt, az } = calcSolarPosition(climate.lat, d, h, climate.lon, climate.tz);
                       if (alt > 0) {
                         const p = toXY(alt, az);
                         pts.push(`${pts.length === 0 ? 'M' : 'L'} ${p.x.toFixed(1)} ${p.y.toFixed(1)}`);
