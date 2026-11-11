@@ -289,6 +289,15 @@ export const ClimaChartCard: React.FC<ClimaChartCardProps> = ({
 // ============================================================================
 // REUSABLE 24h x 365d TIMETABLE CARPET HEATMAP SVG RENDERER (INTERACTIVE HOVER)
 // ============================================================================
+export interface ContinuousLegendConfig {
+  min: number;
+  max: number;
+  unit: string;
+  gradientCss: string;
+  description?: string;
+  formatValue?: (val: number) => string;
+}
+
 interface CarpetHeatmapProps {
   svgRef?: React.RefObject<SVGSVGElement | null>;
   tooltipCtx?: ClimaTooltipCtx;
@@ -297,13 +306,7 @@ interface CarpetHeatmapProps {
   getColor: (val: number) => string;
   unitLabel: string;
   legendItems?: Array<{ label: string; color: string }>;
-  continuousLegend?: {
-    min: number;
-    max: number;
-    unit: string;
-    gradientCss: string;
-    description?: string;
-  };
+  continuousLegend?: ContinuousLegendConfig;
   customTooltipRows?: (val: number, rec: HourlyWeatherRecord, idx: number) => Array<{ label: string; value: string; color?: string }>;
 }
 
@@ -474,14 +477,24 @@ export const CarpetHeatmap24x365: React.FC<CarpetHeatmapProps> = ({
             )}
             <div className="flex items-center gap-2">
               <span className="text-[11px] font-bold text-slate-800 font-mono">
-                {continuousLegend.min.toFixed(1)}{continuousLegend.unit}
+                {continuousLegend.formatValue
+                  ? continuousLegend.formatValue(continuousLegend.min)
+                  : Number.isInteger(continuousLegend.min)
+                  ? continuousLegend.min
+                  : continuousLegend.min.toFixed(1)}
+                {continuousLegend.unit}
               </span>
               <div
                 className="w-44 sm:w-60 h-3.5 rounded-md border border-slate-300 shadow-2xs"
                 style={{ background: continuousLegend.gradientCss }}
               />
               <span className="text-[11px] font-bold text-slate-800 font-mono">
-                {continuousLegend.max.toFixed(1)}{continuousLegend.unit}
+                {continuousLegend.formatValue
+                  ? continuousLegend.formatValue(continuousLegend.max)
+                  : Number.isInteger(continuousLegend.max)
+                  ? continuousLegend.max
+                  : continuousLegend.max.toFixed(1)}
+                {continuousLegend.unit}
               </span>
             </div>
           </div>
@@ -516,7 +529,7 @@ function interpolatePalette(stops: Array<[number, number, number]>, tNorm: numbe
   return `rgb(${r},${g},${b})`;
 }
 
-const RDYLBU_R_STOPS: Array<[number, number, number]> = [
+export const RDYLBU_R_STOPS: Array<[number, number, number]> = [
   [49, 54, 149],
   [69, 117, 180],
   [116, 173, 209],
@@ -527,7 +540,7 @@ const RDYLBU_R_STOPS: Array<[number, number, number]> = [
   [165, 0, 38]
 ];
 
-const YLGNBU_STOPS: Array<[number, number, number]> = [
+export const YLGNBU_STOPS: Array<[number, number, number]> = [
   [255, 255, 204],
   [199, 233, 180],
   [127, 205, 187],
@@ -537,7 +550,7 @@ const YLGNBU_STOPS: Array<[number, number, number]> = [
   [12, 44, 132]
 ];
 
-const YLORRD_WIND_STOPS: Array<[number, number, number]> = [
+export const YLORRD_WIND_STOPS: Array<[number, number, number]> = [
   [15, 23, 42],
   [3, 105, 161],
   [13, 148, 136],
@@ -545,19 +558,44 @@ const YLORRD_WIND_STOPS: Array<[number, number, number]> = [
   [225, 29, 72]
 ];
 
-export function colorForTempC(t: number, globalRange: boolean): string {
-  const min = globalRange ? -20 : -5;
-  const max = globalRange ? 45 : 38;
-  return interpolatePalette(RDYLBU_R_STOPS, (t - min) / (max - min));
+export const CBE_RDYLBU_R_GRADIENT_CSS =
+  'linear-gradient(to right, rgb(49,54,149), rgb(69,117,180), rgb(116,173,209), rgb(224,243,248), rgb(254,224,144), rgb(244,109,67), rgb(215,48,39), rgb(165,0,38))';
+
+export const CBE_YLGNBU_GRADIENT_CSS =
+  'linear-gradient(to right, rgb(255,255,204), rgb(199,233,180), rgb(127,205,187), rgb(65,182,196), rgb(29,145,192), rgb(34,94,168), rgb(12,44,132))';
+
+export const CBE_WIND_SPEED_GRADIENT_CSS =
+  'linear-gradient(to right, rgb(15,23,42), rgb(3,105,161), rgb(13,148,136), rgb(245,158,11), rgb(225,29,72))';
+
+export const CBE_WIND_DIR_GRADIENT_CSS =
+  'linear-gradient(to right, #38bdf8 0%, #38bdf8 12.5%, #a78bfa 12.5%, #a78bfa 37.5%, #f59e0b 37.5%, #f59e0b 62.5%, #10b981 62.5%, #10b981 87.5%, #38bdf8 87.5%, #38bdf8 100%)';
+
+export const CBE_UTCI_10BAND_GRADIENT_CSS =
+  'linear-gradient(to right, #001433 0% 10%, #002b66 10% 20%, #0059b3 20% 30%, #1a8cff 30% 40%, #66b3ff 40% 50%, #22c55e 50% 60%, #ffcc00 60% 70%, #ff9900 70% 80%, #ff3300 80% 90%, #751613 90% 100%)';
+
+export const CBE_NATVENT_GRADIENT_CSS =
+  'linear-gradient(to right, #0284c7 0% 20%, #10b981 20% 40%, #8b5cf6 40% 60%, #f59e0b 60% 80%, #e11d48 80% 100%)';
+
+export function colorForTempC(t: number, globalRange: boolean, customMin?: number, customMax?: number): string {
+  const min = customMin !== undefined ? customMin : (globalRange ? -20 : -5);
+  const max = customMax !== undefined ? customMax : (globalRange ? 45 : 38);
+  const range = max - min;
+  const norm = range > 0 ? (t - min) / range : 0.5;
+  return interpolatePalette(RDYLBU_R_STOPS, Math.max(0, Math.min(1, norm)));
 }
 
-export function colorForRhPct(rh: number): string {
-  return interpolatePalette(YLGNBU_STOPS, rh / 100);
+export function colorForRhPct(rh: number, customMin = 0, customMax = 100): string {
+  const range = customMax - customMin;
+  const norm = range > 0 ? (rh - customMin) / range : rh / 100;
+  return interpolatePalette(YLGNBU_STOPS, Math.max(0, Math.min(1, norm)));
 }
 
-export function colorForWindSpeed(v: number, globalRange: boolean): string {
-  const max = globalRange ? 18 : 10;
-  return interpolatePalette(YLORRD_WIND_STOPS, v / max);
+export function colorForWindSpeed(v: number, globalRange: boolean, customMin = 0, customMax?: number): string {
+  const min = customMin;
+  const max = customMax !== undefined ? customMax : (globalRange ? 18 : 10);
+  const range = max - min;
+  const norm = range > 0 ? (v - min) / range : 0;
+  return interpolatePalette(YLORRD_WIND_STOPS, Math.max(0, Math.min(1, norm)));
 }
 
 export function colorForWindDir(deg: number): string {
@@ -929,23 +967,45 @@ export const SubTab5Wind: React.FC<{
             rows: climate.hourly.map((h) => [h.hourOfYear, h.month + 1, h.dayOfMonth, h.hour, h.windSpeed, h.windDir])
           })}
         >
-          {(svgRef, tooltipCtx) => (
-            <CarpetHeatmap24x365
-              svgRef={svgRef}
-              tooltipCtx={tooltipCtx}
-              hourly={climate.hourly}
-              getValue={(h) => h.windSpeed}
-              getColor={(v) => colorForWindSpeed(v, globalValueRanges)}
-              unitLabel="m/s"
-              legendItems={[
-                { label: '<2 m/s', color: '#0f172a' },
-                { label: '2–4 m/s', color: '#0369a1' },
-                { label: '4–6 m/s', color: '#0d9488' },
-                { label: '6–8 m/s', color: '#f59e0b' },
-                { label: '>8 m/s', color: '#f43f5e' }
-              ]}
-            />
-          )}
+          {(svgRef, tooltipCtx) => {
+            const maxWind = Math.max(...climate.hourly.map((h) => h.windSpeed));
+            const windRangeMin = 0;
+            const windRangeMax = globalValueRanges ? 18 : Math.max(8, Math.ceil(maxWind));
+
+            return (
+              <CarpetHeatmap24x365
+                svgRef={svgRef}
+                tooltipCtx={tooltipCtx}
+                hourly={climate.hourly}
+                getValue={(h) => h.windSpeed}
+                getColor={(v) => colorForWindSpeed(v, globalValueRanges, windRangeMin, windRangeMax)}
+                unitLabel="m/s"
+                continuousLegend={{
+                  min: windRangeMin,
+                  max: windRangeMax,
+                  unit: ' m/s',
+                  gradientCss: CBE_WIND_SPEED_GRADIENT_CSS,
+                  description: `CBE Clima Continuous Gradient (${globalValueRanges ? 'Global Range [0, 18] m/s' : `Local Range [0, ${windRangeMax.toFixed(1)}] m/s`})`
+                }}
+                customTooltipRows={(val, rec) => {
+                  const dirName =
+                    rec.windDir >= 315 || rec.windDir < 45
+                      ? 'North (N)'
+                      : rec.windDir < 135
+                      ? 'East (E)'
+                      : rec.windDir < 225
+                      ? 'South (S)'
+                      : 'West (W)';
+                  return [
+                    { label: 'Wind Speed', value: `${val.toFixed(1)} m/s`, color: colorForWindSpeed(val, globalValueRanges, windRangeMin, windRangeMax) },
+                    { label: 'Wind Direction', value: `${rec.windDir}° • ${dirName}` },
+                    { label: 'Dry-Bulb Temp', value: `${rec.dryBulb}°C` },
+                    { label: 'Relative Humidity', value: `${rec.relHum}%` }
+                  ];
+                }}
+              />
+            );
+          }}
         </ClimaChartCard>
 
         <ClimaChartCard
@@ -967,12 +1027,28 @@ export const SubTab5Wind: React.FC<{
               getValue={(h) => h.windDir}
               getColor={(deg) => colorForWindDir(deg)}
               unitLabel="Azimuth°"
-              legendItems={[
-                { label: 'North (315°–45°)', color: '#38bdf8' },
-                { label: 'East (45°–135°)', color: '#a78bfa' },
-                { label: 'South (135°–225°)', color: '#f59e0b' },
-                { label: 'West (225°–315°)', color: '#10b981' }
-              ]}
+              continuousLegend={{
+                min: 0,
+                max: 360,
+                unit: '°',
+                gradientCss: CBE_WIND_DIR_GRADIENT_CSS,
+                description: 'Cardinal Wind Azimuths (N: 315°–45° • E: 45°–135° • S: 135°–225° • W: 225°–315°)'
+              }}
+              customTooltipRows={(val, rec) => {
+                const dirName =
+                  val >= 315 || val < 45
+                    ? 'North (N)'
+                    : val < 135
+                    ? 'East (E)'
+                    : val < 225
+                    ? 'South (S)'
+                    : 'West (W)';
+                return [
+                  { label: 'Wind Direction', value: `${val.toFixed(0)}° • ${dirName}`, color: colorForWindDir(val) },
+                  { label: 'Wind Speed', value: `${rec.windSpeed.toFixed(1)} m/s` },
+                  { label: 'Dry-Bulb Temp', value: `${rec.dryBulb}°C` }
+                ];
+              }}
             />
           )}
         </ClimaChartCard>
@@ -1673,13 +1749,35 @@ export const SubTab7NatVent: React.FC<{
                   return '#e11d48';
                 }}
                 unitLabel="NatVent Regime"
-                legendItems={[
-                  { label: `Suitable (${nvStats.annualSuitablePct}%)`, color: '#10b981' },
-                  { label: `Too Cold (${nvStats.tooColdPct}%)`, color: '#0284c7' },
-                  { label: `Dew-Point >${maxDewPointC}°C (${nvStats.tooHumidPct}%)`, color: '#8b5cf6' },
-                  { label: `Too Windy (${nvStats.tooWindyPct}%)`, color: '#f59e0b' },
-                  { label: `Too Hot (${nvStats.tooHotPct}%)`, color: '#e11d48' }
-                ]}
+                continuousLegend={{
+                  min: 0,
+                  max: 5,
+                  unit: ' Regimes',
+                  gradientCss: CBE_NATVENT_GRADIENT_CSS,
+                  description: `NatVent Regimes (Cold: ${nvStats.tooColdPct}% • Suitable: ${nvStats.annualSuitablePct}% • Muggy: ${nvStats.tooHumidPct}% • Windy: ${nvStats.tooWindyPct}% • Hot: ${nvStats.tooHotPct}%)`
+                }}
+                customTooltipRows={(_, rec, idx) => {
+                  const st = nvStats.hourlyStates[idx];
+                  const stLabel =
+                    st === 'suitable'
+                      ? `Suitable (${minTempC}–${maxTempC}°C, T_dp ≤ ${maxDewPointC}°C)`
+                      : st === 'too_cold'
+                      ? `Too Cold (< ${minTempC}°C)`
+                      : st === 'too_humid'
+                      ? `Too Humid / Muggy (T_dp > ${maxDewPointC}°C)`
+                      : st === 'too_windy'
+                      ? `Too Windy (> ${maxWindMs} m/s)`
+                      : `Too Hot (> ${maxTempC}°C)`;
+                  const col =
+                    st === 'suitable' ? '#10b981' : st === 'too_cold' ? '#0284c7' : st === 'too_humid' ? '#8b5cf6' : st === 'too_windy' ? '#f59e0b' : '#e11d48';
+                  return [
+                    { label: 'Ventilation Status', value: stLabel, color: col },
+                    { label: 'Dry-Bulb Temp', value: `${rec.dryBulb}°C` },
+                    { label: 'Dew-Point Temp', value: `${(rec.dewPoint ?? calcDewPointC(rec.dryBulb, rec.relHum)).toFixed(1)}°C` },
+                    { label: 'Wind Speed', value: `${rec.windSpeed} m/s` },
+                    { label: 'Relative Humidity', value: `${rec.relHum}%` }
+                  ];
+                }}
               />
             )}
           </ClimaChartCard>
@@ -2022,6 +2120,13 @@ export const SubTab8Utci: React.FC<{
               getValue={(_, idx) => utciData.hourlyUtci[idx]}
               getColor={(val) => getUtciStressCategory(val).color}
               unitLabel="UTCI Thermal Stress"
+              continuousLegend={{
+                min: -40,
+                max: 46,
+                unit: '°C',
+                gradientCss: CBE_UTCI_10BAND_GRADIENT_CSS,
+                description: '10 Physiological Thermal Stress Categories (Extreme Cold ≤ -40°C to Extreme Heat > +46°C)'
+              }}
               legendItems={UTCI_STRESS_CATEGORIES.map((b) => ({
                 label: b.label,
                 color: b.color
@@ -2873,7 +2978,8 @@ export const SubTab9DataExplorer: React.FC<{
             const ch = plotH / N;
 
             return (
-              <svg ref={svgRef} viewBox={`0 0 ${W} ${H}`} className="w-full h-auto bg-slate-950 rounded-xl">
+              <div>
+                <svg ref={svgRef} viewBox={`0 0 ${W} ${H}`} className="w-full h-auto bg-slate-950 rounded-xl">
                 {stats.grid.map((row, gy) =>
                   row.map((cnt, gx) => {
                     const x = padL + gx * cw;
@@ -2949,9 +3055,27 @@ export const SubTab9DataExplorer: React.FC<{
                   {yMeta.label} ({stats.yHist.min} → {stats.yHist.max} {yMeta.unit})
                 </text>
               </svg>
-            );
-          }}
-        </ClimaChartCard>
+
+              <div className="flex flex-wrap items-center justify-between gap-2 text-[11px] text-slate-600 px-1 font-medium pt-2 border-t border-slate-200 mt-2">
+                <span className="font-semibold text-slate-700">
+                  2D Frequency Density (12 × 12 Bins • Total {filtered.length.toLocaleString()} h Filtered)
+                </span>
+                <div className="flex flex-wrap items-center gap-3">
+                  <span className="text-[10px] text-slate-500 font-medium">Binned Frequency Heatmap</span>
+                  <div className="flex items-center gap-2">
+                    <span className="text-[11px] font-bold text-slate-800 font-mono">0h</span>
+                    <div
+                      className="w-44 sm:w-60 h-3.5 rounded-md border border-slate-300 shadow-2xs"
+                      style={{ background: 'linear-gradient(to right, #0f172a 0%, #1e3a8a 25%, #0284c7 50%, #10b981 75%, #f59e0b 100%)' }}
+                    />
+                    <span className="text-[11px] font-bold text-slate-800 font-mono">{stats.maxBinCount}h</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          );
+        }}
+      </ClimaChartCard>
       </div>
     </div>
   );

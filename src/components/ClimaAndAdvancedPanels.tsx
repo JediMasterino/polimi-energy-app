@@ -86,8 +86,8 @@ export const EpwSearchAndUploadWidget: React.FC<EpwWidgetProps> = ({
       st.source === 'onebuilding'
         ? `Climate.OneBuilding.org (${activePeriod})`
         : st.source === 'energyplus'
-        ? 'DOE EnergyPlus S3'
-        : 'Open-Meteo ERA5';
+          ? 'DOE EnergyPlus S3'
+          : 'Open-Meteo ERA5';
     setStatusMsg(`Downloading & extracting 8,760h EPW for ${st.city} from ${srcLabel}...`);
     try {
       const ds = await fetchStationClimateDataset(st, activePeriod);
@@ -148,8 +148,8 @@ export const EpwSearchAndUploadWidget: React.FC<EpwWidgetProps> = ({
             type="button"
             onClick={() => setShowMap((v) => !v)}
             className={`flex items-center gap-1 px-2 py-1 rounded border text-[11px] font-semibold transition ${showMap
-                ? 'bg-teal-600/30 border-teal-500 text-teal-200'
-                : 'bg-slate-800 hover:bg-slate-700 text-slate-300 border-slate-600'
+              ? 'bg-teal-600/30 border-teal-500 text-teal-200'
+              : 'bg-slate-800 hover:bg-slate-700 text-slate-300 border-slate-600'
               }`}
             title="Toggle interactive EPW weather station map"
           >
@@ -243,15 +243,15 @@ export const EpwSearchAndUploadWidget: React.FC<EpwWidgetProps> = ({
                       st.source === 'onebuilding'
                         ? 'text-sky-300 font-semibold'
                         : st.source === 'energyplus'
-                        ? 'text-amber-300 font-semibold'
-                        : 'text-pink-300'
+                          ? 'text-amber-300 font-semibold'
+                          : 'text-pink-300'
                     }
                   >
                     {st.source === 'onebuilding'
                       ? `Climate.OneBuilding.org (${oneBuildingPeriod})`
                       : st.source === 'energyplus'
-                      ? 'Official DOE / NREL EnergyPlus EPW'
-                      : 'Open-Meteo ERA5 8760h TMY'}
+                        ? 'Official DOE / NREL EnergyPlus EPW'
+                        : 'Open-Meteo ERA5 8760h TMY'}
                   </span>
                 </div>
               </div>
@@ -831,16 +831,68 @@ export const CbeClimaExplorerTab: React.FC<ClimaTabProps> = ({
           })()}
 
           {/* Legend */}
-          <div className="flex flex-wrap items-center justify-between text-[11px] text-slate-600 pt-2 border-t border-slate-200 mt-1">
-            <span className="font-semibold">
-              {heatmapVar === 'dryBulb' && 'Legend: <8°C (Cold Blue) • 16–22°C (Comfort Green) • 22–26°C (Warm Amber) • >30°C (Hot Rose)'}
-              {heatmapVar === 'ghi' && 'Legend: Night (Dark) • <350 W/m² (Diffuse Sky Blue) • 350–750 W/m² (Direct Gold) • >750 W/m² (Peak Solar)'}
-              {heatmapVar === 'utci' && 'Legend: <9°C (Cold Stress) • 9–26°C (No Thermal Stress Green) • 26–32°C (Moderate Heat) • >32°C (Strong Heat Stress)'}
-              {heatmapVar === 'daylight' && 'Legend: Night (Dark) • <100 lx (Electric Light Needed) • 100–2000 lx (Useful Daylight UDI Green) • >2000 lx (Glare Risk Rose)'}
-              {heatmapVar === 'indoorFree' && 'Legend: <18°C (Underheated Blue) • 18–26°C (Passive Comfort Zone Green) • 26–28°C (Warm) • >28°C (Overheating Risk)'}
-            </span>
-            <span className="text-slate-400">8,760 hourly records active</span>
-          </div>
+          {(() => {
+            const legendConfig = {
+              dryBulb: {
+                min: -5,
+                max: 38,
+                unit: '°C',
+                gradient: 'linear-gradient(to right, #0284c7 0%, #38bdf8 25%, #10b981 50%, #fbbf24 75%, #e11d48 100%)',
+                description: 'Dry-Bulb Temp (Cold <8°C • Neutral 16–22°C • Warm 22–26°C • Hot >30°C)'
+              },
+              ghi: {
+                min: 0,
+                max: 1000,
+                unit: ' W/m²',
+                gradient: 'linear-gradient(to right, #0f172a 0%, #1e3a8a 15%, #0284c7 35%, #eab308 55%, #f97316 75%, #fef08a 100%)',
+                description: 'Global Horizontal Irradiance (Night 0 • Diffuse Sky Blue • Peak Gold >750 W/m²)'
+              },
+              utci: {
+                min: -10,
+                max: 42,
+                unit: '°C',
+                gradient: 'linear-gradient(to right, #1d4ed8 0%, #38bdf8 20%, #10b981 45%, #f59e0b 70%, #be123c 100%)',
+                description: 'UTCI Thermal Stress (Cold Stress <9°C • Comfort 9–26°C • Heat Stress >32°C)'
+              },
+              daylight: {
+                min: 0,
+                max: 3000,
+                unit: ' lx',
+                gradient: 'linear-gradient(to right, #0f172a 0%, #3b82f6 15%, #10b981 50%, #f43f5e 100%)',
+                description: 'Daylight UDI (Night 0 • Underlit <100 lx • Useful Daylight 100–2000 lx • Glare >2000 lx)'
+              },
+              indoorFree: {
+                min: 14,
+                max: 32,
+                unit: '°C',
+                gradient: 'linear-gradient(to right, #38bdf8 0%, #10b981 45%, #fbbf24 75%, #e11d48 100%)',
+                description: 'Free-Running T_op (Underheated <18°C • Passive Comfort 18–26°C • Overheating >28°C)'
+              }
+            }[heatmapVar];
+
+            return (
+              <div className="flex flex-wrap items-center justify-between gap-2 text-[11px] text-slate-600 pt-2 border-t border-slate-200 mt-1 font-medium">
+                <span className="font-semibold text-slate-700">
+                  365 Days × 24 Hours (8,760h Annual Matrix • 73 5-day columns)
+                </span>
+                <div className="flex flex-wrap items-center gap-3">
+                  <span className="text-[10px] text-slate-500 font-medium">{legendConfig.description}</span>
+                  <div className="flex items-center gap-2">
+                    <span className="text-[11px] font-bold text-slate-800 font-mono">
+                      {legendConfig.min}{legendConfig.unit}
+                    </span>
+                    <div
+                      className="w-44 sm:w-60 h-3.5 rounded-md border border-slate-300 shadow-2xs"
+                      style={{ background: legendConfig.gradient }}
+                    />
+                    <span className="text-[11px] font-bold text-slate-800 font-mono">
+                      {legendConfig.max}{legendConfig.unit}
+                    </span>
+                  </div>
+                </div>
+              </div>
+            );
+          })()}
         </div>
       </div>
     </div>

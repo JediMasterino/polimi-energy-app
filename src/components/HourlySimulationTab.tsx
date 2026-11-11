@@ -291,14 +291,15 @@ export const HourlySimulationTab: React.FC = () => {
             365 Days (Horizontal Axis) × 24 Hours of the Day (Vertical Axis)
           </span>
 
-          {/* Color Scale Legend */}
-          <div className="flex items-center gap-2 text-[10px]">
-            <span className="text-slate-400">&lt;18°C</span>
-            <span className="w-4 h-2.5 rounded bg-sky-400 inline-block" />
-            <span className="w-4 h-2.5 rounded bg-emerald-400 inline-block" />
-            <span className="w-4 h-2.5 rounded bg-amber-400 inline-block" />
-            <span className="w-4 h-2.5 rounded bg-rose-500 inline-block" />
-            <span className="text-slate-400">&gt;28°C</span>
+          {/* Continuous Legend Matching UTCI Heatmap Format */}
+          <div className="flex items-center gap-2 text-[11px] font-medium">
+            <span className="text-[10px] text-slate-400 font-medium">Operative Temp Scale</span>
+            <span className="text-[11px] font-bold text-slate-200 font-mono">16.0°C</span>
+            <div
+              className="w-32 sm:w-44 h-3 rounded-md border border-slate-700 shadow-2xs"
+              style={{ background: 'linear-gradient(to right, #38bdf8 0%, #7dd3fc 15%, #34d399 45%, #fbbf24 70%, #f97316 85%, #ef4444 100%)' }}
+            />
+            <span className="text-[11px] font-bold text-slate-200 font-mono">30.0°C</span>
           </div>
         </div>
 

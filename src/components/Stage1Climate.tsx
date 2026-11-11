@@ -36,6 +36,7 @@ import {
   calcDailyTempAndRunningMean,
   calcMonthlyDiurnalProfiles,
   calcSolarBoxplotsAndFacadeRose,
+  calcDewPointC,
   generateBoardReadyCommentary
 } from '../utils/epwParser';
 import { EpwSearchAndUploadWidget } from './ClimaAndAdvancedPanels';
@@ -44,6 +45,8 @@ import {
   CarpetHeatmap24x365,
   colorForTempC,
   colorForRhPct,
+  CBE_RDYLBU_R_GRADIENT_CSS,
+  CBE_YLGNBU_GRADIENT_CSS,
   SubTab5Wind,
   SubTab6Psychrometric,
   SubTab7NatVent,
@@ -1889,23 +1892,37 @@ export const Stage1Climate: React.FC<Stage1ClimateProps> = ({
                 rows: climate.hourly.map((h) => [h.hourOfYear, h.month + 1, h.dayOfMonth, h.hour, h.dryBulb])
               })}
             >
-              {(svgRef, tooltipCtx) => (
-                <CarpetHeatmap24x365
-                  svgRef={svgRef}
-                  tooltipCtx={tooltipCtx}
-                  hourly={climate.hourly}
-                  getValue={(h) => h.dryBulb}
-                  getColor={(v) => colorForTempC(v, globalValueRanges)}
-                  unitLabel="°C"
-                  legendItems={[
-                    { label: '<0°C', color: '#313695' },
-                    { label: '10°C', color: '#74add1' },
-                    { label: '20°C', color: '#ffffbf' },
-                    { label: '28°C', color: '#f46d43' },
-                    { label: '>35°C', color: '#a50026' }
-                  ]}
-                />
-              )}
+              {(svgRef, tooltipCtx) => {
+                const tdbMin = Math.min(...climate.hourly.map((h) => h.dryBulb));
+                const tdbMax = Math.max(...climate.hourly.map((h) => h.dryBulb));
+                const tempRangeMin = globalValueRanges ? -20 : Math.floor(tdbMin);
+                const tempRangeMax = globalValueRanges ? 45 : Math.ceil(tdbMax);
+
+                return (
+                  <CarpetHeatmap24x365
+                    svgRef={svgRef}
+                    tooltipCtx={tooltipCtx}
+                    hourly={climate.hourly}
+                    getValue={(h) => h.dryBulb}
+                    getColor={(v) => colorForTempC(v, globalValueRanges, tempRangeMin, tempRangeMax)}
+                    unitLabel="°C"
+                    continuousLegend={{
+                      min: tempRangeMin,
+                      max: tempRangeMax,
+                      unit: '°C',
+                      gradientCss: CBE_RDYLBU_R_GRADIENT_CSS,
+                      description: `CBE Clima Continuous Gradient (${globalValueRanges ? 'Global Range [-20, +45]°C' : `Local Range [${tempRangeMin.toFixed(0)}, ${tempRangeMax.toFixed(0)}]°C`})`
+                    }}
+                    customTooltipRows={(val, rec) => [
+                      { label: 'Dry-Bulb Temp', value: `${val.toFixed(1)}°C`, color: colorForTempC(val, globalValueRanges, tempRangeMin, tempRangeMax) },
+                      { label: 'Relative Humidity', value: `${rec.relHum}%` },
+                      { label: 'Dew-Point Temp', value: `${(rec.dewPoint ?? calcDewPointC(rec.dryBulb, rec.relHum)).toFixed(1)}°C` },
+                      { label: 'Wind Speed', value: `${rec.windSpeed} m/s` },
+                      { label: 'Direct Normal Solar (DNI)', value: `${rec.dni ?? 0} Wh/m²` }
+                    ]}
+                  />
+                );
+              }}
             </ClimaChartCard>
 
             <ClimaChartCard
@@ -1919,23 +1936,36 @@ export const Stage1Climate: React.FC<Stage1ClimateProps> = ({
                 rows: climate.hourly.map((h) => [h.hourOfYear, h.month + 1, h.dayOfMonth, h.hour, h.relHum])
               })}
             >
-              {(svgRef, tooltipCtx) => (
-                <CarpetHeatmap24x365
-                  svgRef={svgRef}
-                  tooltipCtx={tooltipCtx}
-                  hourly={climate.hourly}
-                  getValue={(h) => h.relHum}
-                  getColor={(rh) => colorForRhPct(rh)}
-                  unitLabel="% RH"
-                  legendItems={[
-                    { label: '<25% Arid', color: '#ffffd9' },
-                    { label: '45%', color: '#c7e9b4' },
-                    { label: '65%', color: '#41b6c4' },
-                    { label: '80%', color: '#225ea8' },
-                    { label: '>90% Humid', color: '#081d58' }
-                  ]}
-                />
-              )}
+              {(svgRef, tooltipCtx) => {
+                const rhMin = Math.min(...climate.hourly.map((h) => h.relHum));
+                const rhMax = Math.max(...climate.hourly.map((h) => h.relHum));
+                const rhRangeMin = globalValueRanges ? 0 : Math.floor(rhMin);
+                const rhRangeMax = globalValueRanges ? 100 : Math.ceil(rhMax);
+
+                return (
+                  <CarpetHeatmap24x365
+                    svgRef={svgRef}
+                    tooltipCtx={tooltipCtx}
+                    hourly={climate.hourly}
+                    getValue={(h) => h.relHum}
+                    getColor={(rh) => colorForRhPct(rh, rhRangeMin, rhRangeMax)}
+                    unitLabel="% RH"
+                    continuousLegend={{
+                      min: rhRangeMin,
+                      max: rhRangeMax,
+                      unit: '%',
+                      gradientCss: CBE_YLGNBU_GRADIENT_CSS,
+                      description: `CBE Clima Continuous Gradient (${globalValueRanges ? 'Global Range [0, 100]%' : `Local Range [${rhRangeMin.toFixed(0)}, ${rhRangeMax.toFixed(0)}]%`})`
+                    }}
+                    customTooltipRows={(val, rec) => [
+                      { label: 'Relative Humidity', value: `${val.toFixed(1)}%`, color: colorForRhPct(val, rhRangeMin, rhRangeMax) },
+                      { label: 'Dry-Bulb Temp', value: `${rec.dryBulb}°C` },
+                      { label: 'Dew-Point Temp', value: `${(rec.dewPoint ?? calcDewPointC(rec.dryBulb, rec.relHum)).toFixed(1)}°C` },
+                      { label: 'Air Moisture Regime', value: val < 30 ? 'Dry / Arid (<30%)' : val > 70 ? 'Humid / Muggy (>70%)' : 'Comfortable (30–70%)' }
+                    ]}
+                  />
+                );
+              }}
             </ClimaChartCard>
           </div>
 
