@@ -567,13 +567,13 @@ export const EpwInteractiveMap: React.FC<EpwInteractiveMapProps> = ({
       {/* Top Map Toolbar */}
       <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
         <div className="flex flex-wrap items-center gap-1.5">
-          <span className="flex items-center gap-1 font-bold text-teal-300">
+          <span className="flex items-center gap-1 font-bold text-teal-300" title="Interactive map powered by Ladybug Tools EPWMap catalog indexing Climate.OneBuilding.org and DOE EnergyPlus datasets">
             <MapPin className="w-3.5 h-3.5 text-teal-400" />
-            EPW Map (Ladybug + OneBuilding + DOE)
+            Ladybug EPWMap (OneBuilding + DOE)
           </span>
           <span className="text-[10px] px-2 py-0.5 rounded bg-slate-900 text-sky-300 border border-slate-700">
             {catalogLoading
-              ? 'Loading 58,000+ EPW Catalog...'
+              ? 'Loading 23,227 EPW Catalog...'
               : `${catalog.length.toLocaleString()} Stations (${visibleCount.toLocaleString()} in view)`}
           </span>
         </div>
@@ -873,6 +873,9 @@ export const EpwInteractiveMap: React.FC<EpwInteractiveMapProps> = ({
 
           {/* Floating Map Legend Overlay */}
           <div className="absolute bottom-2 left-2 z-20 bg-slate-900/90 backdrop-blur-sm text-white px-2.5 py-1.5 rounded-lg border border-slate-700 text-[10px] flex flex-wrap items-center gap-2.5 pointer-events-none">
+            <span className="text-slate-400 font-semibold border-r border-slate-700 pr-2 hidden sm:inline">
+              Ladybug Tools Catalog:
+            </span>
             <span className="flex items-center gap-1">
               <span className="w-2.5 h-2.5 rounded-full bg-teal-500 border border-white inline-block" />
               Active: {currentClimate.name.split(',')[0]} {currentClimate.period ? `(${currentClimate.period})` : ''}
