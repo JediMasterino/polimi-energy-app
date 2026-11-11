@@ -646,9 +646,14 @@ export const Stage1Climate: React.FC<Stage1ClimateProps> = ({
                           {preset.lat.toFixed(2)}°N, {preset.lon.toFixed(2)}°E • Elev {preset.elev}m • HDD {preset.hdd} / CDD {preset.cdd}
                         </div>
                       </div>
-                      <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-slate-900 text-teal-300 shrink-0" title={preset.koppenDesc}>
-                        {preset.koppen} — {preset.koppenDesc}
-                      </span>
+                      <div className="text-right shrink-0">
+                        <span className="inline-block px-2 py-0.5 rounded-md text-[10px] font-extrabold bg-slate-900 text-teal-300">
+                          {preset.koppen}
+                        </span>
+                        <span className="block text-[9.5px] font-semibold text-slate-500 mt-0.5 max-w-[150px] truncate" title={preset.koppenDesc}>
+                          {preset.koppenDesc}
+                        </span>
+                      </div>
                     </button>
                   );
                 })}
@@ -688,55 +693,79 @@ export const Stage1Climate: React.FC<Stage1ClimateProps> = ({
             </div>
 
             <div className="grid grid-cols-2 sm:grid-cols-4 xl:grid-cols-8 gap-2.5 text-xs">
-              <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-200">
+              <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-200 flex flex-col justify-between">
                 <span className="text-[10px] text-slate-400 font-bold uppercase block">Coordinates</span>
-                <span className="font-extrabold text-slate-800">
+                <span className="font-extrabold text-slate-800 text-xs block leading-tight my-1">
                   {climate.lat.toFixed(2)}°N, {climate.lon.toFixed(2)}°E
                 </span>
+                <span className="text-[9.5px] text-slate-400 block font-mono">Lat/Lon</span>
               </div>
-              <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-200">
+              <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-200 flex flex-col justify-between">
                 <span className="text-[10px] text-slate-400 font-bold uppercase block">Elevation / WMO</span>
-                <span className="font-extrabold text-slate-800">
-                  {climate.elev} m • #{qualityReport.wmoStation}
+                <span className="font-extrabold text-slate-800 text-xs block leading-tight my-1">
+                  {climate.elev} m
+                </span>
+                <span className="text-[9.5px] text-slate-500 block font-mono">
+                  WMO #{qualityReport.wmoStation}
                 </span>
               </div>
-              <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-200">
+              <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-200 flex flex-col justify-between">
                 <span className="text-[10px] text-slate-400 font-bold uppercase block">Köppen Class</span>
-                <span className="font-extrabold text-teal-700 block truncate" title={`${climate.koppen} — ${climate.koppenDesc}`}>
-                  {climate.koppen} — {climate.koppenDesc}
-                </span>
-                <span className="text-[10px] text-slate-400 block font-medium">
-                  ASHRAE Zone {climate.ashraeZone.split(' ')[0]}
-                </span>
+                <div className="my-0.5">
+                  <div className="font-extrabold text-teal-800 text-sm leading-none flex items-center gap-1">
+                    {climate.koppen}
+                    <span className="text-[9px] font-bold px-1.5 py-0.2 rounded bg-teal-100 text-teal-800 font-mono">
+                      Zone {climate.ashraeZone.split(' ')[0]}
+                    </span>
+                  </div>
+                  <span className="text-[10.5px] font-semibold text-teal-700 block leading-tight mt-1" title={climate.koppenDesc}>
+                    {climate.koppenDesc}
+                  </span>
+                </div>
               </div>
-              <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-200">
+              <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-200 flex flex-col justify-between">
                 <span className="text-[10px] text-slate-400 font-bold uppercase block">Mean Annual T_db</span>
-                <span className="font-extrabold text-slate-800">
-                  {qualityReport.meanAnnualTemp}°C ({qualityReport.meanAnnualRh}% RH)
+                <span className="font-extrabold text-slate-800 text-xs block leading-tight my-1">
+                  {qualityReport.meanAnnualTemp}°C
+                </span>
+                <span className="text-[9.5px] text-slate-500 block">
+                  {qualityReport.meanAnnualRh}% Mean RH
                 </span>
               </div>
-              <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-200">
+              <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-200 flex flex-col justify-between">
                 <span className="text-[10px] text-slate-400 font-bold uppercase block">99% / 99.6% Heat</span>
-                <span className="font-extrabold text-sky-700">
-                  {qualityReport.designHeat99}°C / {qualityReport.designHeat996}°C
+                <span className="font-extrabold text-sky-700 text-xs block leading-tight my-1">
+                  {qualityReport.designHeat996}°C
+                </span>
+                <span className="text-[9.5px] text-slate-500 block">
+                  99%: {qualityReport.designHeat99}°C
                 </span>
               </div>
-              <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-200">
+              <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-200 flex flex-col justify-between">
                 <span className="text-[10px] text-slate-400 font-bold uppercase block">1% / 0.4% Cool</span>
-                <span className="font-extrabold text-rose-600">
-                  {qualityReport.designCool01}°C / {qualityReport.designCool004}°C
+                <span className="font-extrabold text-rose-600 text-xs block leading-tight my-1">
+                  {qualityReport.designCool004}°C
+                </span>
+                <span className="text-[9.5px] text-slate-500 block">
+                  1%: {qualityReport.designCool01}°C
                 </span>
               </div>
-              <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-200">
+              <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-200 flex flex-col justify-between">
                 <span className="text-[10px] text-slate-400 font-bold uppercase block">Annual Horiz Solar</span>
-                <span className="font-extrabold text-amber-600">
-                  {qualityReport.annualGhiKwhM2} kWh/m²yr
+                <span className="font-extrabold text-amber-600 text-xs block leading-tight my-1">
+                  {qualityReport.annualGhiKwhM2}
+                </span>
+                <span className="text-[9.5px] text-slate-500 block">
+                  kWh/m²yr GHI
                 </span>
               </div>
-              <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-200">
+              <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-200 flex flex-col justify-between">
                 <span className="text-[10px] text-slate-400 font-bold uppercase block">Diffuse Sky Share</span>
-                <span className="font-extrabold text-indigo-700">
-                  {qualityReport.diffuseFractionPct}% ({qualityReport.annualDhiKwhM2} kWh/m²)
+                <span className="font-extrabold text-indigo-700 text-xs block leading-tight my-1">
+                  {qualityReport.diffuseFractionPct}%
+                </span>
+                <span className="text-[9.5px] text-slate-500 block">
+                  {qualityReport.annualDhiKwhM2} kWh/m² DHI
                 </span>
               </div>
             </div>
@@ -929,7 +958,7 @@ export const Stage1Climate: React.FC<Stage1ClimateProps> = ({
                           {hdd > 0 && (
                             <text
                               x={x - barW / 2 - 1}
-                              y={padT + plotH - hHdd - 4}
+                              y={Math.max(padT + 11, padT + plotH - hHdd - 4)}
                               textAnchor="middle"
                               fontSize="9.5"
                               fontWeight="700"
@@ -952,7 +981,7 @@ export const Stage1Climate: React.FC<Stage1ClimateProps> = ({
                           {cdd > 0 && (
                             <text
                               x={x + barW / 2 + 1}
-                              y={padT + plotH - hCdd - 4}
+                              y={Math.max(padT + 11, padT + plotH - hCdd - 4)}
                               textAnchor="middle"
                               fontSize="9.5"
                               fontWeight="700"

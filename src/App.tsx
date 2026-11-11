@@ -419,12 +419,15 @@ const StudioWorkspace: React.FC = () => {
           <aside className="lg:col-span-3 space-y-4">
             {/* Card 1: Climate Quick-Switcher & Boundary Summary */}
             <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-3.5 space-y-3">
-              <div className="flex items-center justify-between">
+              <div className="flex flex-wrap items-center justify-between gap-1.5">
                 <span className="text-xs font-extrabold uppercase tracking-wider text-slate-700 flex items-center gap-1.5">
-                  <Globe className="w-4 h-4 text-teal-600" />
+                  <Globe className="w-4 h-4 text-teal-600 shrink-0" />
                   Climate & EPW Boundary
                 </span>
-                <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-teal-50 text-teal-800 border border-teal-200">
+                <span
+                  className="text-[10px] font-bold px-2 py-0.5 rounded bg-teal-50 text-teal-800 border border-teal-200 truncate max-w-full"
+                  title={`Köppen ${climate.koppen} (${climate.koppenDesc}) • Zone ${climate.dpr412Zone}`}
+                >
                   Köppen {climate.koppen} ({climate.koppenDesc}) • Zone {climate.dpr412Zone}
                 </span>
               </div>

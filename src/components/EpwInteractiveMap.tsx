@@ -315,12 +315,12 @@ export const EpwInteractiveMap: React.FC<EpwInteractiveMapProps> = ({
       });
 
       const badgeLabel = isOneBuilding ? 'Climate.OneBuilding.org' : 'DOE / NREL EnergyPlus';
-      const badgeColor = isOneBuilding ? '#0284c7' : '#d97706';
+      const badgeColor = isOneBuilding ? '#38bdf8' : '#fbbf24';
 
       marker.bindTooltip(
-        `<div style="font-size:11px;font-weight:700;">${st.city} (${st.country})</div>` +
-          `<div style="font-size:10px;color:${badgeColor};font-weight:600;">${badgeLabel} • ${st.datasetType || 'TMYx'}</div>` +
-          `<div style="font-size:10px;color:#475569;">WMO ${st.wmo || '-'} • Lat ${st.lat.toFixed(2)}°, Lon ${st.lon.toFixed(2)}°</div>`,
+        `<div style="font-size:11.5px;font-weight:700;color:#f8fafc;">${st.city} (${st.country})</div>` +
+          `<div style="font-size:10px;color:${badgeColor};font-weight:600;margin-top:2px;">${badgeLabel} • ${st.datasetType || 'TMYx'}</div>` +
+          `<div style="font-size:10px;color:#94a3b8;margin-top:1px;">WMO ${st.wmo || '-'} • Lat ${st.lat.toFixed(2)}°, Lon ${st.lon.toFixed(2)}°</div>`,
         { direction: 'top', offset: [0, -4] }
       );
 
@@ -494,7 +494,7 @@ export const EpwInteractiveMap: React.FC<EpwInteractiveMapProps> = ({
     }).addTo(activeLayer);
 
     centerPin.bindTooltip(
-      `<div style="font-size:11px;font-weight:700;color:#0f766e;">★ Active Station: ${currentClimate.name}</div><div style="font-size:10px;">${currentClimate.lat.toFixed(2)}°N, ${currentClimate.lon.toFixed(2)}°E • Köppen ${currentClimate.koppen} (${currentClimate.koppenDesc})</div>`,
+      `<div style="font-size:11.5px;font-weight:700;color:#2dd4bf;">★ Active Station: ${currentClimate.name}</div><div style="font-size:10px;color:#cbd5e1;margin-top:2px;">${currentClimate.lat.toFixed(2)}°N, ${currentClimate.lon.toFixed(2)}°E • Köppen <strong style="color:#5eead4;">${currentClimate.koppen}</strong> (${currentClimate.koppenDesc})</div>`,
       { permanent: false, direction: 'top' }
     );
 
@@ -524,7 +524,7 @@ export const EpwInteractiveMap: React.FC<EpwInteractiveMapProps> = ({
       fillOpacity: 0.9
     })
       .bindTooltip(
-        `<div style="font-size:11px;font-weight:700;color:#be185d;">Selected Map Pin</div><div style="font-size:10px;">Lat ${clickedCoords.lat}°, Lon ${clickedCoords.lon}°</div>`,
+        `<div style="font-size:11.5px;font-weight:700;color:#f472b6;">Selected Map Pin</div><div style="font-size:10px;color:#cbd5e1;margin-top:2px;">Lat ${clickedCoords.lat}°, Lon ${clickedCoords.lon}°</div>`,
         { permanent: false, direction: 'top' }
       )
       .addTo(clickedLayer);
@@ -616,11 +616,11 @@ export const EpwInteractiveMap: React.FC<EpwInteractiveMapProps> = ({
               onChange={(e) => setTileStyle(e.target.value as TileStyleId)}
               className="bg-transparent text-slate-200 focus:outline-none cursor-pointer"
             >
-              <option value="esri_topo" className="bg-slate-900">Esri Topographic</option>
-              <option value="esri_street" className="bg-slate-900">Esri World Street</option>
-              <option value="esri_sat" className="bg-slate-900">Esri Satellite</option>
-              <option value="osm" className="bg-slate-900">OpenStreetMap</option>
-              <option value="vector_only" className="bg-slate-900">Offline Vector</option>
+              <option value="esri_topo" className="bg-slate-900 text-white">Esri Topographic</option>
+              <option value="esri_street" className="bg-slate-900 text-white">Esri World Street</option>
+              <option value="esri_sat" className="bg-slate-900 text-white">Esri Satellite</option>
+              <option value="osm" className="bg-slate-900 text-white">OpenStreetMap</option>
+              <option value="vector_only" className="bg-slate-900 text-white">Offline Vector</option>
             </select>
           </div>
 
@@ -700,7 +700,7 @@ export const EpwInteractiveMap: React.FC<EpwInteractiveMapProps> = ({
             title="Select TMYx historical baseline window when loading Climate.OneBuilding.org stations"
           >
             {AVAILABLE_ONEBUILDING_PERIODS.map((opt) => (
-              <option key={opt.id} value={opt.id}>
+              <option key={opt.id} value={opt.id} className="bg-slate-900 text-white">
                 {opt.label} ({opt.badge})
               </option>
             ))}
@@ -817,8 +817,8 @@ export const EpwInteractiveMap: React.FC<EpwInteractiveMapProps> = ({
                           }`}
                           title={p.description}
                         >
-                          <span className="block truncate font-bold">{p.label}</span>
-                          <span className={`text-[8px] block ${isSel ? 'text-slate-900 font-semibold' : 'text-slate-400'}`}>
+                          <span className="block truncate font-bold text-xs">{p.label}</span>
+                          <span className={`text-[9.5px] block font-mono ${isSel ? 'text-slate-950 font-bold' : 'text-slate-300'}`}>
                             {p.badge} ({p.years})
                           </span>
                         </button>

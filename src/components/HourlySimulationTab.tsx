@@ -198,12 +198,12 @@ export const HourlySimulationTab: React.FC = () => {
       {/* Tab Header & Quick Sizing KPIs */}
       <div className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-100 pb-4">
         <div>
-          <div className="flex items-center gap-2">
-            <span className="px-2 py-0.5 rounded bg-teal-500/10 text-teal-700 border border-teal-200 text-[10px] font-bold uppercase tracking-wider">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="px-2 py-0.5 rounded bg-teal-500/10 text-teal-700 border border-teal-200 text-[10px] font-bold uppercase tracking-wider shrink-0">
               Dynamic 2R1C Lumped Simulation • 8,760 Hours
             </span>
-            <span className="text-xs text-slate-500">
-              Weather: {climate.name} ({climate.koppen} — {climate.koppenDesc})
+            <span className="text-xs text-slate-500 font-medium">
+              Weather: <strong className="text-slate-700">{climate.name}</strong> ({climate.koppen} — {climate.koppenDesc})
             </span>
           </div>
           <h3 className="text-base font-bold text-slate-900 mt-1 flex items-center gap-2">

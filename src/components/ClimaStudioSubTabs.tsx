@@ -2494,10 +2494,10 @@ export const SubTab9DataExplorer: React.FC<{
             <select
               value={xVar}
               onChange={(e) => setXVar(e.target.value as ExplorerVarId)}
-              className="w-full mt-1 rounded-lg border border-slate-300 bg-slate-50 px-2 py-1.5 font-semibold"
+              className="w-full mt-1 rounded-lg border border-slate-300 bg-slate-50 px-2 py-1.5 font-semibold text-slate-800 focus:outline-none focus:border-teal-500"
             >
               {EXPLORER_VARS.map((v) => (
-                <option key={v.id} value={v.id}>
+                <option key={v.id} value={v.id} className="text-slate-900 bg-white">
                   {v.label} ({v.unit})
                 </option>
               ))}
@@ -2509,10 +2509,10 @@ export const SubTab9DataExplorer: React.FC<{
             <select
               value={yVar}
               onChange={(e) => setYVar(e.target.value as ExplorerVarId)}
-              className="w-full mt-1 rounded-lg border border-slate-300 bg-slate-50 px-2 py-1.5 font-semibold"
+              className="w-full mt-1 rounded-lg border border-slate-300 bg-slate-50 px-2 py-1.5 font-semibold text-slate-800 focus:outline-none focus:border-teal-500"
             >
               {EXPLORER_VARS.map((v) => (
-                <option key={v.id} value={v.id}>
+                <option key={v.id} value={v.id} className="text-slate-900 bg-white">
                   {v.label} ({v.unit})
                 </option>
               ))}
@@ -2524,10 +2524,10 @@ export const SubTab9DataExplorer: React.FC<{
             <select
               value={zVar}
               onChange={(e) => setZVar(e.target.value as ExplorerVarId)}
-              className="w-full mt-1 rounded-lg border border-slate-300 bg-slate-50 px-2 py-1.5 font-semibold"
+              className="w-full mt-1 rounded-lg border border-slate-300 bg-slate-50 px-2 py-1.5 font-semibold text-slate-800 focus:outline-none focus:border-teal-500"
             >
               {EXPLORER_VARS.map((v) => (
-                <option key={v.id} value={v.id}>
+                <option key={v.id} value={v.id} className="text-slate-900 bg-white">
                   {v.label} ({v.unit})
                 </option>
               ))}
