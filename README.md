@@ -1,5 +1,10 @@
 # PoliMI Early-Stage BEM & Sustainability Studio
 
+[![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](LICENSE)
+![Institution](https://img.shields.io/badge/Institution-Politecnico%20di%20Milano%20(DABC)-teal.svg)
+![Author](https://img.shields.io/badge/Author-Angelo%20Golloberda-indigo.svg)
+![Supervisors](https://img.shields.io/badge/Supervisors-Prof.%20S.%20Viscuso%20%7C%20Prof.%20M.%20Manfren-blue.svg)
+
 > **Integrated Building Energy Modeling (BEM), Climate Studio, Whole-Life Carbon LCA & Multi-Objective Architectural Optimization Platform**  
 > Developed for early-stage architectural engineering, environmental design research, and building performance optimization at **Politecnico di Milano**.
 
@@ -210,15 +215,63 @@ polimi-energy-app/
 
 ---
 
-## 📄 License & Academic Attribution
+## 📄 License, Anti-Theft Copyleft Protection & Academic Citation
 
-This project is maintained for educational and research purposes at **Politecnico di Milano**.
+This project is licensed under the **GNU General Public License v3.0 (GNU GPLv3)** — see the [LICENSE](LICENSE) file for the full legal text.
 
-If you use this platform or its computational modules in academic publications, research projects, or architectural theses, please cite:
-> **PoliMI Early-Stage BEM & Sustainability Studio**  
-> *Integrated Environmental Design & Building Energy Modeling Studio*  
-> Architecture, Built Environment and Construction Engineering (DABC)  
-> Politecnico di Milano, Milan, Italy.
+### 🛡️ Copyleft & Anti-Theft Protections (Why GPLv3?)
+Under the GNU General Public License v3.0:
+- **No Proprietary Closed-Sourcing**: No individual, enterprise, or organization may take this codebase, close the source code, and market or distribute it as proprietary software.
+- **Mandatory Share-Alike (Copyleft)**: Any modifications, forks, or derivative works distributed to others must be made fully public under the exact same GPLv3 license terms.
+- **Strict Authorship & Attribution Rights**: All original copyright notices, contributor credits, and academic attributions to the authors and Politecnico di Milano must be permanently preserved in all copies, forks, and distributions.
+
+---
+
+### 👨‍💻 Authorship & Academic Research Team
+
+- **Author & Lead Developer**:
+  **Angelo Golloberda**  
+  *Architectural Engineering & Building Technology Research*  
+  Politecnico di Milano — Department of Architecture, Built Environment and Construction Engineering (DABC)  
+  Contact: `angelo.golloberda@mail.polimi.it`
+
+- **Academic Supervisors & Scientific Advisors**:
+  - **Prof. Salvatore Viscuso**  
+    *Politecnico di Milano — Department of Architecture, Built Environment and Construction Engineering (DABC)*
+  - **Prof. Massimiliano Manfren**  
+    *Politecnico di Milano — Department of Architecture, Built Environment and Construction Engineering (DABC)*
+
+- **Institution**:
+  **Politecnico di Milano**  
+  *Department of Architecture, Built Environment and Construction Engineering (DABC)*  
+  Piazza Leonardo da Vinci, 32, 20133 Milano (MI), Italy
+
+---
+
+### 📚 Academic Citation Guide
+
+If you use this platform, its simulation engines (EPW parser, UTCI comfort calculator, 8,760h hourly energy balance, ISO 52000-1 solver), or the Eurocode structural pre-dimensioning studio in academic publications, journal papers, master/PhD theses, or architectural design projects, **please cite this work as follows**:
+
+#### APA 7th Edition
+> Golloberda, A., Viscuso, S., & Manfren, M. (2026). *PoliMI Early-Stage BEM & Sustainability Studio: Integrated Building Energy Modeling, Climate Studio, Whole-Life Carbon LCA & Multi-Objective Architectural Optimization Platform* (Version 1.0.0) [Computer software]. Politecnico di Milano, Department of Architecture, Built Environment and Construction Engineering (DABC). https://github.com/AngeloGolloberda/polimi-energy-app
+
+#### BibTeX Entry
+```bibtex
+@software{golloberda2026polimi,
+  author       = {Golloberda, Angelo and Viscuso, Salvatore and Manfren, Massimiliano},
+  title        = {{PoliMI Early-Stage BEM & Sustainability Studio: Integrated Building Energy Modeling, Climate Studio, Whole-Life Carbon LCA & Multi-Objective Architectural Optimization Platform}},
+  month        = nov,
+  year         = 2026,
+  publisher    = {Politecnico di Milano},
+  institution  = {Department of Architecture, Built Environment and Construction Engineering (DABC)},
+  version      = {1.0.0},
+  url          = {https://github.com/AngeloGolloberda/polimi-energy-app},
+  license      = {GPL-3.0-or-later}
+}
+```
+
+> [!TIP]
+> A standardized [`CITATION.cff`](CITATION.cff) file is included at the repository root. GitHub will automatically display a **"Cite this repository"** button in the sidebar with one-click export to APA, BibTeX, and EndNote.
 
 ---
 

@@ -1,7 +1,12 @@
 {
   "name": "polimi-energy-app",
-  "private": true,
   "version": "1.0.0",
+  "license": "GPL-3.0-or-later",
+  "author": "Angelo Golloberda <angelo.golloberda@mail.polimi.it>",
+  "contributors": [
+    "Prof. Salvatore Viscuso (Politecnico di Milano - DABC)",
+    "Prof. Massimiliano Manfren (Politecnico di Milano - DABC)"
+  ],
   "type": "module",
   "scripts": {
     "dev": "vite",
