@@ -297,8 +297,10 @@ export const EpwSearchAndUploadWidget: React.FC<EpwWidgetProps> = ({
                       <Loader2 className="w-3 h-3 animate-spin" />
                       Loading
                     </>
+                  ) : st.source === 'onebuilding' ? (
+                    `Load ${oneBuildingPeriod}`
                   ) : (
-                    'Load 8760h'
+                    'Load EPW'
                   )}
                 </button>
               </div>
