@@ -25,7 +25,8 @@ import {
   Clock,
   Filter,
   Info,
-  Eye
+  Eye,
+  Download
 } from 'lucide-react';
 import { useDesignProject } from '../context/DesignProjectContext';
 import { MONTHS } from '../data/climateAndStrategies';
@@ -43,7 +44,10 @@ import {
   calcDewPointC,
   generateBoardReadyCommentary,
   colorForUtciContinuous,
-  CBE_UTCI_BLUE_RED_YELLOW_GRADIENT_CSS
+  CBE_UTCI_BLUE_RED_YELLOW_GRADIENT_CSS,
+  exportDataToCsvFile,
+  calcFacadeShadingRadiationBreakdown,
+  calcMonthlyClimateSummaryTable
 } from '../utils/epwParser';
 import { EpwSearchAndUploadWidget } from './ClimaAndAdvancedPanels';
 import {
@@ -144,6 +148,7 @@ export const Stage1Climate: React.FC<Stage1ClimateProps> = ({
   const [activeDiurnalHourHover, setActiveDiurnalHourHover] = useState<number | null>(null);
   const [activeSolarMonthHover, setActiveSolarMonthHover] = useState<number | null>(null);
   const [activeCloudMonthHover, setActiveCloudMonthHover] = useState<number | null>(null);
+  const [activeShadingMonthHover, setActiveShadingMonthHover] = useState<number | null>(null);
 
   // Sub-Tab 4: Sun Path & Shading Protractor controls (Improvement #2 - Advanced Solar & Shading Mask Studio)
   const [sunProjection, setSunProjection] = useState<'polar' | 'cartesian'>('polar');
@@ -151,6 +156,11 @@ export const Stage1Climate: React.FC<Stage1ClimateProps> = ({
   const [facadeAzimuthDeg, setFacadeAzimuthDeg] = useState<number>(180); // 180° = South, 90° = East, 270° = West, 0° = North
   const [overhangAngleDeg, setOverhangAngleDeg] = useState<number>(58);
   const [finAngleDeg, setFinAngleDeg] = useState<number>(35);
+  const [leftFinAngleDeg, setLeftFinAngleDeg] = useState<number>(35);
+  const [rightFinAngleDeg, setRightFinAngleDeg] = useState<number>(35);
+  const [finsSymmetric, setFinsSymmetric] = useState<boolean>(true);
+  const [showAnalemmas, setShowAnalemmas] = useState<boolean>(true);
+  const [showDeclinationArcs, setShowDeclinationArcs] = useState<boolean>(true);
   const [showProtractor, setShowProtractor] = useState<boolean>(true);
   const [showUrbanSkylineMask, setShowUrbanSkylineMask] = useState<boolean>(true);
   const [selectedDayOfYear, setSelectedDayOfYear] = useState<number>(172); // Default: Summer Solstice (Jun 21)
@@ -169,6 +179,11 @@ export const Stage1Climate: React.FC<Stage1ClimateProps> = ({
   const customDd = useMemo(
     () => calcCustomDegreeDays(climate.hourly, hddBaseC, cddBaseC),
     [climate.hourly, hddBaseC, cddBaseC]
+  );
+
+  const monthlySummaryTable = useMemo(
+    () => calcMonthlyClimateSummaryTable(climate.hourly),
+    [climate.hourly]
   );
 
   const summaryDistributions = useMemo(() => {
@@ -201,6 +216,69 @@ export const Stage1Climate: React.FC<Stage1ClimateProps> = ({
     () => calcSolarBoxplotsAndFacadeRose(climate.hourly),
     [climate.hourly]
   );
+
+  // Sub-Tab 4: Facade Shading Radiation Breakdown (Unshaded vs Shaded kWh/m²)
+  const facadeShadingAnalysis = useMemo(
+    () =>
+      calcFacadeShadingRadiationBreakdown(
+        climate.hourly,
+        facadeAzimuthDeg,
+        overhangAngleDeg,
+        leftFinAngleDeg,
+        rightFinAngleDeg,
+        sim.canyonAnglesDeg,
+        showProtractor,
+        showUrbanSkylineMask
+      ),
+    [
+      climate.hourly,
+      facadeAzimuthDeg,
+      overhangAngleDeg,
+      leftFinAngleDeg,
+      rightFinAngleDeg,
+      sim.canyonAnglesDeg,
+      showProtractor,
+      showUrbanSkylineMask
+    ]
+  );
+
+  // Sub-Tab 4: True Astronomical Analemmas (Equation-of-Time figure-8 loops 8:00 - 17:00)
+  const analemmaLoops = useMemo(() => {
+    const hours = [8, 9, 10, 11, 12, 13, 14, 15, 16, 17];
+    return hours.map((hr) => {
+      const pts: Array<{ alt: number; az: number; d: number }> = [];
+      for (let d = 1; d <= 365; d += 4) {
+        const pos = calcSolarPosition(climate.lat, d, hr, climate.lon, climate.tz);
+        if (pos.alt > 0) {
+          pts.push({ ...pos, d });
+        }
+      }
+      return { hour: hr, pts };
+    });
+  }, [climate.lat, climate.lon, climate.tz]);
+
+  // Sub-Tab 4: 7 Key Declination Arcs across the year (21st of each month)
+  const declinationTracks = useMemo(() => {
+    const tracks = [
+      { day: 172, label: '21 Jun (Solstice)', color: '#f43f5e', bold: true },
+      { day: 141, label: '21 May / Jul', color: '#fb923c', bold: false },
+      { day: 111, label: '21 Apr / Aug', color: '#facc15', bold: false },
+      { day: 80, label: '21 Mar / Sep (Equinox)', color: '#10b981', bold: true },
+      { day: 52, label: '21 Feb / Oct', color: '#38bdf8', bold: false },
+      { day: 21, label: '21 Jan / Nov', color: '#818cf8', bold: false },
+      { day: 355, label: '21 Dec (Solstice)', color: '#3b82f6', bold: true }
+    ];
+    return tracks.map((t) => {
+      const pts: Array<{ alt: number; az: number; hr: number }> = [];
+      for (let hr = 3.5; hr <= 20.5; hr += 0.2) {
+        const pos = calcSolarPosition(climate.lat, t.day, hr, climate.lon, climate.tz);
+        if (pos.alt > 0) {
+          pts.push({ ...pos, hr });
+        }
+      }
+      return { ...t, pts };
+    });
+  }, [climate.lat, climate.lon, climate.tz]);
 
   // Improvement #5: Board-Ready Commentary for Active Sub-Tab
   const boardCommentary = useMemo(
@@ -785,6 +863,106 @@ export const Stage1Climate: React.FC<Stage1ClimateProps> = ({
                   ))}
                 </tbody>
               </table>
+            </div>
+
+            {/* Monthly & Annual TMY Meteorological Summary Table (CBE Clima & ASHRAE 169 Benchmark) */}
+            <div className="pt-2 border-t border-slate-200 space-y-2">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <span className="font-bold text-slate-800 text-xs flex items-center gap-1.5">
+                  <BarChart3 className="w-3.5 h-3.5 text-teal-600" />
+                  Monthly & Annual Meteorological Normals (TMY Benchmark Table)
+                </span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    exportDataToCsvFile(
+                      ['Month', 'Mean_T_C', 'DailyMax_T_C', 'DailyMin_T_C', 'DiurnalRange_C', 'ExtremeMax_C', 'ExtremeMin_C', 'HDD18_Kd', 'CDD10_Kd', 'Mean_RH_%', 'Mean_DewPoint_C', 'GHI_kWh/m2', 'DNI_kWh/m2', 'Wind_m/s', 'PrevailingWind', 'CloudCover_%'],
+                      [
+                        ...monthlySummaryTable.monthly.map((m) => [
+                          m.month, m.meanTempC, m.dailyMaxTempC, m.dailyMinTempC, m.diurnalRangeC, m.extremeMaxC, m.extremeMinC, m.hdd18, m.cdd10, m.meanRhPct, m.meanDewPointC, m.ghiKwhM2, m.dniKwhM2, m.meanWindSpeedMs, m.prevailingWindDir, m.meanCloudCoverPct
+                        ]),
+                        [
+                          monthlySummaryTable.annual.month, monthlySummaryTable.annual.meanTempC, monthlySummaryTable.annual.dailyMaxTempC, monthlySummaryTable.annual.dailyMinTempC, monthlySummaryTable.annual.diurnalRangeC, monthlySummaryTable.annual.extremeMaxC, monthlySummaryTable.annual.extremeMinC, monthlySummaryTable.annual.hdd18, monthlySummaryTable.annual.cdd10, monthlySummaryTable.annual.meanRhPct, monthlySummaryTable.annual.meanDewPointC, monthlySummaryTable.annual.ghiKwhM2, monthlySummaryTable.annual.dniKwhM2, monthlySummaryTable.annual.meanWindSpeedMs, monthlySummaryTable.annual.prevailingWindDir, monthlySummaryTable.annual.meanCloudCoverPct
+                        ]
+                      ],
+                      `${climate.id}_monthly_climate_summary.csv`
+                    );
+                  }}
+                  className="px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold text-[10.5px] flex items-center gap-1 border border-slate-300 transition cursor-pointer"
+                  title="Export complete 12-month TMY summary table to CSV"
+                >
+                  <Download className="w-3 h-3 text-teal-600" />
+                  Export Table CSV
+                </button>
+              </div>
+
+              <div className="overflow-x-auto rounded-xl border border-slate-200 shadow-2xs">
+                <table className="w-full text-[10.5px] border-collapse bg-white">
+                  <thead>
+                    <tr className="bg-slate-100 text-slate-700 font-bold border-b border-slate-200">
+                      <th className="p-2 text-left">Month</th>
+                      <th className="p-2 text-center" title="Mean Dry-Bulb Temperature">Mean T (°C)</th>
+                      <th className="p-2 text-center" title="Mean Daily Maximum Temperature">Daily Max (°C)</th>
+                      <th className="p-2 text-center" title="Mean Daily Minimum Temperature">Daily Min (°C)</th>
+                      <th className="p-2 text-center" title="Mean Daily Diurnal Temperature Swing">Diurnal ΔT (°C)</th>
+                      <th className="p-2 text-center" title="Extreme Peak / Lowest Recorded Hourly Temperature">Extreme Max/Min (°C)</th>
+                      <th className="p-2 text-center" title="Heating Degree Days Base 18°C">HDD₁₈ (K·d)</th>
+                      <th className="p-2 text-center" title="Cooling Degree Days Base 10°C">CDD₁₀ (K·d)</th>
+                      <th className="p-2 text-center" title="Mean Relative Humidity">RH (%)</th>
+                      <th className="p-2 text-center" title="Mean Dew-Point Temperature">T_dp (°C)</th>
+                      <th className="p-2 text-center" title="Global Horizontal Solar Irradiance">GHI (kWh/m²)</th>
+                      <th className="p-2 text-center" title="Direct Normal Solar Irradiance">DNI (kWh/m²)</th>
+                      <th className="p-2 text-center" title="Mean Wind Speed and Prevailing Direction">Wind (m/s & Dir)</th>
+                      <th className="p-2 text-center" title="Mean Sky Cloud Cover">Cloud (%)</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {monthlySummaryTable.monthly.map((row, i) => (
+                      <tr key={row.month} className={i % 2 === 0 ? 'bg-white hover:bg-slate-50' : 'bg-slate-50/60 hover:bg-slate-50'}>
+                        <td className="p-2 font-bold text-slate-800">{row.month}</td>
+                        <td className="p-2 text-center font-mono font-bold text-slate-800">{row.meanTempC}°</td>
+                        <td className="p-2 text-center font-mono text-rose-700 font-semibold">{row.dailyMaxTempC}°</td>
+                        <td className="p-2 text-center font-mono text-sky-700 font-semibold">{row.dailyMinTempC}°</td>
+                        <td className="p-2 text-center font-mono text-slate-600">{row.diurnalRangeC}°</td>
+                        <td className="p-2 text-center font-mono text-[10px] text-slate-600">
+                          <span className="text-rose-600 font-bold">{row.extremeMaxC}°</span> / <span className="text-sky-600 font-bold">{row.extremeMinC}°</span>
+                        </td>
+                        <td className="p-2 text-center font-mono text-sky-800 font-bold">{row.hdd18}</td>
+                        <td className="p-2 text-center font-mono text-rose-800 font-bold">{row.cdd10}</td>
+                        <td className="p-2 text-center font-mono text-teal-800">{row.meanRhPct}%</td>
+                        <td className="p-2 text-center font-mono text-slate-600">{row.meanDewPointC}°</td>
+                        <td className="p-2 text-center font-mono text-amber-700 font-bold">{row.ghiKwhM2}</td>
+                        <td className="p-2 text-center font-mono text-amber-800">{row.dniKwhM2}</td>
+                        <td className="p-2 text-center font-mono text-slate-700">
+                          {row.meanWindSpeedMs} <span className="text-[9px] font-bold text-teal-700">{row.prevailingWindDir}</span>
+                        </td>
+                        <td className="p-2 text-center font-mono text-slate-600">{row.meanCloudCoverPct}%</td>
+                      </tr>
+                    ))}
+                    {/* Annual Summary Row */}
+                    <tr className="bg-teal-50/80 font-bold text-teal-950 border-t-2 border-teal-300">
+                      <td className="p-2 font-extrabold uppercase">Annual Total / Mean</td>
+                      <td className="p-2 text-center font-mono font-extrabold">{monthlySummaryTable.annual.meanTempC}°C</td>
+                      <td className="p-2 text-center font-mono text-rose-800">{monthlySummaryTable.annual.dailyMaxTempC}°C</td>
+                      <td className="p-2 text-center font-mono text-sky-800">{monthlySummaryTable.annual.dailyMinTempC}°C</td>
+                      <td className="p-2 text-center font-mono">{monthlySummaryTable.annual.diurnalRangeC}°C</td>
+                      <td className="p-2 text-center font-mono text-[10px]">
+                        <span className="text-rose-700 font-bold">{monthlySummaryTable.annual.extremeMaxC}°</span> / <span className="text-sky-700 font-bold">{monthlySummaryTable.annual.extremeMinC}°</span>
+                      </td>
+                      <td className="p-2 text-center font-mono text-sky-900 font-extrabold">{monthlySummaryTable.annual.hdd18}</td>
+                      <td className="p-2 text-center font-mono text-rose-900 font-extrabold">{monthlySummaryTable.annual.cdd10}</td>
+                      <td className="p-2 text-center font-mono">{monthlySummaryTable.annual.meanRhPct}%</td>
+                      <td className="p-2 text-center font-mono">{monthlySummaryTable.annual.meanDewPointC}°C</td>
+                      <td className="p-2 text-center font-mono text-amber-900 font-extrabold">{monthlySummaryTable.annual.ghiKwhM2}</td>
+                      <td className="p-2 text-center font-mono text-amber-900">{monthlySummaryTable.annual.dniKwhM2}</td>
+                      <td className="p-2 text-center font-mono">
+                        {monthlySummaryTable.annual.meanWindSpeedMs} m/s <span className="text-[9px]">{monthlySummaryTable.annual.prevailingWindDir}</span>
+                      </td>
+                      <td className="p-2 text-center font-mono">{monthlySummaryTable.annual.meanCloudCoverPct}%</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
             </div>
           </div>
 
@@ -2029,7 +2207,7 @@ export const Stage1Climate: React.FC<Stage1ClimateProps> = ({
             <div className={stage1WideMode && chartDensity !== 'spacious' ? 'xl:col-span-8' : 'w-full'}>
               <ClimaChartCard
                 title="Interactive Sun-Path & Architectural Shading Mask Studio"
-                subtitle={`Solar trajectory & shading mask for ${facadeAzimuthDeg}° orientation • Overhang θ_v = ${overhangAngleDeg}° (${(1.5 / Math.tan((overhangAngleDeg * Math.PI) / 180)).toFixed(2)}m) • Fins ±θ_h = ±${finAngleDeg}°`}
+                subtitle={`Solar trajectory & shading mask for ${facadeAzimuthDeg}° orientation • Overhang θ_v = ${overhangAngleDeg}° (D/H = ${(1 / Math.tan((overhangAngleDeg * Math.PI) / 180)).toFixed(2)}) • Fins: ${finsSymmetric ? `±${finAngleDeg}°` : `L:${leftFinAngleDeg}° / R:${rightFinAngleDeg}°`} • Net Selectivity = ${facadeShadingAnalysis.netSelectivityScore.toFixed(2)}x`}
                 icon={<Sun className="w-4 h-4 text-amber-500" />}
                 svgFilename={`${climate.id}_sunpath_${sunProjection}.svg`}
                 csvFilename={`${climate.id}_solar_monthly.csv`}
@@ -2153,15 +2331,17 @@ export const Stage1Climate: React.FC<Stage1ClimateProps> = ({
                             { az: 180, lbl: 'S' },
                             { az: 135, lbl: 'SE' },
                             { az: 90, lbl: 'E' },
-                            { az: 225, lbl: 'SW' },
+                            { az: 45, lbl: 'NE' },
+                            { az: 0, lbl: 'N' },
+                            { az: 315, lbl: 'NW' },
                             { az: 270, lbl: 'W' },
-                            { az: 0, lbl: 'N' }
+                            { az: 225, lbl: 'SW' }
                           ].map((p) => (
                             <button
                               key={p.az}
                               type="button"
                               onClick={() => setFacadeAzimuthDeg(p.az)}
-                              className={`px-1 py-0.2 rounded hover:bg-amber-200/60 ${facadeAzimuthDeg === p.az ? 'text-amber-900 font-black' : ''}`}
+                              className={`px-1 py-0.2 rounded hover:bg-amber-200/60 ${facadeAzimuthDeg === p.az ? 'text-amber-900 font-black underline' : ''}`}
                             >
                               {p.lbl}
                             </button>
@@ -2172,14 +2352,14 @@ export const Stage1Climate: React.FC<Stage1ClimateProps> = ({
                       {/* Overhang Profile Cutoff Angle */}
                       <div>
                         <div className="flex justify-between items-center font-semibold text-slate-700">
-                          <span>Overhang θ_v</span>
+                          <span>Overhang Cutoff θ_v</span>
                           <span className="font-bold text-amber-800 font-mono tabular-nums">
-                            {overhangAngleDeg}° ({+(1.5 / Math.tan((overhangAngleDeg * Math.PI) / 180)).toFixed(2)}m)
+                            {overhangAngleDeg}° (D/H={(1 / Math.tan((overhangAngleDeg * Math.PI) / 180)).toFixed(2)})
                           </span>
                         </div>
                         <input
                           type="range"
-                          min={25}
+                          min={20}
                           max={80}
                           value={overhangAngleDeg}
                           onChange={(e) => {
@@ -2191,51 +2371,129 @@ export const Stage1Climate: React.FC<Stage1ClimateProps> = ({
                           }}
                           className="w-full accent-amber-600 cursor-pointer"
                         />
-                        <div className="flex justify-between text-[9.5px] text-slate-500">
-                          <span>25° (Deep 3.2m)</span>
+                        <div className="flex justify-between text-[9px] text-slate-500">
+                          <span>20° (Deep 4.1m)</span>
+                          <span>58° (Med 0.9m)</span>
                           <span>80° (Shallow 0.26m)</span>
                         </div>
                       </div>
 
-                      {/* Fin Cutoff Angle */}
+                      {/* Vertical Fins Cutoff Angle (Symmetric / Asymmetric) */}
                       <div>
                         <div className="flex justify-between items-center font-semibold text-slate-700">
-                          <span>Vertical Fins ±θ_h</span>
-                          <span className="font-bold text-indigo-800 font-mono tabular-nums">±{finAngleDeg}°</span>
+                          <label className="flex items-center gap-1 cursor-pointer">
+                            <input
+                              type="checkbox"
+                              checked={finsSymmetric}
+                              onChange={(e) => {
+                                const sym = e.target.checked;
+                                setFinsSymmetric(sym);
+                                if (sym) {
+                                  setRightFinAngleDeg(leftFinAngleDeg);
+                                  setFinAngleDeg(leftFinAngleDeg);
+                                }
+                              }}
+                              className="accent-indigo-600 w-3 h-3"
+                            />
+                            <span>{finsSymmetric ? 'Fins ±θ_h (Sym)' : 'Fins (Asym)'}</span>
+                          </label>
+                          <span className="font-bold text-indigo-800 font-mono tabular-nums">
+                            {finsSymmetric
+                              ? `±${finAngleDeg}°`
+                              : `L:${leftFinAngleDeg}° / R:${rightFinAngleDeg}°`}
+                          </span>
                         </div>
-                        <input
-                          type="range"
-                          min={15}
-                          max={75}
-                          value={finAngleDeg}
-                          onChange={(e) => setFinAngleDeg(Number(e.target.value))}
-                          className="w-full accent-indigo-600 cursor-pointer"
-                        />
-                        <div className="flex justify-between text-[9.5px] text-slate-500">
-                          <span>±15° (Deep Louvers)</span>
-                          <span>±75° (Wide Opening)</span>
-                        </div>
+                        {finsSymmetric ? (
+                          <>
+                            <input
+                              type="range"
+                              min={15}
+                              max={80}
+                              value={finAngleDeg}
+                              onChange={(e) => {
+                                const v = Number(e.target.value);
+                                setFinAngleDeg(v);
+                                setLeftFinAngleDeg(v);
+                                setRightFinAngleDeg(v);
+                              }}
+                              className="w-full accent-indigo-600 cursor-pointer"
+                            />
+                            <div className="flex justify-between text-[9px] text-slate-500">
+                              <span>±15° (Deep Louvers)</span>
+                              <span>±80° (Open)</span>
+                            </div>
+                          </>
+                        ) : (
+                          <div className="space-y-1 pt-0.5">
+                            <div className="flex items-center gap-1.5">
+                              <span className="text-[9.5px] font-bold text-slate-500 w-6">Left:</span>
+                              <input
+                                type="range"
+                                min={15}
+                                max={80}
+                                value={leftFinAngleDeg}
+                                onChange={(e) => setLeftFinAngleDeg(Number(e.target.value))}
+                                className="flex-1 accent-indigo-600 cursor-pointer h-1.5"
+                              />
+                              <span className="font-mono text-[9.5px] font-bold text-indigo-900 w-6 text-right">
+                                {leftFinAngleDeg}°
+                              </span>
+                            </div>
+                            <div className="flex items-center gap-1.5">
+                              <span className="text-[9.5px] font-bold text-slate-500 w-6">Right:</span>
+                              <input
+                                type="range"
+                                min={15}
+                                max={80}
+                                value={rightFinAngleDeg}
+                                onChange={(e) => setRightFinAngleDeg(Number(e.target.value))}
+                                className="flex-1 accent-indigo-600 cursor-pointer h-1.5"
+                              />
+                              <span className="font-mono text-[9.5px] font-bold text-indigo-900 w-6 text-right">
+                                {rightFinAngleDeg}°
+                              </span>
+                            </div>
+                          </div>
+                        )}
                       </div>
 
-                      {/* Mask Toggles */}
-                      <div className="flex flex-col justify-center space-y-2">
-                        <label className="flex items-center gap-1.5 font-bold text-slate-800 cursor-pointer">
+                      {/* Studio Layer Toggles (4 checkboxes) */}
+                      <div className="grid grid-cols-2 gap-x-2 gap-y-1">
+                        <label className="flex items-center gap-1 font-semibold text-slate-800 text-[10.5px] cursor-pointer">
                           <input
                             type="checkbox"
                             checked={showProtractor}
                             onChange={(e) => setShowProtractor(e.target.checked)}
-                            className="accent-amber-600"
+                            className="accent-amber-600 w-3 h-3"
                           />
-                          <span>Overhang & Fins Shading Mask</span>
+                          <span>Overhang & Fins</span>
                         </label>
-                        <label className="flex items-center gap-1.5 font-bold text-slate-800 cursor-pointer">
+                        <label className="flex items-center gap-1 font-semibold text-slate-800 text-[10.5px] cursor-pointer">
                           <input
                             type="checkbox"
                             checked={showUrbanSkylineMask}
                             onChange={(e) => setShowUrbanSkylineMask(e.target.checked)}
-                            className="accent-teal-600"
+                            className="accent-teal-600 w-3 h-3"
                           />
-                          <span>Stage 2 Urban Skyline Horizon</span>
+                          <span>Urban Skyline</span>
+                        </label>
+                        <label className="flex items-center gap-1 font-semibold text-slate-800 text-[10.5px] cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={showDeclinationArcs}
+                            onChange={(e) => setShowDeclinationArcs(e.target.checked)}
+                            className="accent-rose-600 w-3 h-3"
+                          />
+                          <span>7 Declinations</span>
+                        </label>
+                        <label className="flex items-center gap-1 font-semibold text-slate-800 text-[10.5px] cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={showAnalemmas}
+                            onChange={(e) => setShowAnalemmas(e.target.checked)}
+                            className="accent-sky-600 w-3 h-3"
+                          />
+                          <span>Analemmas (8–17h)</span>
                         </label>
                       </div>
                     </div>
@@ -2322,6 +2580,9 @@ export const Stage1Climate: React.FC<Stage1ClimateProps> = ({
                   const canyonE = sim.canyonAnglesDeg.E;
                   const canyonW = sim.canyonAnglesDeg.W;
 
+                  const effLeftFin = finsSymmetric ? finAngleDeg : leftFinAngleDeg;
+                  const effRightFin = finsSymmetric ? finAngleDeg : rightFinAngleDeg;
+
                   // Helper for shading evaluation on any solar vector
                   const evalShading = (alt: number, az: number) => {
                     let dAz = az - facadeAzimuthDeg;
@@ -2343,7 +2604,10 @@ export const Stage1Climate: React.FC<Stage1ClimateProps> = ({
 
                     const canyonBlocked = showUrbanSkylineMask && alt <= canyonAlt;
                     const overhangBlocked = showProtractor && inFront && profileAngle >= overhangAngleDeg;
-                    const finBlocked = showProtractor && inFront && Math.abs(dAz) >= finAngleDeg;
+                    const finBlocked =
+                      showProtractor &&
+                      inFront &&
+                      ((dAz < 0 && Math.abs(dAz) >= effLeftFin) || (dAz > 0 && dAz >= effRightFin));
                     const selfShaded = !inFront;
 
                     return {
@@ -2357,33 +2621,12 @@ export const Stage1Climate: React.FC<Stage1ClimateProps> = ({
                     };
                   };
 
-                  // Performance metrics for hours in front of the active facade
-                  const facingHours = climate.hourly.filter((h) => {
-                    if (h.solarAlt <= 0.5) return false;
-                    let dAz = h.solarAz - facadeAzimuthDeg;
-                    while (dAz > 180) dAz -= 360;
-                    while (dAz < -180) dAz += 360;
-                    return Math.abs(dAz) < 90;
-                  });
-
-                  const warmFacing = facingHours.filter((h) => h.dryBulb >= 24);
-                  const warmBlocked = warmFacing.filter((h) => evalShading(h.solarAlt, h.solarAz).isBlocked).length;
-                  const summerShadedPct = warmFacing.length > 0 ? Math.round((warmBlocked / warmFacing.length) * 100) : 0;
-
-                  const coldFacing = facingHours.filter((h) => h.dryBulb < 18);
-                  const coldAdmitted = coldFacing.filter((h) => !evalShading(h.solarAlt, h.solarAz).isBlocked).length;
-                  const winterAdmittedPct = coldFacing.length > 0 ? Math.round((coldAdmitted / coldFacing.length) * 100) : 0;
-
                   // Active Day Trajectory Points & Sunrise/Sunset
                   const dayTrajectoryPts: Array<{ hr: number; alt: number; az: number }> = [];
-                  let sunriseHr = -1;
-                  let sunsetHr = -1;
                   let peakSolarAlt = 0;
                   for (let hr = 3.5; hr <= 21.0; hr += 0.25) {
                     const pos = calcSolarPosition(climate.lat, selectedDayOfYear, hr, climate.lon, climate.tz);
                     if (pos.alt > 0) {
-                      if (sunriseHr === -1) sunriseHr = hr;
-                      sunsetHr = hr;
                       if (pos.alt > peakSolarAlt) peakSolarAlt = pos.alt;
                       dayTrajectoryPts.push({ hr, alt: pos.alt, az: pos.az });
                     }
@@ -2391,7 +2634,6 @@ export const Stage1Climate: React.FC<Stage1ClimateProps> = ({
 
                   // Active hour position
                   const activeSunPos = calcSolarPosition(climate.lat, selectedDayOfYear, selectedSunHour, climate.lon, climate.tz);
-                  const activeHourShading = evalShading(activeSunPos.alt, activeSunPos.az);
 
                   // Continuous Colormap Legend Config
                   const legendConfig = (() => {
@@ -2488,17 +2730,6 @@ export const Stage1Climate: React.FC<Stage1ClimateProps> = ({
                     const xForAz = (az: number) => padL + (az / 360) * plotW;
                     const yForAlt = (alt: number) => padT + plotH - (Math.max(0, Math.min(90, alt)) / 90) * plotH;
 
-                    const makeCartArc = (dayOfYear: number) => {
-                      const pts: string[] = [];
-                      for (let hr = 3.5; hr <= 20.5; hr += 0.25) {
-                        const pos = calcSolarPosition(climate.lat, dayOfYear, hr, climate.lon, climate.tz);
-                        if (pos.alt > 0) {
-                          pts.push(`${xForAz(pos.az).toFixed(1)},${yForAlt(pos.alt).toFixed(1)}`);
-                        }
-                      }
-                      return pts.join(' ');
-                    };
-
                     // Overhang shading mask curve across the hemisphere facing the facade
                     const overhangMaskPoints: string[] = [];
                     if (showProtractor) {
@@ -2509,6 +2740,25 @@ export const Stage1Climate: React.FC<Stage1ClimateProps> = ({
                         if (cutAlt < 90) {
                           overhangMaskPoints.push(`${xForAz(az).toFixed(1)},${yForAlt(cutAlt).toFixed(1)}`);
                         }
+                      }
+                    }
+
+                    // Rear hemisphere self-shaded zones on cartesian plane
+                    const rearCartRects: Array<{ x: number; w: number }> = [];
+                    if (showProtractor) {
+                      const azMin = facadeAzimuthDeg - 90;
+                      const azMax = facadeAzimuthDeg + 90;
+                      if (azMin < 0) {
+                        const x1 = xForAz(azMax);
+                        const x2 = xForAz(azMin + 360);
+                        rearCartRects.push({ x: x1, w: Math.max(0, x2 - x1) });
+                      } else if (azMax > 360) {
+                        const x1 = xForAz(azMax - 360);
+                        const x2 = xForAz(azMin);
+                        rearCartRects.push({ x: x1, w: Math.max(0, x2 - x1) });
+                      } else {
+                        rearCartRects.push({ x: xForAz(0), w: Math.max(0, xForAz(azMin) - xForAz(0)) });
+                        rearCartRects.push({ x: xForAz(azMax), w: Math.max(0, xForAz(360) - xForAz(azMax)) });
                       }
                     }
 
@@ -2541,6 +2791,18 @@ export const Stage1Climate: React.FC<Stage1ClimateProps> = ({
                                   : `${az}°`}
                               </text>
                             </g>
+                          ))}
+
+                          {/* Rear Envelope Self-Shaded Rectangular Bands */}
+                          {rearCartRects.map((r, idx) => (
+                            <rect
+                              key={`rear-cart-${idx}`}
+                              x={r.x}
+                              y={padT}
+                              width={r.w}
+                              height={plotH}
+                              fill="rgba(15, 23, 42, 0.55)"
+                            />
                           ))}
 
                           {/* Facade Normal Orientation Line */}
@@ -2578,18 +2840,18 @@ export const Stage1Climate: React.FC<Stage1ClimateProps> = ({
                           {showProtractor && (
                             <>
                               <line
-                                x1={xForAz((facadeAzimuthDeg - finAngleDeg + 360) % 360)}
+                                x1={xForAz((facadeAzimuthDeg - effLeftFin + 360) % 360)}
                                 y1={padT}
-                                x2={xForAz((facadeAzimuthDeg - finAngleDeg + 360) % 360)}
+                                x2={xForAz((facadeAzimuthDeg - effLeftFin + 360) % 360)}
                                 y2={H - padB}
                                 stroke="#818cf8"
                                 strokeWidth={1.5}
                                 strokeDasharray="4 2"
                               />
                               <line
-                                x1={xForAz((facadeAzimuthDeg + finAngleDeg) % 360)}
+                                x1={xForAz((facadeAzimuthDeg + effRightFin) % 360)}
                                 y1={padT}
-                                x2={xForAz((facadeAzimuthDeg + finAngleDeg) % 360)}
+                                x2={xForAz((facadeAzimuthDeg + effRightFin) % 360)}
                                 y2={H - padB}
                                 stroke="#818cf8"
                                 strokeWidth={1.5}
@@ -2609,10 +2871,57 @@ export const Stage1Climate: React.FC<Stage1ClimateProps> = ({
                             />
                           )}
 
-                          {/* Reference Solstice and Equinox Trajectories */}
-                          <polyline fill="none" stroke="#f43f5e" strokeWidth={2} strokeOpacity={0.85} points={makeCartArc(172)} />
-                          <polyline fill="none" stroke="#10b981" strokeWidth={1.8} strokeOpacity={0.85} points={makeCartArc(80)} />
-                          <polyline fill="none" stroke="#0ea5e9" strokeWidth={2} strokeOpacity={0.85} points={makeCartArc(355)} />
+                          {/* 7 Annual Declination Tracks */}
+                          {showDeclinationArcs &&
+                            declinationTracks.map((t) => {
+                              const pts = t.pts
+                                .map((p) => `${xForAz(p.az).toFixed(1)},${yForAlt(p.alt).toFixed(1)}`)
+                                .join(' ');
+                              return (
+                                <polyline
+                                  key={t.day}
+                                  fill="none"
+                                  stroke={t.color}
+                                  strokeWidth={t.bold ? 2.2 : 1.3}
+                                  strokeOpacity={t.bold ? 0.9 : 0.65}
+                                  strokeDasharray={t.bold ? undefined : '3 2'}
+                                  points={pts}
+                                />
+                              );
+                            })}
+
+                          {/* 10 Hourly Analemmas (8:00 - 17:00) */}
+                          {showAnalemmas &&
+                            analemmaLoops.map((loop) => {
+                              if (loop.pts.length < 3) return null;
+                              const pts = loop.pts
+                                .map((p) => `${xForAz(p.az).toFixed(1)},${yForAlt(p.alt).toFixed(1)}`)
+                                .join(' ');
+                              const peak = loop.pts.reduce((prev, cur) => (cur.alt > prev.alt ? cur : prev), loop.pts[0]);
+                              return (
+                                <g key={loop.hour}>
+                                  <polyline
+                                    fill="none"
+                                    stroke="#94a3b8"
+                                    strokeWidth={1.2}
+                                    strokeDasharray="2 2"
+                                    strokeOpacity={0.65}
+                                    points={pts}
+                                  />
+                                  <text
+                                    x={xForAz(peak.az)}
+                                    y={yForAlt(peak.alt) - 4}
+                                    fontSize="9"
+                                    fontWeight="700"
+                                    fill="#cbd5e1"
+                                    textAnchor="middle"
+                                    className="font-mono pointer-events-none select-none"
+                                  >
+                                    {loop.hour}h
+                                  </text>
+                                </g>
+                              );
+                            })}
 
                           {/* Selected Day of Year Trajectory Curve (Highlighted in Gold) */}
                           {dayTrajectoryPts.length > 1 && (
@@ -2640,14 +2949,17 @@ export const Stage1Climate: React.FC<Stage1ClimateProps> = ({
                                 fill={fill}
                                 className="cursor-pointer transition hover:scale-150 hover:stroke-amber-300 hover:stroke-[2px]"
                                 onMouseEnter={(e) => {
+                                  let dAz = h.solarAz - facadeAzimuthDeg;
+                                  while (dAz > 180) dAz -= 360;
+                                  while (dAz < -180) dAz += 360;
                                   const shReason = sh.selfShaded
-                                    ? 'Behind Facade (Self-Shaded)'
+                                    ? 'Behind Facade (Self-Shaded by Envelope)'
                                     : sh.canyonBlocked
-                                    ? 'Blocked by Urban Canyon'
+                                    ? 'Blocked by Urban Skyline Canyon'
                                     : sh.overhangBlocked
                                     ? `Blocked by Overhang (Profile θ_v=${sh.profileAngle.toFixed(1)}°)`
                                     : sh.finBlocked
-                                    ? 'Blocked by Vertical Fins'
+                                    ? (dAz < 0 ? `Blocked by Left Vertical Fin (θ_h,L=${effLeftFin}°)` : `Blocked by Right Vertical Fin (θ_h,R=${effRightFin}°)`)
                                     : 'Direct Sun (Unobstructed)';
                                   tooltipCtx.show(e, `${MONTHS[h.month]} ${h.dayOfMonth} • ${h.hour}:00`, [
                                     { label: 'Solar Altitude', value: `${h.solarAlt.toFixed(1)}°`, color: '#f59e0b' },
@@ -2732,30 +3044,54 @@ export const Stage1Climate: React.FC<Stage1ClimateProps> = ({
                     return { x: cx + r * Math.cos(rad), y: cy + r * Math.sin(rad) };
                   };
 
-                  const makeDayArc = (dayOfYear: number) => {
-                    const pts: string[] = [];
-                    for (let hr = 3.5; hr <= 20.5; hr += 0.25) {
-                      const pos = calcSolarPosition(climate.lat, dayOfYear, hr, climate.lon, climate.tz);
-                      if (pos.alt > 0) {
-                        const p = polarPt(pos.alt, pos.az);
-                        pts.push(`${p.x.toFixed(1)},${p.y.toFixed(1)}`);
-                      }
+                  // Rear hemisphere self-shading mask
+                  const rearSemicirclePts: string[] = [];
+                  if (showProtractor) {
+                    rearSemicirclePts.push(`${cx.toFixed(1)},${cy.toFixed(1)}`);
+                    for (let d = 90; d <= 270; d += 3) {
+                      const az = (facadeAzimuthDeg + d) % 360;
+                      const p = polarPt(0, az);
+                      rearSemicirclePts.push(`${p.x.toFixed(1)},${p.y.toFixed(1)}`);
                     }
-                    return pts.join(' ');
-                  };
+                    rearSemicirclePts.push(`${cx.toFixed(1)},${cy.toFixed(1)}`);
+                  }
 
                   // Overhang Stereographic Cutoff Mask
                   const overhangStereoPts: string[] = [];
                   if (showProtractor) {
-                    overhangStereoPts.push(`${cx},${cy}`);
-                    for (let d = -86; d <= 86; d += 4) {
+                    overhangStereoPts.push(`${cx.toFixed(1)},${cy.toFixed(1)}`);
+                    for (let d = -86; d <= 86; d += 3) {
                       const az = (facadeAzimuthDeg + d + 360) % 360;
                       const radD = (d * Math.PI) / 180;
                       const cutAlt = Math.atan(Math.tan((overhangAngleDeg * Math.PI) / 180) * Math.cos(radD)) * (180 / Math.PI);
                       const p = polarPt(Math.max(0, cutAlt), az);
                       overhangStereoPts.push(`${p.x.toFixed(1)},${p.y.toFixed(1)}`);
                     }
-                    overhangStereoPts.push(`${cx},${cy}`);
+                    overhangStereoPts.push(`${cx.toFixed(1)},${cy.toFixed(1)}`);
+                  }
+
+                  // Left fin shading wedge
+                  const leftFinWedgePts: string[] = [];
+                  if (showProtractor && effLeftFin < 89) {
+                    leftFinWedgePts.push(`${cx.toFixed(1)},${cy.toFixed(1)}`);
+                    for (let d = -90; d <= -effLeftFin; d += 2) {
+                      const az = (facadeAzimuthDeg + d + 360) % 360;
+                      const p = polarPt(0, az);
+                      leftFinWedgePts.push(`${p.x.toFixed(1)},${p.y.toFixed(1)}`);
+                    }
+                    leftFinWedgePts.push(`${cx.toFixed(1)},${cy.toFixed(1)}`);
+                  }
+
+                  // Right fin shading wedge
+                  const rightFinWedgePts: string[] = [];
+                  if (showProtractor && effRightFin < 89) {
+                    rightFinWedgePts.push(`${cx.toFixed(1)},${cy.toFixed(1)}`);
+                    for (let d = effRightFin; d <= 90; d += 2) {
+                      const az = (facadeAzimuthDeg + d + 360) % 360;
+                      const p = polarPt(0, az);
+                      rightFinWedgePts.push(`${p.x.toFixed(1)},${p.y.toFixed(1)}`);
+                    }
+                    rightFinWedgePts.push(`${cx.toFixed(1)},${cy.toFixed(1)}`);
                   }
 
                   return (
@@ -2809,6 +3145,61 @@ export const Stage1Climate: React.FC<Stage1ClimateProps> = ({
                         <text x={cx + (R + 18) * Math.cos(Math.PI / 4)} y={cy - (R + 18) * Math.sin(Math.PI / 4) + 4} textAnchor="middle" fontSize="9.5" fontWeight="700" fill="#64748b">NE</text>
                         <text x={cx - (R + 18) * Math.cos(Math.PI / 4)} y={cy - (R + 18) * Math.sin(Math.PI / 4) + 4} textAnchor="middle" fontSize="9.5" fontWeight="700" fill="#64748b">NW</text>
 
+                        {/* Rear Building Envelope Self-Shaded Semicircle Mask */}
+                        {showProtractor && rearSemicirclePts.length > 2 && (
+                          <polygon
+                            points={rearSemicirclePts.join(' ')}
+                            fill="rgba(15, 23, 42, 0.42)"
+                            stroke="#334155"
+                            strokeWidth={1.2}
+                          />
+                        )}
+
+                        {/* Stage 2 Urban Canyon Skyline Obstruction Mask */}
+                        {showUrbanSkylineMask && (
+                          <circle
+                            cx={cx}
+                            cy={cy}
+                            r={R}
+                            fill="none"
+                            stroke="rgba(30, 41, 59, 0.75)"
+                            strokeWidth={(Math.max(canyonS, canyonE, canyonW) / 90) * R * 2}
+                          />
+                        )}
+
+                        {/* Left Fin Shading Wedge */}
+                        {showProtractor && leftFinWedgePts.length > 2 && (
+                          <polygon
+                            points={leftFinWedgePts.join(' ')}
+                            fill="rgba(99, 102, 241, 0.22)"
+                            stroke="#818cf8"
+                            strokeWidth={1.5}
+                            strokeDasharray="4 2"
+                          />
+                        )}
+
+                        {/* Right Fin Shading Wedge */}
+                        {showProtractor && rightFinWedgePts.length > 2 && (
+                          <polygon
+                            points={rightFinWedgePts.join(' ')}
+                            fill="rgba(99, 102, 241, 0.22)"
+                            stroke="#818cf8"
+                            strokeWidth={1.5}
+                            strokeDasharray="4 2"
+                          />
+                        )}
+
+                        {/* Overhang Stereographic Shading Mask Geometry */}
+                        {showProtractor && overhangStereoPts.length > 2 && (
+                          <polygon
+                            points={overhangStereoPts.join(' ')}
+                            fill="rgba(245, 158, 11, 0.22)"
+                            stroke="#d97706"
+                            strokeWidth={1.8}
+                            strokeDasharray="4 2"
+                          />
+                        )}
+
                         {/* Facade Orientation Vector Pointer */}
                         {(() => {
                           const rad = ((facadeAzimuthDeg - 90) * Math.PI) / 180;
@@ -2832,49 +3223,73 @@ export const Stage1Climate: React.FC<Stage1ClimateProps> = ({
                           );
                         })()}
 
-                        {/* Stage 2 Urban Canyon Skyline Obstruction Mask */}
-                        {showUrbanSkylineMask && (
-                          <circle
-                            cx={cx}
-                            cy={cy}
-                            r={R}
-                            fill="none"
-                            stroke="rgba(30, 41, 59, 0.75)"
-                            strokeWidth={(Math.max(canyonS, canyonE, canyonW) / 90) * R * 2}
-                          />
-                        )}
+                        {/* 7 Annual Declination Tracks */}
+                        {showDeclinationArcs &&
+                          declinationTracks.map((t) => {
+                            const pts = t.pts.map((p) => {
+                              const pt = polarPt(p.alt, p.az);
+                              return `${pt.x.toFixed(1)},${pt.y.toFixed(1)}`;
+                            }).join(' ');
+                            const firstPt = polarPt(t.pts[0].alt, t.pts[0].az);
+                            return (
+                              <g key={t.day}>
+                                <polyline
+                                  fill="none"
+                                  stroke={t.color}
+                                  strokeWidth={t.bold ? 2.2 : 1.3}
+                                  strokeOpacity={t.bold ? 0.9 : 0.65}
+                                  strokeDasharray={t.bold ? undefined : '3 2'}
+                                  points={pts}
+                                />
+                                <text
+                                  x={firstPt.x}
+                                  y={firstPt.y + (firstPt.y < cy ? -4 : 10)}
+                                  fontSize="8.5"
+                                  fontWeight="700"
+                                  fill={t.color}
+                                  textAnchor={firstPt.x < cx ? 'end' : 'start'}
+                                  className="select-none pointer-events-none"
+                                >
+                                  {t.label.split(' ')[1]} {t.label.split(' ')[0]}
+                                </text>
+                              </g>
+                            );
+                          })}
 
-                        {/* Overhang Stereographic Shading Mask Geometry */}
-                        {showProtractor && overhangStereoPts.length > 2 && (
-                          <polygon
-                            points={overhangStereoPts.join(' ')}
-                            fill="rgba(245, 158, 11, 0.22)"
-                            stroke="#d97706"
-                            strokeWidth={1.8}
-                            strokeDasharray="4 2"
-                          />
-                        )}
-
-                        {/* Vertical Fins Radial Cutoff Rays */}
-                        {showProtractor && (
-                          <>
-                            {(() => {
-                              const radL = ((facadeAzimuthDeg - finAngleDeg - 90) * Math.PI) / 180;
-                              const radR = ((facadeAzimuthDeg + finAngleDeg - 90) * Math.PI) / 180;
-                              return (
-                                <>
-                                  <line x1={cx} y1={cy} x2={cx + R * Math.cos(radL)} y2={cy + R * Math.sin(radL)} stroke="#818cf8" strokeWidth={1.6} strokeDasharray="4 2" />
-                                  <line x1={cx} y1={cy} x2={cx + R * Math.cos(radR)} y2={cy + R * Math.sin(radR)} stroke="#818cf8" strokeWidth={1.6} strokeDasharray="4 2" />
-                                </>
-                              );
-                            })()}
-                          </>
-                        )}
-
-                        {/* Solstice & Equinox Curves */}
-                        <polyline fill="none" stroke="#f43f5e" strokeWidth={2.2} strokeOpacity={0.85} points={makeDayArc(172)} />
-                        <polyline fill="none" stroke="#10b981" strokeWidth={1.8} strokeOpacity={0.85} points={makeDayArc(80)} />
-                        <polyline fill="none" stroke="#0ea5e9" strokeWidth={2.2} strokeOpacity={0.85} points={makeDayArc(355)} />
+                        {/* 10 Hourly Analemmas (8:00 - 17:00) */}
+                        {showAnalemmas &&
+                          analemmaLoops.map((loop) => {
+                            if (loop.pts.length < 3) return null;
+                            const pts = loop.pts.map((p) => {
+                              const pt = polarPt(p.alt, p.az);
+                              return `${pt.x.toFixed(1)},${pt.y.toFixed(1)}`;
+                            }).join(' ');
+                            const peak = loop.pts.reduce((prev, cur) => (cur.alt > prev.alt ? cur : prev), loop.pts[0]);
+                            const peakPt = polarPt(peak.alt, peak.az);
+                            return (
+                              <g key={loop.hour}>
+                                <polyline
+                                  fill="none"
+                                  stroke="#94a3b8"
+                                  strokeWidth={1.2}
+                                  strokeDasharray="2 2"
+                                  strokeOpacity={0.65}
+                                  points={pts}
+                                />
+                                <text
+                                  x={peakPt.x}
+                                  y={peakPt.y - 4}
+                                  fontSize="8.5"
+                                  fontWeight="800"
+                                  fill="#cbd5e1"
+                                  textAnchor="middle"
+                                  className="select-none pointer-events-none font-mono"
+                                >
+                                  {loop.hour}h
+                                </text>
+                              </g>
+                            );
+                          })}
 
                         {/* Selected Day of Year Trajectory Curve (Luminous Gold) */}
                         {dayTrajectoryPts.length > 1 && (
@@ -2906,14 +3321,17 @@ export const Stage1Climate: React.FC<Stage1ClimateProps> = ({
                               fill={fill}
                               className="cursor-pointer transition hover:scale-150 hover:stroke-amber-300 hover:stroke-[2px]"
                               onMouseEnter={(e) => {
+                                let dAz = h.solarAz - facadeAzimuthDeg;
+                                while (dAz > 180) dAz -= 360;
+                                while (dAz < -180) dAz += 360;
                                 const shReason = sh.selfShaded
-                                  ? 'Behind Facade (Self-Shaded)'
+                                  ? 'Behind Facade (Self-Shaded by Envelope)'
                                   : sh.canyonBlocked
-                                  ? 'Blocked by Urban Canyon'
+                                  ? 'Blocked by Urban Skyline Canyon'
                                   : sh.overhangBlocked
                                   ? `Blocked by Overhang (Profile θ_v=${sh.profileAngle.toFixed(1)}°)`
                                   : sh.finBlocked
-                                  ? 'Blocked by Vertical Fins'
+                                  ? (dAz < 0 ? `Blocked by Left Vertical Fin (θ_h,L=${effLeftFin}°)` : `Blocked by Right Vertical Fin (θ_h,R=${effRightFin}°)`)
                                   : 'Direct Sun (Unobstructed)';
                                 tooltipCtx.show(e, `${MONTHS[h.month]} ${h.dayOfMonth} • ${h.hour}:00`, [
                                   { label: 'Solar Altitude', value: `${h.solarAlt.toFixed(1)}°`, color: '#f59e0b' },
@@ -2993,69 +3411,48 @@ export const Stage1Climate: React.FC<Stage1ClimateProps> = ({
               </ClimaChartCard>
 
               {/* Architectural Solar & Shading Diagnostic KPIs */}
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs bg-slate-50 p-3 rounded-2xl border border-slate-200 mt-2">
+              <div className="grid grid-cols-1 sm:grid-cols-4 gap-3 text-xs bg-slate-50 p-3 rounded-2xl border border-slate-200 mt-2">
                 <div className="bg-white p-3 rounded-xl border border-slate-200 space-y-1">
-                  <span className="text-[10.5px] font-bold text-slate-500 uppercase tracking-wider block">
+                  <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">
                     1. Summer Overheating Protection
                   </span>
                   <div className="text-xl font-extrabold text-amber-700">
-                    {(() => {
-                      const facing = climate.hourly.filter((h) => {
-                        if (h.solarAlt <= 0.5) return false;
-                        let dAz = h.solarAz - facadeAzimuthDeg;
-                        while (dAz > 180) dAz -= 360;
-                        while (dAz < -180) dAz += 360;
-                        return Math.abs(dAz) < 90 && h.dryBulb >= 24;
-                      });
-                      const blocked = facing.filter((h) => {
-                        let dAz = h.solarAz - facadeAzimuthDeg;
-                        while (dAz > 180) dAz -= 360;
-                        while (dAz < -180) dAz += 360;
-                        const cosDelta = Math.cos((dAz * Math.PI) / 180);
-                        const prof = Math.atan(Math.tan((h.solarAlt * Math.PI) / 180) / Math.max(0.001, cosDelta)) * (180 / Math.PI);
-                        return (showProtractor && prof >= overhangAngleDeg) || (showProtractor && Math.abs(dAz) >= finAngleDeg);
-                      }).length;
-                      return facing.length > 0 ? `${Math.round((blocked / facing.length) * 100)}% Blocked` : 'N/A';
-                    })()}
+                    {facadeShadingAnalysis.summerOverheatingRadiationBlockedPct}% Blocked
                   </div>
                   <p className="text-[10px] text-slate-500">
-                    Hours with T_db ≥ 24°C successfully shaded by the overhang & vertical fins.
+                    {facadeShadingAnalysis.summerOverheatingBlockedHours} of {facadeShadingAnalysis.summerOverheatingHours} daylight hours (T_db ≥ 24°C) successfully shaded.
                   </p>
                 </div>
 
                 <div className="bg-white p-3 rounded-xl border border-slate-200 space-y-1">
-                  <span className="text-[10.5px] font-bold text-slate-500 uppercase tracking-wider block">
+                  <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">
                     2. Winter Passive Solar Gains
                   </span>
                   <div className="text-xl font-extrabold text-teal-700">
-                    {(() => {
-                      const facing = climate.hourly.filter((h) => {
-                        if (h.solarAlt <= 0.5) return false;
-                        let dAz = h.solarAz - facadeAzimuthDeg;
-                        while (dAz > 180) dAz -= 360;
-                        while (dAz < -180) dAz += 360;
-                        return Math.abs(dAz) < 90 && h.dryBulb < 18;
-                      });
-                      const admitted = facing.filter((h) => {
-                        let dAz = h.solarAz - facadeAzimuthDeg;
-                        while (dAz > 180) dAz -= 360;
-                        while (dAz < -180) dAz += 360;
-                        const cosDelta = Math.cos((dAz * Math.PI) / 180);
-                        const prof = Math.atan(Math.tan((h.solarAlt * Math.PI) / 180) / Math.max(0.001, cosDelta)) * (180 / Math.PI);
-                        const isBlocked = (showProtractor && prof >= overhangAngleDeg) || (showProtractor && Math.abs(dAz) >= finAngleDeg);
-                        return !isBlocked;
-                      }).length;
-                      return facing.length > 0 ? `${Math.round((admitted / facing.length) * 100)}% Admitted` : 'N/A';
-                    })()}
+                    {facadeShadingAnalysis.winterColdRadiationAdmittedPct}% Admitted
                   </div>
                   <p className="text-[10px] text-slate-500">
-                    Cold hours (T_db &lt; 18°C) admitted directly into the building for natural heating.
+                    {facadeShadingAnalysis.winterColdAdmittedHours} of {facadeShadingAnalysis.winterColdHours} cold hours (T_db &lt; 18°C) admitted for natural heating.
                   </p>
                 </div>
 
                 <div className="bg-white p-3 rounded-xl border border-slate-200 space-y-1">
-                  <span className="text-[10.5px] font-bold text-slate-500 uppercase tracking-wider block">
-                    3. Live Solar Inspector
+                  <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">
+                    3. Seasonal Selectivity Ratio
+                  </span>
+                  <div className="text-xl font-extrabold text-indigo-700">
+                    {facadeShadingAnalysis.netSelectivityScore.toFixed(2)}x
+                  </div>
+                  <p className="text-[10px] text-slate-500">
+                    {facadeShadingAnalysis.netSelectivityScore >= 1.0
+                      ? 'Selective (Blocks summer heat while admitting winter sun)'
+                      : 'Suboptimal (Low summer rejection or excessive winter blockage)'}
+                  </p>
+                </div>
+
+                <div className="bg-white p-3 rounded-xl border border-slate-200 space-y-1">
+                  <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">
+                    4. Live Vector Inspector
                   </span>
                   {(() => {
                     const pos = calcSolarPosition(climate.lat, selectedDayOfYear, selectedSunHour, climate.lon, climate.tz);
@@ -3065,7 +3462,11 @@ export const Stage1Climate: React.FC<Stage1ClimateProps> = ({
                     const inFront = Math.abs(dAz) < 90;
                     const cosDelta = Math.cos((dAz * Math.PI) / 180);
                     const prof = inFront && cosDelta > 0.001 ? Math.atan(Math.tan((pos.alt * Math.PI) / 180) / cosDelta) * (180 / Math.PI) : 90;
-                    const isShaded = (showProtractor && inFront && prof >= overhangAngleDeg) || (showProtractor && inFront && Math.abs(dAz) >= finAngleDeg) || !inFront;
+                    const effL = finsSymmetric ? finAngleDeg : leftFinAngleDeg;
+                    const effR = finsSymmetric ? finAngleDeg : rightFinAngleDeg;
+                    const isOverhang = showProtractor && inFront && prof >= overhangAngleDeg;
+                    const isFin = showProtractor && inFront && ((dAz < 0 && Math.abs(dAz) >= effL) || (dAz > 0 && dAz >= effR));
+                    const isShaded = isOverhang || isFin || !inFront;
 
                     return (
                       <div className="space-y-0.5 font-mono text-[10.5px]">
@@ -3073,10 +3474,10 @@ export const Stage1Climate: React.FC<Stage1ClimateProps> = ({
                           Alt: <span className="text-amber-600">{pos.alt.toFixed(1)}°</span> • Az: <span className="text-indigo-600">{pos.az.toFixed(1)}°</span>
                         </div>
                         <div className="text-slate-600">
-                          Profile Angle α: <strong className="text-slate-800">{inFront ? `${prof.toFixed(1)}°` : 'Behind'}</strong>
+                          Profile α_p: <strong className="text-slate-800">{inFront ? `${prof.toFixed(1)}°` : 'Behind'}</strong>
                         </div>
-                        <div className="font-extrabold text-[11px] pt-0.5">
-                          Status: <span className={isShaded ? 'text-amber-700' : 'text-emerald-600'}>{isShaded ? 'Shaded / Masked' : 'Direct Sun'}</span>
+                        <div className="font-extrabold text-[11px] pt-0.5 truncate">
+                          Status: <span className={isShaded ? 'text-amber-700' : 'text-emerald-600'}>{isShaded ? (isOverhang ? 'Overhang Shaded' : isFin ? 'Fin Shaded' : 'Rear Envelope') : 'Direct Sun'}</span>
                         </div>
                       </div>
                     );
@@ -3086,7 +3487,7 @@ export const Stage1Climate: React.FC<Stage1ClimateProps> = ({
             </div>
 
             {/* 8-Orientation Vertical Facade Radiation Rose */}
-            <div className={stage1WideMode && chartDensity !== 'spacious' ? 'xl:col-span-5' : 'w-full'}>
+            <div className={stage1WideMode && chartDensity !== 'spacious' ? 'xl:col-span-4' : 'w-full'}>
               <ClimaChartCard
                 title="Directional Vertical Facade Radiation Rose (kWh/m²yr)"
                 subtitle="Annual, Summer (Jun–Aug), and Winter (Dec–Feb) incident solar radiation on 8 vertical orientations"
@@ -3205,6 +3606,218 @@ export const Stage1Climate: React.FC<Stage1ClimateProps> = ({
               </ClimaChartCard>
             </div>
           </div>
+
+          {/* Monthly Incident Solar Radiation on Facade (Unshaded vs. Shaded Transmitted kWh/m²) */}
+          <ClimaChartCard
+            title="Monthly Incident Solar Radiation on Facade — Unshaded vs. Shaded Transmitted (kWh/m²)"
+            subtitle={`Monthly radiation breakdown for ${facadeAzimuthDeg}° facade • Overhang θ_v = ${overhangAngleDeg}° • Fins: ${finsSymmetric ? `±${finAngleDeg}°` : `L:${leftFinAngleDeg}° / R:${rightFinAngleDeg}°`} • Net Selectivity = ${facadeShadingAnalysis.netSelectivityScore.toFixed(2)}x`}
+            icon={<Layers className="w-4 h-4 text-amber-500" />}
+            svgFilename={`${climate.id}_facade_shading_monthly.svg`}
+            csvFilename={`${climate.id}_facade_shading_monthly.csv`}
+            onBuildCsv={() => ({
+              headers: [
+                'Month',
+                'Unshaded_kWh/m2',
+                'Shaded_Transmitted_kWh/m2',
+                'Blocked_kWh/m2',
+                'Shading_Fraction_%',
+                'Beam_Transmitted_kWh/m2',
+                'Diffuse_Transmitted_kWh/m2'
+              ],
+              rows: facadeShadingAnalysis.monthly.map((m) => {
+                const shFrac = m.unshadedKwhM2 > 0 ? Math.round((m.blockedKwhM2 / m.unshadedKwhM2) * 100) : 0;
+                return [
+                  m.month,
+                  m.unshadedKwhM2,
+                  m.shadedKwhM2,
+                  m.blockedKwhM2,
+                  shFrac,
+                  m.beamShadedKwhM2,
+                  m.diffuseShadedKwhM2
+                ];
+              })
+            })}
+          >
+            {(svgRef, tooltipCtx) => {
+              const W = 880;
+              const H = 280;
+              const padL = 48;
+              const padR = 24;
+              const padT = 24;
+              const padB = 34;
+              const plotW = W - padL - padR;
+              const plotH = H - padT - padB;
+              const colWidth = plotW / 12;
+              const xForM = (i: number) => padL + (i + 0.5) * colWidth;
+
+              const maxVal = Math.max(
+                40,
+                ...facadeShadingAnalysis.monthly.map((m) => Math.max(m.unshadedKwhM2, m.shadedKwhM2 + m.blockedKwhM2))
+              );
+
+              return (
+                <div className="space-y-2">
+                  <svg ref={svgRef} viewBox={`0 0 ${W} ${H}`} className="w-full h-auto">
+                    {/* Gridlines */}
+                    {[0, 0.25, 0.5, 0.75, 1].map((f, i) => {
+                      const y = padT + plotH - f * plotH;
+                      return (
+                        <g key={i}>
+                          <line x1={padL} y1={y} x2={W - padR} y2={y} stroke="#f1f5f9" />
+                          <text x={padL - 8} y={y + 3.5} textAnchor="end" fontSize="10" fontWeight="600" fill="#64748b">
+                            {Math.round(maxVal * f)}
+                          </text>
+                        </g>
+                      );
+                    })}
+
+                    {/* Month Hover Highlight */}
+                    {activeShadingMonthHover !== null && (
+                      <rect
+                        x={padL + activeShadingMonthHover * colWidth + 2}
+                        y={padT}
+                        width={colWidth - 4}
+                        height={plotH}
+                        fill="rgba(245, 158, 11, 0.08)"
+                        stroke="rgba(245, 158, 11, 0.3)"
+                        strokeWidth={1}
+                        rx={4}
+                        pointerEvents="none"
+                      />
+                    )}
+
+                    {/* Grouped Bars for 12 months */}
+                    {facadeShadingAnalysis.monthly.map((m, i) => {
+                      const cx = xForM(i);
+                      const isHovered = activeShadingMonthHover === i;
+                      const barW = Math.min(14, (colWidth - 10) / 3);
+
+                      // Bar 1: Unshaded (Amber)
+                      const hUnshaded = (m.unshadedKwhM2 / maxVal) * plotH;
+                      const yUnshaded = padT + plotH - hUnshaded;
+
+                      // Bar 2: Shaded Transmitted (Emerald)
+                      const hTransmitted = (m.shadedKwhM2 / maxVal) * plotH;
+                      const yTransmitted = padT + plotH - hTransmitted;
+
+                      // Bar 3: Blocked (Slate)
+                      const hBlocked = (m.blockedKwhM2 / maxVal) * plotH;
+                      const yBlocked = padT + plotH - hBlocked;
+
+                      return (
+                        <g key={m.month}>
+                          {/* Unshaded bar */}
+                          <rect
+                            x={cx - barW * 1.6}
+                            y={yUnshaded}
+                            width={barW}
+                            height={Math.max(0, hUnshaded)}
+                            fill="#f59e0b"
+                            fillOpacity={isHovered ? 1 : 0.85}
+                            rx={2}
+                          />
+                          {/* Transmitted bar */}
+                          <rect
+                            x={cx - barW * 0.5}
+                            y={yTransmitted}
+                            width={barW}
+                            height={Math.max(0, hTransmitted)}
+                            fill="#10b981"
+                            fillOpacity={isHovered ? 1 : 0.85}
+                            rx={2}
+                          />
+                          {/* Blocked bar */}
+                          <rect
+                            x={cx + barW * 0.6}
+                            y={yBlocked}
+                            width={barW}
+                            height={Math.max(0, hBlocked)}
+                            fill="#64748b"
+                            fillOpacity={isHovered ? 1 : 0.75}
+                            rx={2}
+                          />
+
+                          {/* Month label */}
+                          <text
+                            x={cx}
+                            y={H - 10}
+                            textAnchor="middle"
+                            fontSize={isHovered ? '11' : '10'}
+                            fontWeight={isHovered ? '800' : '600'}
+                            fill={isHovered ? '#0f172a' : '#475569'}
+                          >
+                            {m.month}
+                          </text>
+                        </g>
+                      );
+                    })}
+
+                    {/* Interactive Mouse Hover Overlay */}
+                    {facadeShadingAnalysis.monthly.map((m, i) => {
+                      const shFrac = m.unshadedKwhM2 > 0 ? Math.round((m.blockedKwhM2 / m.unshadedKwhM2) * 100) : 0;
+                      return (
+                        <rect
+                          key={`shading-hover-${m.month}`}
+                          x={padL + i * colWidth}
+                          y={padT}
+                          width={colWidth}
+                          height={plotH}
+                          fill="transparent"
+                          className="cursor-pointer"
+                          onMouseEnter={(e) => {
+                            setActiveShadingMonthHover(i);
+                            tooltipCtx.show(e, `${m.month} Facade Incident Radiation (${facadeAzimuthDeg}° Facade)`, [
+                              { label: 'Unshaded Incident', value: `${m.unshadedKwhM2} kWh/m²`, color: '#f59e0b' },
+                              { label: 'Shaded Transmitted', value: `${m.shadedKwhM2} kWh/m²`, color: '#10b981' },
+                              { label: '  • Direct Beam Transmitted', value: `${m.beamShadedKwhM2} kWh/m²` },
+                              { label: '  • Diffuse Sky Transmitted', value: `${m.diffuseShadedKwhM2} kWh/m²` },
+                              { label: 'Blocked by Shading Mask', value: `${m.blockedKwhM2} kWh/m²`, color: '#64748b' },
+                              { label: 'Shading Fraction', value: `${shFrac}% Blocked`, color: shFrac > 50 ? '#f59e0b' : '#3b82f6' }
+                            ]);
+                          }}
+                          onMouseMove={(e) => tooltipCtx.move(e)}
+                          onMouseLeave={() => {
+                            setActiveShadingMonthHover(null);
+                            tooltipCtx.hide();
+                          }}
+                        />
+                      );
+                    })}
+                  </svg>
+
+                  {/* Legend & Annual Summary Badges */}
+                  <div className="flex flex-wrap items-center justify-between text-[11px] text-slate-600 px-1 pt-1 gap-2">
+                    <div className="flex items-center gap-4 font-bold">
+                      <span className="flex items-center gap-1.5 text-amber-600">
+                        <span className="w-3 h-3 rounded-sm bg-amber-500 inline-block" /> Unshaded Incident
+                      </span>
+                      <span className="flex items-center gap-1.5 text-emerald-600">
+                        <span className="w-3 h-3 rounded-sm bg-emerald-500 inline-block" /> Shaded Transmitted
+                      </span>
+                      <span className="flex items-center gap-1.5 text-slate-500">
+                        <span className="w-3 h-3 rounded-sm bg-slate-500 inline-block" /> Shaded Blocked
+                      </span>
+                    </div>
+
+                    <div className="flex flex-wrap items-center gap-2 text-[10.5px]">
+                      <span className="bg-amber-50 border border-amber-200 text-amber-900 px-2 py-0.5 rounded-md font-bold">
+                        Unshaded: {facadeShadingAnalysis.annualUnshadedKwhM2} kWh/m²yr
+                      </span>
+                      <span className="bg-emerald-50 border border-emerald-200 text-emerald-900 px-2 py-0.5 rounded-md font-bold">
+                        Transmitted: {facadeShadingAnalysis.annualShadedKwhM2} kWh/m²yr
+                      </span>
+                      <span className="bg-slate-100 border border-slate-300 text-slate-800 px-2 py-0.5 rounded-md font-bold">
+                        Blocked: {facadeShadingAnalysis.annualBlockedKwhM2} kWh/m²yr
+                      </span>
+                      <span className="bg-indigo-50 border border-indigo-200 text-indigo-900 px-2 py-0.5 rounded-md font-bold">
+                        Selectivity: {facadeShadingAnalysis.netSelectivityScore.toFixed(2)}x
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              );
+            }}
+          </ClimaChartCard>
           {/* Monthly Global, Direct Normal & Diffuse Solar Boxplots + Cloud Cover Regime Distribution */}
           <div className={`grid grid-cols-1 ${stage1WideMode && chartDensity !== 'spacious' ? 'xl:grid-cols-2 gap-5' : 'gap-6'}`}>
             <ClimaChartCard

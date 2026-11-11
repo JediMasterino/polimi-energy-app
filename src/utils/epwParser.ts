@@ -1420,3 +1420,319 @@ export function exportDataToCsvFile(
   URL.revokeObjectURL(url);
 }
 
+// ============================================================================
+// FACADE SHADING & INCIDENT RADIATION ANALYSIS (CBE Clima & Ladybug Parity)
+// ============================================================================
+export interface MonthlyShadingRadiationItem {
+  month: string;
+  unshadedKwhM2: number;
+  shadedKwhM2: number;
+  blockedKwhM2: number;
+  beamUnshadedKwhM2: number;
+  beamShadedKwhM2: number;
+  diffuseUnshadedKwhM2: number;
+  diffuseShadedKwhM2: number;
+}
+
+export interface FacadeShadingAnalysisResult {
+  monthly: MonthlyShadingRadiationItem[];
+  annualUnshadedKwhM2: number;
+  annualShadedKwhM2: number;
+  annualBlockedKwhM2: number;
+  summerOverheatingHours: number;
+  summerOverheatingBlockedHours: number;
+  summerOverheatingBlockedPct: number;
+  summerOverheatingRadiationBlockedPct: number;
+  winterColdHours: number;
+  winterColdAdmittedHours: number;
+  winterColdAdmittedPct: number;
+  winterColdRadiationAdmittedPct: number;
+  netSelectivityScore: number;
+}
+
+export function calcFacadeShadingRadiationBreakdown(
+  hourly: HourlyWeatherRecord[],
+  facadeAzimuthDeg: number,
+  overhangAngleDeg: number,
+  leftFinAngleDeg: number,
+  rightFinAngleDeg: number,
+  canyonAnglesDeg: { S: number; E: number; W: number; N?: number } = { S: 15, E: 15, W: 15, N: 15 },
+  showProtractor: boolean = true,
+  showUrbanSkylineMask: boolean = true
+): FacadeShadingAnalysisResult {
+  const deg2rad = Math.PI / 180;
+  const rad2deg = 180 / Math.PI;
+
+  const monthlyAccum = MONTHS.map((month) => ({
+    month,
+    beamUnshadedWh: 0,
+    beamShadedWh: 0,
+    diffuseUnshadedWh: 0,
+    diffuseShadedWh: 0,
+    totalUnshadedWh: 0,
+    totalShadedWh: 0,
+    totalBlockedWh: 0
+  }));
+
+  let summerWarmFacingWh = 0;
+  let summerWarmBlockedWh = 0;
+  let summerWarmFacingHours = 0;
+  let summerWarmBlockedHours = 0;
+
+  let winterColdFacingWh = 0;
+  let winterColdAdmittedWh = 0;
+  let winterColdFacingHours = 0;
+  let winterColdAdmittedHours = 0;
+
+  for (const h of hourly) {
+    if (h.solarAlt <= 0.5) continue;
+    const m = h.month;
+
+    let dAz = h.solarAz - facadeAzimuthDeg;
+    while (dAz > 180) dAz -= 360;
+    while (dAz < -180) dAz += 360;
+
+    const inFront = Math.abs(dAz) < 90;
+    if (!inFront) continue;
+
+    const cosInc = Math.cos(h.solarAlt * deg2rad) * Math.cos(dAz * deg2rad);
+    const beamUnshadedWh = Math.max(0, (h.dni ?? 0) * cosInc);
+    const diffuseUnshadedWh = h.dhi * 0.5;
+    const totalUnshadedWh = beamUnshadedWh + diffuseUnshadedWh;
+
+    // Profile angle
+    const cosDelta = Math.cos(dAz * deg2rad);
+    const radAlt = h.solarAlt * deg2rad;
+    const profileAngle = cosDelta > 0.001 ? Math.atan(Math.tan(radAlt) / cosDelta) * rad2deg : 90;
+
+    // Urban context skyline
+    let canyonAlt = 0;
+    if (h.solarAz >= 135 && h.solarAz <= 225) canyonAlt = canyonAnglesDeg.S;
+    else if (h.solarAz >= 45 && h.solarAz < 135) canyonAlt = canyonAnglesDeg.E;
+    else if (h.solarAz > 225 && h.solarAz <= 315) canyonAlt = canyonAnglesDeg.W;
+    else canyonAlt = canyonAnglesDeg.N ?? Math.max(canyonAnglesDeg.E, canyonAnglesDeg.W) * 0.5;
+
+    const canyonBlocked = showUrbanSkylineMask && h.solarAlt <= canyonAlt;
+    const overhangBlocked = showProtractor && profileAngle >= overhangAngleDeg;
+    // Asymmetric fins:
+    const finBlocked =
+      showProtractor &&
+      ((dAz < 0 && Math.abs(dAz) >= leftFinAngleDeg) || (dAz > 0 && dAz >= rightFinAngleDeg));
+
+    const isBeamBlocked = canyonBlocked || overhangBlocked || finBlocked;
+    const beamShadedWh = isBeamBlocked ? 0 : beamUnshadedWh;
+
+    // Sky view reduction factor for diffuse
+    const fOverhang = showProtractor ? Math.max(0.15, Math.min(1.0, overhangAngleDeg / 90)) : 1.0;
+    const fFins = showProtractor
+      ? Math.max(0.15, Math.min(1.0, (Math.min(90, leftFinAngleDeg) + Math.min(90, rightFinAngleDeg)) / 180))
+      : 1.0;
+    const fUrban = showUrbanSkylineMask ? Math.max(0.2, 1.0 - canyonAlt / 90) : 1.0;
+    const diffuseSVF = fOverhang * fFins * fUrban;
+    const diffuseShadedWh = diffuseUnshadedWh * diffuseSVF;
+
+    const totalShadedWh = beamShadedWh + diffuseShadedWh;
+    const totalBlockedWh = Math.max(0, totalUnshadedWh - totalShadedWh);
+
+    monthlyAccum[m].beamUnshadedWh += beamUnshadedWh;
+    monthlyAccum[m].beamShadedWh += beamShadedWh;
+    monthlyAccum[m].diffuseUnshadedWh += diffuseUnshadedWh;
+    monthlyAccum[m].diffuseShadedWh += diffuseShadedWh;
+    monthlyAccum[m].totalUnshadedWh += totalUnshadedWh;
+    monthlyAccum[m].totalShadedWh += totalShadedWh;
+    monthlyAccum[m].totalBlockedWh += totalBlockedWh;
+
+    // Thermal evaluation
+    if (h.dryBulb >= 24) {
+      summerWarmFacingHours++;
+      summerWarmFacingWh += totalUnshadedWh;
+      if (isBeamBlocked) summerWarmBlockedHours++;
+      summerWarmBlockedWh += totalBlockedWh;
+    } else if (h.dryBulb < 18) {
+      winterColdFacingHours++;
+      winterColdFacingWh += totalUnshadedWh;
+      if (!isBeamBlocked) winterColdAdmittedHours++;
+      winterColdAdmittedWh += totalShadedWh;
+    }
+  }
+
+  const monthly: MonthlyShadingRadiationItem[] = monthlyAccum.map((m) => ({
+    month: m.month,
+    unshadedKwhM2: +(m.totalUnshadedWh / 1000).toFixed(1),
+    shadedKwhM2: +(m.totalShadedWh / 1000).toFixed(1),
+    blockedKwhM2: +(m.totalBlockedWh / 1000).toFixed(1),
+    beamUnshadedKwhM2: +(m.beamUnshadedWh / 1000).toFixed(1),
+    beamShadedKwhM2: +(m.beamShadedWh / 1000).toFixed(1),
+    diffuseUnshadedKwhM2: +(m.diffuseUnshadedWh / 1000).toFixed(1),
+    diffuseShadedKwhM2: +(m.diffuseShadedWh / 1000).toFixed(1)
+  }));
+
+  const annualUnshadedKwhM2 = +monthly.reduce((s, m) => s + m.unshadedKwhM2, 0).toFixed(0);
+  const annualShadedKwhM2 = +monthly.reduce((s, m) => s + m.shadedKwhM2, 0).toFixed(0);
+  const annualBlockedKwhM2 = Math.max(0, annualUnshadedKwhM2 - annualShadedKwhM2);
+
+  const summerOverheatingBlockedPct =
+    summerWarmFacingHours > 0 ? Math.round((summerWarmBlockedHours / summerWarmFacingHours) * 100) : 0;
+  const summerOverheatingRadiationBlockedPct =
+    summerWarmFacingWh > 0 ? Math.round((summerWarmBlockedWh / summerWarmFacingWh) * 100) : 0;
+
+  const winterColdAdmittedPct =
+    winterColdFacingHours > 0 ? Math.round((winterColdAdmittedHours / winterColdFacingHours) * 100) : 0;
+  const winterColdRadiationAdmittedPct =
+    winterColdFacingWh > 0 ? Math.round((winterColdAdmittedWh / winterColdFacingWh) * 100) : 0;
+
+  const netSelectivityScore = Math.round(
+    summerOverheatingRadiationBlockedPct * (winterColdRadiationAdmittedPct / 100)
+  );
+
+  return {
+    monthly,
+    annualUnshadedKwhM2,
+    annualShadedKwhM2,
+    annualBlockedKwhM2,
+    summerOverheatingHours: summerWarmFacingHours,
+    summerOverheatingBlockedHours: summerWarmBlockedHours,
+    summerOverheatingBlockedPct,
+    summerOverheatingRadiationBlockedPct,
+    winterColdHours: winterColdFacingHours,
+    winterColdAdmittedHours,
+    winterColdAdmittedPct,
+    winterColdRadiationAdmittedPct,
+    netSelectivityScore
+  };
+}
+
+// ============================================================================
+// MONTHLY & ANNUAL TMY CLIMATE SUMMARY TABLE (ASHRAE 169 & Köppen Normals)
+// ============================================================================
+export interface MonthlyClimateSummaryRow {
+  month: string;
+  meanTempC: number;
+  dailyMaxTempC: number;
+  dailyMinTempC: number;
+  diurnalRangeC: number;
+  extremeMaxC: number;
+  extremeMinC: number;
+  hdd18: number;
+  cdd10: number;
+  meanRhPct: number;
+  meanDewPointC: number;
+  ghiKwhM2: number;
+  dniKwhM2: number;
+  meanWindSpeedMs: number;
+  prevailingWindDir: string;
+  meanCloudCoverPct: number;
+}
+
+export function calcMonthlyClimateSummaryTable(hourly: HourlyWeatherRecord[]): {
+  monthly: MonthlyClimateSummaryRow[];
+  annual: MonthlyClimateSummaryRow;
+} {
+  const dirs16 = ['N', 'NNE', 'NE', 'ENE', 'E', 'ESE', 'SE', 'SSE', 'S', 'SSW', 'SW', 'WSW', 'W', 'WNW', 'NW', 'NNW'];
+
+  const monthly: MonthlyClimateSummaryRow[] = MONTHS.map((month, m) => {
+    const recs = hourly.filter((h) => h.month === m);
+    const n = Math.max(1, recs.length);
+
+    const temps = recs.map((h) => h.dryBulb);
+    const meanTempC = +(temps.reduce((s, t) => s + t, 0) / n).toFixed(1);
+    const extremeMaxC = Math.max(...temps);
+    const extremeMinC = Math.min(...temps);
+
+    // Group by day of month to find daily max and min
+    const dayGroups: Record<number, number[]> = {};
+    for (const r of recs) {
+      if (!dayGroups[r.dayOfMonth]) dayGroups[r.dayOfMonth] = [];
+      dayGroups[r.dayOfMonth].push(r.dryBulb);
+    }
+    const dailyMaxes = Object.values(dayGroups).map((arr) => Math.max(...arr));
+    const dailyMins = Object.values(dayGroups).map((arr) => Math.min(...arr));
+    const numDays = Math.max(1, dailyMaxes.length);
+    const dailyMaxTempC = +(dailyMaxes.reduce((s, v) => s + v, 0) / numDays).toFixed(1);
+    const dailyMinTempC = +(dailyMins.reduce((s, v) => s + v, 0) / numDays).toFixed(1);
+    const diurnalRangeC = +(dailyMaxTempC - dailyMinTempC).toFixed(1);
+
+    // Degree days
+    let hdd18 = 0;
+    let cdd10 = 0;
+    Object.values(dayGroups).forEach((arr) => {
+      const meanD = arr.reduce((s, v) => s + v, 0) / arr.length;
+      if (meanD < 18) hdd18 += 18 - meanD;
+      if (meanD > 10) cdd10 += meanD - 10;
+    });
+
+    const meanRhPct = Math.round(recs.reduce((s, h) => s + h.relHum, 0) / n);
+    const meanDewPointC = +(
+      recs.reduce((s, h) => s + (h.dewPoint ?? calcDewPointC(h.dryBulb, h.relHum)), 0) / n
+    ).toFixed(1);
+
+    const ghiKwhM2 = Math.round(recs.reduce((s, h) => s + h.ghi, 0) / 1000);
+    const dniKwhM2 = Math.round(recs.reduce((s, h) => s + (h.dni ?? 0), 0) / 1000);
+    const meanWindSpeedMs = +(recs.reduce((s, h) => s + h.windSpeed, 0) / n).toFixed(1);
+
+    // Wind direction binning (16 bins)
+    const dirCounts = new Array(16).fill(0);
+    for (const r of recs) {
+      const b = Math.floor(((r.windDir + 11.25) % 360) / 22.5);
+      dirCounts[b]++;
+    }
+    let maxDirIdx = 0;
+    for (let i = 1; i < 16; i++) {
+      if (dirCounts[i] > dirCounts[maxDirIdx]) maxDirIdx = i;
+    }
+    const prevailingWindDir = dirs16[maxDirIdx];
+    const meanCloudCoverPct = Math.round(recs.reduce((s, h) => s + (h.skyCover ?? 5) * 10, 0) / n);
+
+    return {
+      month,
+      meanTempC,
+      dailyMaxTempC,
+      dailyMinTempC,
+      diurnalRangeC,
+      extremeMaxC,
+      extremeMinC,
+      hdd18: Math.round(hdd18),
+      cdd10: Math.round(cdd10),
+      meanRhPct,
+      meanDewPointC,
+      ghiKwhM2,
+      dniKwhM2,
+      meanWindSpeedMs,
+      prevailingWindDir,
+      meanCloudCoverPct
+    };
+  });
+
+  const totHdd18 = monthly.reduce((s, m) => s + m.hdd18, 0);
+  const totCdd10 = monthly.reduce((s, m) => s + m.cdd10, 0);
+  const totGhi = monthly.reduce((s, m) => s + m.ghiKwhM2, 0);
+  const totDni = monthly.reduce((s, m) => s + m.dniKwhM2, 0);
+  const allTemps = hourly.map((h) => h.dryBulb);
+  const annMeanTemp = +(allTemps.reduce((s, v) => s + v, 0) / Math.max(1, allTemps.length)).toFixed(1);
+
+  const annual: MonthlyClimateSummaryRow = {
+    month: 'Annual',
+    meanTempC: annMeanTemp,
+    dailyMaxTempC: +(monthly.reduce((s, m) => s + m.dailyMaxTempC, 0) / 12).toFixed(1),
+    dailyMinTempC: +(monthly.reduce((s, m) => s + m.dailyMinTempC, 0) / 12).toFixed(1),
+    diurnalRangeC: +(monthly.reduce((s, m) => s + m.diurnalRangeC, 0) / 12).toFixed(1),
+    extremeMaxC: Math.max(...allTemps),
+    extremeMinC: Math.min(...allTemps),
+    hdd18: totHdd18,
+    cdd10: totCdd10,
+    meanRhPct: Math.round(hourly.reduce((s, h) => s + h.relHum, 0) / Math.max(1, hourly.length)),
+    meanDewPointC: +(
+      hourly.reduce((s, h) => s + (h.dewPoint ?? calcDewPointC(h.dryBulb, h.relHum)), 0) / Math.max(1, hourly.length)
+    ).toFixed(1),
+    ghiKwhM2: totGhi,
+    dniKwhM2: totDni,
+    meanWindSpeedMs: +(hourly.reduce((s, h) => s + h.windSpeed, 0) / Math.max(1, hourly.length)).toFixed(1),
+    prevailingWindDir: monthly[6]?.prevailingWindDir || 'S',
+    meanCloudCoverPct: Math.round(
+      hourly.reduce((s, h) => s + (h.skyCover ?? 5) * 10, 0) / Math.max(1, hourly.length)
+    )
+  };
+
+  return { monthly, annual };
+}
+

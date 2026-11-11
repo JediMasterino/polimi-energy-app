@@ -137,55 +137,117 @@ export const EpwSearchAndUploadWidget: React.FC<EpwWidgetProps> = ({
   };
 
   return (
-    <div className="bg-slate-900 text-white p-3.5 rounded-xl border border-slate-700 space-y-2.5">
-      <div className="flex items-center justify-between">
+    <div className="bg-slate-900 text-white p-3.5 rounded-xl border border-slate-700 space-y-3">
+      {/* Top Controls Header: Station Count + Search Bar + Filters */}
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <span className="text-xs font-bold uppercase tracking-wider text-teal-400 flex items-center gap-1.5">
           <Globe className="w-3.5 h-3.5" />
-          Live EPW Station Search & Upload (EnergyPlus / CBE Clima)
+          Global EPW Weather Station Navigator (23,227+ Stations)
         </span>
-        <div className="flex items-center gap-1.5">
-          <button
-            type="button"
-            onClick={() => setShowMap((v) => !v)}
-            className={`flex items-center gap-1 px-2 py-1 rounded border text-[11px] font-semibold transition ${showMap
-              ? 'bg-teal-600/30 border-teal-500 text-teal-200'
-              : 'bg-slate-800 hover:bg-slate-700 text-slate-300 border-slate-600'
-              }`}
-            title="Toggle interactive EPW weather station map"
-          >
-            <MapPin className="w-3 h-3" />
-            {showMap ? 'Hide Map' : 'Station Map'}
-          </button>
-          <button
-            type="button"
-            onClick={() => fileInputRef.current?.click()}
-            className="flex items-center gap-1 px-2 py-1 rounded bg-slate-800 hover:bg-slate-700 text-teal-300 border border-slate-600 text-[11px] font-semibold transition"
-            title="Upload a local EnergyPlus .epw file or Climate.OneBuilding.org .zip archive"
-          >
-            <Upload className="w-3 h-3" />
-            Import .epw / .zip
-          </button>
+        <div className="flex items-center gap-1.5 text-xs">
           <button
             type="button"
             onClick={handleExportEpw}
-            className="flex items-center gap-1 px-2 py-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-600 text-[11px] font-semibold transition"
+            className="flex items-center gap-1 px-2.5 py-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-600 text-[11px] font-semibold transition"
             title="Export active 8,760h climate to EnergyPlus .epw format"
           >
-            <Download className="w-3 h-3" />
-            .epw
+            <Download className="w-3 h-3 text-teal-400" />
+            Export Active .epw
           </button>
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept=".epw,.zip,.txt,.csv"
-            className="hidden"
-            onChange={(e) => {
-              const f = e.target.files?.[0];
-              if (f) handleFileUpload(f);
-            }}
-          />
         </div>
       </div>
+
+      {/* Primary Search Bar Placed Prominently Above the Map */}
+      <form onSubmit={handleSearch} className="flex gap-2">
+        <div className="relative flex-1">
+          <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-2.5" />
+          <input
+            type="text"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Search 23,227+ OneBuilding & EnergyPlus stations (e.g. Milano, Roma, Como, Paris, London, 160800)..."
+            className="w-full pl-8 pr-2.5 py-2 rounded-xl bg-slate-800/90 border border-slate-600 text-xs text-white placeholder-slate-400 focus:outline-none focus:border-teal-400 shadow-inner"
+          />
+        </div>
+        <button
+          type="submit"
+          disabled={searching}
+          className="px-4 py-2 rounded-xl bg-teal-600 hover:bg-teal-500 disabled:opacity-50 text-white text-xs font-bold transition flex items-center gap-1.5 shadow"
+        >
+          {searching ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Search className="w-3.5 h-3.5" />}
+          <span>Search</span>
+        </button>
+      </form>
+
+      {/* Search Results Dropdown List */}
+      {results.length > 0 && (
+        <div className="max-h-56 overflow-y-auto rounded-xl bg-slate-800 border border-teal-500/50 divide-y divide-slate-700 shadow-xl">
+          <div className="p-2 bg-slate-850 text-[11px] font-bold text-slate-400 flex items-center justify-between border-b border-slate-700">
+            <span>Found {results.length} stations matching &ldquo;{query}&rdquo; — Click to focus on map</span>
+            <button
+              type="button"
+              onClick={() => setResults([])}
+              className="text-slate-400 hover:text-white text-xs font-bold px-1"
+            >
+              Close
+            </button>
+          </div>
+          {results.map((st) => (
+            <div
+              key={st.id}
+              onClick={() => {
+                setShowMap(true);
+                setFocusedStation(st);
+              }}
+              className="p-2.5 flex items-center justify-between gap-2 hover:bg-teal-900/40 transition text-xs cursor-pointer"
+            >
+              <div className="truncate">
+                <div className="font-semibold text-white truncate flex items-center gap-1.5">
+                  <MapPin className="w-3 h-3 text-teal-400 shrink-0" />
+                  <span>{st.title}</span>
+                </div>
+                <div className="text-[10px] text-slate-400">
+                  Lat {st.lat.toFixed(2)}°, Lon {st.lon.toFixed(2)}° •{' '}
+                  <span
+                    className={
+                      st.source === 'onebuilding'
+                        ? 'text-sky-300 font-semibold'
+                        : st.source === 'energyplus'
+                          ? 'text-amber-300 font-semibold'
+                          : 'text-pink-300'
+                    }
+                  >
+                    {st.source === 'onebuilding' ? 'OneBuilding TMYx' : st.source === 'energyplus' ? 'EnergyPlus DOE' : 'ERA5 Reanalysis'}
+                  </span>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleLoadRemoteStation(st);
+                }}
+                disabled={loadingStationId === st.id}
+                className="px-2.5 py-1 rounded-lg bg-teal-600 hover:bg-teal-500 text-white font-bold text-[11px] shrink-0 transition"
+              >
+                {loadingStationId === st.id ? 'Loading...' : 'Select Station'}
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {statusMsg && (
+        <div className="p-2.5 rounded-xl bg-teal-950/80 border border-teal-500/40 text-teal-200 text-xs font-semibold flex items-center gap-2">
+          <CheckCircle2 className="w-4 h-4 shrink-0 text-teal-400" />
+          <span>{statusMsg}</span>
+        </div>
+      )}
+      {errorMsg && (
+        <div className="p-2.5 rounded-xl bg-rose-950/80 border border-rose-500/40 text-rose-200 text-xs font-semibold">
+          <span>{errorMsg}</span>
+        </div>
+      )}
 
       {/* Interactive EPW Station Map */}
       {showMap && (
@@ -199,166 +261,6 @@ export const EpwSearchAndUploadWidget: React.FC<EpwWidgetProps> = ({
           sourceFilter={sourceFilter}
           onChangeSourceFilter={setSourceFilter}
         />
-      )}
-
-      {/* Search Bar */}
-      <form onSubmit={handleSearch} className="flex gap-1.5">
-        <div className="relative flex-1">
-          <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-2.5" />
-          <input
-            type="text"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search 23,227+ OneBuilding & EnergyPlus stations (e.g. Milano, Como, 160800, London)..."
-            className="w-full pl-8 pr-2.5 py-1.5 rounded-lg bg-slate-800 border border-slate-600 text-xs text-white placeholder-slate-400 focus:outline-none focus:border-teal-400"
-          />
-        </div>
-        <button
-          type="submit"
-          disabled={searching}
-          className="px-3 py-1.5 rounded-lg bg-teal-600 hover:bg-teal-500 disabled:opacity-50 text-white text-xs font-bold transition flex items-center gap-1"
-        >
-          {searching ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : 'Search'}
-        </button>
-      </form>
-
-      {/* Search Results Dropdown List */}
-      {results.length > 0 && (
-        <div className="max-h-52 overflow-y-auto rounded-lg bg-slate-800 border border-slate-700 divide-y divide-slate-700/70">
-          {results.map((st) => (
-            <div
-              key={st.id}
-              onClick={() => {
-                setShowMap(true);
-                setFocusedStation(st);
-              }}
-              className="p-2 flex items-center justify-between gap-2 hover:bg-slate-700/70 transition text-xs cursor-pointer"
-            >
-              <div className="truncate">
-                <div className="font-semibold text-white truncate">{st.title}</div>
-                <div className="text-[10px] text-slate-400">
-                  Lat {st.lat.toFixed(2)}°, Lon {st.lon.toFixed(2)}° •{' '}
-                  <span
-                    className={
-                      st.source === 'onebuilding'
-                        ? 'text-sky-300 font-semibold'
-                        : st.source === 'energyplus'
-                          ? 'text-amber-300 font-semibold'
-                          : 'text-pink-300'
-                    }
-                  >
-                    {st.source === 'onebuilding'
-                      ? `Climate.OneBuilding.org (${oneBuildingPeriod})`
-                      : st.source === 'energyplus'
-                        ? 'Official DOE / NREL EnergyPlus EPW'
-                        : 'Open-Meteo ERA5 8760h TMY'}
-                  </span>
-                </div>
-              </div>
-              <div className="flex items-center gap-1.5 shrink-0">
-                {st.source === 'onebuilding' && st.epwUrl && (
-                  <a
-                    href={getOneBuildingDownloadUrl(st.epwUrl, oneBuildingPeriod)}
-                    target="_blank"
-                    rel="noreferrer"
-                    download
-                    onClick={(ev) => ev.stopPropagation()}
-                    className="px-2 py-1 rounded bg-slate-700/80 hover:bg-slate-600 text-sky-300 text-[10px] font-semibold flex items-center gap-1 transition"
-                    title={`Direct download ${oneBuildingPeriod} .ZIP archive`}
-                  >
-                    <Download className="w-3 h-3" />
-                    .zip
-                  </a>
-                )}
-                <button
-                  type="button"
-                  onClick={(ev) => {
-                    ev.stopPropagation();
-                    setShowMap(true);
-                    setFocusedStation(st);
-                  }}
-                  className="px-2 py-1 rounded bg-slate-700 hover:bg-slate-600 text-teal-300 text-[10px] font-semibold flex items-center gap-1"
-                  title="Locate station on map"
-                >
-                  <MapPin className="w-3 h-3" />
-                  Map
-                </button>
-                <button
-                  type="button"
-                  disabled={loadingStationId === st.id}
-                  onClick={(ev) => {
-                    ev.stopPropagation();
-                    handleLoadRemoteStation(st, oneBuildingPeriod);
-                  }}
-                  className="px-2.5 py-1 rounded bg-teal-600 hover:bg-teal-500 text-white text-[11px] font-bold shrink-0 flex items-center gap-1"
-                >
-                  {loadingStationId === st.id ? (
-                    <>
-                      <Loader2 className="w-3 h-3 animate-spin" />
-                      Loading
-                    </>
-                  ) : st.source === 'onebuilding' ? (
-                    `Load ${oneBuildingPeriod}`
-                  ) : (
-                    'Load EPW'
-                  )}
-                </button>
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
-
-      {statusMsg && (
-        <div className="text-[11px] text-emerald-300 flex items-center gap-1.5 bg-emerald-950/50 border border-emerald-800/60 px-2.5 py-1 rounded">
-          <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
-          <span className="truncate">{statusMsg}</span>
-        </div>
-      )}
-      {errorMsg && (
-        <div className="text-[11px] text-rose-200 bg-rose-950/70 border border-rose-800/80 p-2.5 rounded-lg space-y-1.5">
-          <div className="font-semibold">{errorMsg}</div>
-          {focusedStation && focusedStation.epwUrl && focusedStation.source === 'onebuilding' && (
-            <div className="space-y-1.5 pt-1.5 border-t border-rose-900/60">
-              <div className="text-[10px] text-slate-300 font-semibold">
-                Direct Download from Climate.OneBuilding.org (drag-and-drop into Import .epw / .zip above):
-              </div>
-              <div className="flex flex-wrap items-center gap-1.5">
-                {AVAILABLE_ONEBUILDING_PERIODS.map((p) => (
-                  <a
-                    key={p.id}
-                    href={getOneBuildingDownloadUrl(focusedStation.epwUrl, p.id)}
-                    target="_blank"
-                    rel="noreferrer"
-                    download
-                    className="px-2 py-1 rounded bg-sky-900/70 hover:bg-sky-800 text-sky-200 text-[10px] font-semibold flex items-center gap-1 border border-sky-700/60 transition"
-                    title={`Download ${p.label} for ${focusedStation.city}`}
-                  >
-                    <Download className="w-2.5 h-2.5" />
-                    {p.badge} ({p.years}) .zip ↗
-                  </a>
-                ))}
-              </div>
-              <div className="pt-1">
-                <button
-                  type="button"
-                  onClick={() => {
-                    handleLoadRemoteStation(
-                      {
-                        ...focusedStation,
-                        source: 'open-meteo'
-                      },
-                      oneBuildingPeriod
-                    );
-                  }}
-                  className="px-2.5 py-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 font-semibold text-[10px] border border-slate-600 transition"
-                >
-                  Or synthesize Open-Meteo ERA5 2023 hourly dataset instead
-                </button>
-              </div>
-            </div>
-          )}
-        </div>
       )}
     </div>
   );
