@@ -161,6 +161,7 @@ export const Stage1Climate: React.FC<Stage1ClimateProps> = ({
   const [finsSymmetric, setFinsSymmetric] = useState<boolean>(true);
   const [showAnalemmas, setShowAnalemmas] = useState<boolean>(true);
   const [showDeclinationArcs, setShowDeclinationArcs] = useState<boolean>(true);
+  const [showAnnualScatter, setShowAnnualScatter] = useState<boolean>(false);
   const [showProtractor, setShowProtractor] = useState<boolean>(true);
   const [showUrbanSkylineMask, setShowUrbanSkylineMask] = useState<boolean>(true);
   const [selectedDayOfYear, setSelectedDayOfYear] = useState<number>(172); // Default: Summer Solstice (Jun 21)
@@ -242,35 +243,41 @@ export const Stage1Climate: React.FC<Stage1ClimateProps> = ({
     ]
   );
 
-  // Sub-Tab 4: True Astronomical Analemmas (Equation-of-Time figure-8 loops 8:00 - 17:00)
+  // Sub-Tab 4: True Astronomical Analemmas (Equation-of-Time figure-8 loops 6:00 - 18:00)
   const analemmaLoops = useMemo(() => {
-    const hours = [8, 9, 10, 11, 12, 13, 14, 15, 16, 17];
+    const hours = [6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18];
     return hours.map((hr) => {
       const pts: Array<{ alt: number; az: number; d: number }> = [];
-      for (let d = 1; d <= 365; d += 4) {
+      for (let d = 1; d <= 365; d += 2) {
         const pos = calcSolarPosition(climate.lat, d, hr, climate.lon, climate.tz);
         if (pos.alt > 0) {
           pts.push({ ...pos, d });
         }
       }
+      if (pts.length > 8) {
+        const p1 = calcSolarPosition(climate.lat, 1, hr, climate.lon, climate.tz);
+        if (p1.alt > 0) {
+          pts.push({ ...p1, d: 366 });
+        }
+      }
       return { hour: hr, pts };
-    });
+    }).filter((loop) => loop.pts.length > 0);
   }, [climate.lat, climate.lon, climate.tz]);
 
   // Sub-Tab 4: 7 Key Declination Arcs across the year (21st of each month)
   const declinationTracks = useMemo(() => {
     const tracks = [
-      { day: 172, label: '21 Jun (Solstice)', color: '#f43f5e', bold: true },
-      { day: 141, label: '21 May / Jul', color: '#fb923c', bold: false },
-      { day: 111, label: '21 Apr / Aug', color: '#facc15', bold: false },
-      { day: 80, label: '21 Mar / Sep (Equinox)', color: '#10b981', bold: true },
-      { day: 52, label: '21 Feb / Oct', color: '#38bdf8', bold: false },
-      { day: 21, label: '21 Jan / Nov', color: '#818cf8', bold: false },
-      { day: 355, label: '21 Dec (Solstice)', color: '#3b82f6', bold: true }
+      { day: 172, label: '21 Jun (Solstice)', shortLabel: '21 Jun', color: '#e11d48', bold: true },
+      { day: 141, label: '21 May / Jul', shortLabel: 'May / Jul', color: '#ea580c', bold: false },
+      { day: 111, label: '21 Apr / Aug', shortLabel: 'Apr / Aug', color: '#d97706', bold: false },
+      { day: 80, label: '21 Mar / Sep (Equinox)', shortLabel: '21 Mar/Sep', color: '#059669', bold: true },
+      { day: 52, label: '21 Feb / Oct', shortLabel: 'Feb / Oct', color: '#0891b2', bold: false },
+      { day: 21, label: '21 Jan / Nov', shortLabel: 'Jan / Nov', color: '#2563eb', bold: false },
+      { day: 355, label: '21 Dec (Solstice)', shortLabel: '21 Dec', color: '#4f46e5', bold: true }
     ];
     return tracks.map((t) => {
       const pts: Array<{ alt: number; az: number; hr: number }> = [];
-      for (let hr = 3.5; hr <= 20.5; hr += 0.2) {
+      for (let hr = 3.5; hr <= 20.5; hr += 0.1) {
         const pos = calcSolarPosition(climate.lat, t.day, hr, climate.lon, climate.tz);
         if (pos.alt > 0) {
           pts.push({ ...pos, hr });
@@ -2457,7 +2464,7 @@ export const Stage1Climate: React.FC<Stage1ClimateProps> = ({
                         )}
                       </div>
 
-                      {/* Studio Layer Toggles (4 checkboxes) */}
+                      {/* Studio Layer Toggles */}
                       <div className="grid grid-cols-2 gap-x-2 gap-y-1">
                         <label className="flex items-center gap-1 font-semibold text-slate-800 text-[10.5px] cursor-pointer">
                           <input
@@ -2493,7 +2500,16 @@ export const Stage1Climate: React.FC<Stage1ClimateProps> = ({
                             onChange={(e) => setShowAnalemmas(e.target.checked)}
                             className="accent-sky-600 w-3 h-3"
                           />
-                          <span>Analemmas (8–17h)</span>
+                          <span>Analemmas (6–18h)</span>
+                        </label>
+                        <label className="flex items-center gap-1 font-semibold text-slate-800 text-[10.5px] cursor-pointer col-span-2">
+                          <input
+                            type="checkbox"
+                            checked={showAnnualScatter}
+                            onChange={(e) => setShowAnnualScatter(e.target.checked)}
+                            className="accent-slate-700 w-3 h-3"
+                          />
+                          <span className="text-slate-600">Annual EPW Scatter (4,380h)</span>
                         </label>
                       </div>
                     </div>
@@ -2621,16 +2637,21 @@ export const Stage1Climate: React.FC<Stage1ClimateProps> = ({
                     };
                   };
 
-                  // Active Day Trajectory Points & Sunrise/Sunset
+                  // Active Day Trajectory Continuous Points & Sunrise/Sunset (step 0.1h = 6 min for smooth curves)
                   const dayTrajectoryPts: Array<{ hr: number; alt: number; az: number }> = [];
                   let peakSolarAlt = 0;
-                  for (let hr = 3.5; hr <= 21.0; hr += 0.25) {
+                  for (let hr = 3.5; hr <= 21.0; hr += 0.1) {
                     const pos = calcSolarPosition(climate.lat, selectedDayOfYear, hr, climate.lon, climate.tz);
                     if (pos.alt > 0) {
                       if (pos.alt > peakSolarAlt) peakSolarAlt = pos.alt;
                       dayTrajectoryPts.push({ hr, alt: pos.alt, az: pos.az });
                     }
                   }
+
+                  // Discrete hourly data points for the currently selected day (8–15 non-overlapping daylight hours)
+                  const selectedDaySunHours = climate.hourly.filter(
+                    (h) => h.dayOfYear === selectedDayOfYear && h.solarAlt > 0.5
+                  );
 
                   // Active hour position
                   const activeSunPos = calcSolarPosition(climate.lat, selectedDayOfYear, selectedSunHour, climate.lon, climate.tz);
@@ -2875,26 +2896,39 @@ export const Stage1Climate: React.FC<Stage1ClimateProps> = ({
                             />
                           )}
 
-                          {/* 7 Annual Declination Tracks */}
+                          {/* 7 Annual Declination Tracks (Continuous Solid Curves) */}
                           {showDeclinationArcs &&
                             declinationTracks.map((t) => {
                               const pts = t.pts
                                 .map((p) => `${xForAz(p.az).toFixed(1)},${yForAlt(p.alt).toFixed(1)}`)
                                 .join(' ');
+                              const peak = t.pts.reduce((prev, cur) => (cur.alt > prev.alt ? cur : prev), t.pts[0]);
                               return (
-                                <polyline
-                                  key={t.day}
-                                  fill="none"
-                                  stroke={t.color}
-                                  strokeWidth={t.bold ? 2.2 : 1.3}
-                                  strokeOpacity={t.bold ? 0.9 : 0.65}
-                                  strokeDasharray={t.bold ? undefined : '3 2'}
-                                  points={pts}
-                                />
+                                <g key={t.day}>
+                                  <polyline
+                                    fill="none"
+                                    stroke={t.color}
+                                    strokeWidth={t.bold ? 2.4 : 1.6}
+                                    strokeOpacity={t.bold ? 0.95 : 0.8}
+                                    points={pts}
+                                  />
+                                  {peak && (
+                                    <text
+                                      x={xForAz(peak.az) + 8}
+                                      y={yForAlt(peak.alt) + (t.day === 172 ? -5 : 3)}
+                                      fontSize="9"
+                                      fontWeight={t.bold ? '800' : '600'}
+                                      fill={t.color}
+                                      className="select-none pointer-events-none font-mono"
+                                    >
+                                      {t.shortLabel}
+                                    </text>
+                                  )}
+                                </g>
                               );
                             })}
 
-                          {/* 10 Hourly Analemmas (8:00 - 17:00) */}
+                          {/* Hourly Analemmas (Continuous Solid Curves) */}
                           {showAnalemmas &&
                             analemmaLoops.map((loop) => {
                               if (loop.pts.length < 3) return null;
@@ -2906,16 +2940,15 @@ export const Stage1Climate: React.FC<Stage1ClimateProps> = ({
                                 <g key={loop.hour}>
                                   <polyline
                                     fill="none"
-                                    stroke="#94a3b8"
-                                    strokeWidth={1.2}
-                                    strokeDasharray="2 2"
-                                    strokeOpacity={0.65}
+                                    stroke="#64748b"
+                                    strokeWidth={1.4}
+                                    strokeOpacity={0.75}
                                     points={pts}
                                   />
                                   <text
                                     x={xForAz(peak.az)}
                                     y={yForAlt(peak.alt) - 4}
-                                    fontSize="9"
+                                    fontSize="8.5"
                                     fontWeight="700"
                                     fill="#334155"
                                     textAnchor="middle"
@@ -2927,31 +2960,33 @@ export const Stage1Climate: React.FC<Stage1ClimateProps> = ({
                               );
                             })}
 
-                          {/* Selected Day of Year Trajectory Curve (Highlighted in Warm Amber/Gold) */}
+                          {/* Selected Day of Year Trajectory Curve (Continuous Warm Amber/Gold) */}
                           {dayTrajectoryPts.length > 1 && (
                             <polyline
                               fill="none"
                               stroke="#d97706"
-                              strokeWidth={3}
+                              strokeWidth={3.2}
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
                               points={dayTrajectoryPts.map((p) => `${xForAz(p.az).toFixed(1)},${yForAlt(p.alt).toFixed(1)}`).join(' ')}
                             />
                           )}
 
-                          {/* All Sun Data Points */}
-                          {visibleSunHours.map((h, i) => {
+                          {/* Discrete Non-Overlapping Hourly Solar Nodes on Selected Day */}
+                          {selectedDaySunHours.map((h) => {
                             const sh = evalShading(h.solarAlt, h.solarAz);
                             const fill = getSunColor(h);
                             return (
                               <circle
-                                key={i}
+                                key={h.hour}
                                 cx={xForAz(h.solarAz)}
                                 cy={yForAlt(h.solarAlt)}
-                                r={sh.isBlocked ? 2.5 : 3.4}
-                                fillOpacity={sh.isBlocked ? 0.35 : 0.95}
-                                stroke={sh.isBlocked ? '#cbd5e1' : '#ffffff'}
-                                strokeWidth={sh.isBlocked ? 0.5 : 0.9}
+                                r={sh.isBlocked ? 3.5 : 4.5}
+                                fillOpacity={0.95}
+                                stroke="#ffffff"
+                                strokeWidth={1.5}
                                 fill={fill}
-                                className="cursor-pointer transition hover:scale-150 hover:stroke-amber-400 hover:stroke-[2px]"
+                                className="cursor-pointer transition hover:scale-150 hover:stroke-amber-400 hover:stroke-[2.5px] shadow-sm"
                                 onMouseEnter={(e) => {
                                   let dAz = h.solarAz - facadeAzimuthDeg;
                                   while (dAz > 180) dAz -= 360;
@@ -2981,6 +3016,24 @@ export const Stage1Climate: React.FC<Stage1ClimateProps> = ({
                               />
                             );
                           })}
+
+                          {/* Optional Annual EPW Data Scatter (Subtle & Non-Obtrusive when enabled) */}
+                          {showAnnualScatter &&
+                            visibleSunHours.map((h, i) => {
+                              const fill = getSunColor(h);
+                              return (
+                                <circle
+                                  key={i}
+                                  cx={xForAz(h.solarAz)}
+                                  cy={yForAlt(h.solarAlt)}
+                                  r={1.8}
+                                  fillOpacity={0.4}
+                                  stroke="none"
+                                  fill={fill}
+                                  className="pointer-events-none"
+                                />
+                              );
+                            })}
 
                           {/* Active Golden Sun Marker for Selected Day & Hour */}
                           {activeSunPos.alt > 0 && (
@@ -3012,7 +3065,9 @@ export const Stage1Climate: React.FC<Stage1ClimateProps> = ({
                         {/* Continuous Legend Matching UTCI Heatmap Format */}
                         <div className="flex flex-wrap items-center justify-between gap-2 text-[11px] text-slate-600 px-1 font-medium pt-1">
                           <span className="font-semibold text-slate-700">
-                            Solar Vectors ({visibleSunHours.length.toLocaleString()} Daylight Hours • {legendConfig.description})
+                            {showAnnualScatter
+                              ? `Solar Vectors (${visibleSunHours.length.toLocaleString()} Daylight Hours • ${legendConfig.description})`
+                              : `Continuous Sun Path (${declinationTracks.length} Declination Arcs • ${analemmaLoops.length} Analemmas • Day ${selectedDayOfYear})`}
                           </span>
                           <div className="flex flex-wrap items-center gap-3">
                             <span className="text-[10px] text-slate-500 font-medium">{legendConfig.description}</span>
@@ -3248,7 +3303,7 @@ export const Stage1Climate: React.FC<Stage1ClimateProps> = ({
                           );
                         })()}
 
-                        {/* 7 Annual Declination Tracks */}
+                        {/* 7 Annual Declination Tracks (Continuous Solid Curves) */}
                         {showDeclinationArcs &&
                           declinationTracks.map((t) => {
                             const pts = t.pts.map((p) => {
@@ -3261,9 +3316,8 @@ export const Stage1Climate: React.FC<Stage1ClimateProps> = ({
                                 <polyline
                                   fill="none"
                                   stroke={t.color}
-                                  strokeWidth={t.bold ? 2.2 : 1.3}
-                                  strokeOpacity={t.bold ? 0.9 : 0.65}
-                                  strokeDasharray={t.bold ? undefined : '3 2'}
+                                  strokeWidth={t.bold ? 2.4 : 1.6}
+                                  strokeOpacity={t.bold ? 0.95 : 0.8}
                                   points={pts}
                                 />
                                 <text
@@ -3281,7 +3335,7 @@ export const Stage1Climate: React.FC<Stage1ClimateProps> = ({
                             );
                           })}
 
-                        {/* 10 Hourly Analemmas (8:00 - 17:00) */}
+                        {/* Hourly Analemmas (Continuous Solid Curves) */}
                         {showAnalemmas &&
                           analemmaLoops.map((loop) => {
                             if (loop.pts.length < 3) return null;
@@ -3295,10 +3349,9 @@ export const Stage1Climate: React.FC<Stage1ClimateProps> = ({
                               <g key={loop.hour}>
                                 <polyline
                                   fill="none"
-                                  stroke="#94a3b8"
-                                  strokeWidth={1.2}
-                                  strokeDasharray="2 2"
-                                  strokeOpacity={0.65}
+                                  stroke="#64748b"
+                                  strokeWidth={1.4}
+                                  strokeOpacity={0.75}
                                   points={pts}
                                 />
                                 <text
@@ -3316,12 +3369,14 @@ export const Stage1Climate: React.FC<Stage1ClimateProps> = ({
                             );
                           })}
 
-                        {/* Selected Day of Year Trajectory Curve (Luminous Gold) */}
+                        {/* Selected Day of Year Trajectory Curve (Continuous Warm Amber/Gold) */}
                         {dayTrajectoryPts.length > 1 && (
                           <polyline
                             fill="none"
                             stroke="#d97706"
-                            strokeWidth={3}
+                            strokeWidth={3.2}
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
                             points={dayTrajectoryPts.map((p) => {
                               const pt = polarPt(p.alt, p.az);
                               return `${pt.x.toFixed(1)},${pt.y.toFixed(1)}`;
@@ -3329,22 +3384,22 @@ export const Stage1Climate: React.FC<Stage1ClimateProps> = ({
                           />
                         )}
 
-                        {/* 365-Day Solar Vectors */}
-                        {visibleSunHours.map((h, i) => {
+                        {/* Discrete Non-Overlapping Hourly Solar Nodes on Selected Day */}
+                        {selectedDaySunHours.map((h) => {
                           const p = polarPt(h.solarAlt, h.solarAz);
                           const sh = evalShading(h.solarAlt, h.solarAz);
                           const fill = getSunColor(h);
                           return (
                             <circle
-                              key={i}
+                              key={h.hour}
                               cx={p.x}
                               cy={p.y}
-                              r={sh.isBlocked ? 2.5 : 3.4}
-                              fillOpacity={sh.isBlocked ? 0.35 : 0.95}
-                              stroke={sh.isBlocked ? '#cbd5e1' : '#ffffff'}
-                              strokeWidth={sh.isBlocked ? 0.5 : 0.9}
+                              r={sh.isBlocked ? 3.5 : 4.5}
+                              fillOpacity={0.95}
+                              stroke="#ffffff"
+                              strokeWidth={1.5}
                               fill={fill}
-                              className="cursor-pointer transition hover:scale-150 hover:stroke-amber-400 hover:stroke-[2px]"
+                              className="cursor-pointer transition hover:scale-150 hover:stroke-amber-400 hover:stroke-[2.5px] shadow-sm"
                               onMouseEnter={(e) => {
                                 let dAz = h.solarAz - facadeAzimuthDeg;
                                 while (dAz > 180) dAz -= 360;
@@ -3374,6 +3429,25 @@ export const Stage1Climate: React.FC<Stage1ClimateProps> = ({
                             />
                           );
                         })}
+
+                        {/* Optional Annual EPW Data Scatter (Subtle & Non-Obtrusive when enabled) */}
+                        {showAnnualScatter &&
+                          visibleSunHours.map((h, i) => {
+                            const p = polarPt(h.solarAlt, h.solarAz);
+                            const fill = getSunColor(h);
+                            return (
+                              <circle
+                                key={i}
+                                cx={p.x}
+                                cy={p.y}
+                                r={1.8}
+                                fillOpacity={0.4}
+                                stroke="none"
+                                fill={fill}
+                                className="pointer-events-none"
+                              />
+                            );
+                          })}
 
                         {/* Active Golden Sun Marker on Selected Day */}
                         {activeSunPos.alt > 0 && (
@@ -3412,7 +3486,9 @@ export const Stage1Climate: React.FC<Stage1ClimateProps> = ({
                       {/* Continuous Legend Matching UTCI Heatmap Format */}
                       <div className="w-full flex flex-wrap items-center justify-between gap-2 text-[11px] text-slate-600 px-1 font-medium pt-1">
                         <span className="font-semibold text-slate-700">
-                          Stereographic Sun Path ({visibleSunHours.length.toLocaleString()} Hours • {legendConfig.description})
+                          {showAnnualScatter
+                            ? `Stereographic Sun Path (${visibleSunHours.length.toLocaleString()} Hours • ${legendConfig.description})`
+                            : `Stereographic Sun Path (${declinationTracks.length} Declination Arcs • ${analemmaLoops.length} Analemmas • Day ${selectedDayOfYear})`}
                         </span>
                         <div className="flex flex-wrap items-center gap-3">
                           <span className="text-[10px] text-slate-500 font-medium">{legendConfig.description}</span>
