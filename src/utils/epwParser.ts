@@ -27,9 +27,7 @@ import {
   colorForUtciContinuous,
   CBE_UTCI_BLUE_RED_YELLOW_GRADIENT_CSS
 } from './utciEngine';
-import { INITIAL_CLIMATE_PRESETS, MONTHS } from '../data/climateAndStrategies';
-
-export { INITIAL_CLIMATE_PRESETS as BUILTIN_CLIMA_PRESETS };
+import { MONTHS } from '../data/climateAndStrategies';
 
 export interface GroundTempProfile {
   depthMeters: number;

@@ -24,7 +24,7 @@ import {
   Calendar
 } from 'lucide-react';
 import { useDesignProject } from '../context/DesignProjectContext';
-import { INITIAL_CLIMATE_PRESETS, MONTHS } from '../data/climateAndStrategies';
+import { MONTHS } from '../data/climateAndStrategies';
 import { calcSolarPosition, extractEpwFromZipBuffer } from '../utils/epwEngine';
 import {
   ClimaSubTabId,
@@ -514,17 +514,17 @@ export const Stage1Climate: React.FC<Stage1ClimateProps> = ({
          ===================================================================== */}
       {activeSubTab === 'station_map' && (
         <div className="space-y-5">
-          {/* Row 1: Drag-and-Drop .EPW Upload Zone + Built-in High-Resolution 8,760h Presets */}
+          {/* Row 1: Drag-and-Drop .EPW Upload Zone + Active Weather Station Overview */}
           <div className="grid grid-cols-1 xl:grid-cols-12 gap-5">
-            {/* Drag-and-Drop .EPW Upload & Validator Card (5 cols) */}
-            <div className="xl:col-span-5 bg-white rounded-2xl border border-slate-200 shadow-sm p-4 space-y-3 flex flex-col justify-between">
+            {/* Drag-and-Drop .EPW Upload & Validator Card (6 cols) */}
+            <div className="xl:col-span-6 bg-white rounded-2xl border border-slate-200 shadow-sm p-4 space-y-3 flex flex-col justify-between">
               <div>
                 <h3 className="text-sm font-bold text-slate-800 flex items-center gap-1.5">
                   <Upload className="w-4 h-4 text-teal-600" />
                   Client-Side .EPW / .ZIP Drag-and-Drop Parser & Validator
                 </h3>
                 <p className="text-[11px] text-slate-500 mt-0.5">
-                  Reads all 8 EPW header lines (Location, Design Conditions, Ground Temps) & 8,760 hourly rows with automatic spike/radiation quality checks
+                  Reads all 8 EPW header lines (Location, Design Conditions, Ground Temps) & 8,760 hourly rows with automatic quality validation
                 </p>
 
                 <div
@@ -540,18 +540,18 @@ export const Stage1Climate: React.FC<Stage1ClimateProps> = ({
                     if (f) handleEpwOrZipFile(f);
                   }}
                   onClick={() => dropInputRef.current?.click()}
-                  className={`mt-3 border-2 border-dashed rounded-2xl p-5 text-center cursor-pointer transition ${
+                  className={`mt-3 border-2 border-dashed rounded-2xl p-6 text-center cursor-pointer transition ${
                     isDraggingFile
                       ? 'border-teal-500 bg-teal-50'
                       : 'border-slate-300 bg-slate-50/70 hover:border-teal-500 hover:bg-teal-50/30'
                   }`}
                 >
-                  <Upload className="w-7 h-7 text-teal-600 mx-auto mb-1.5" />
+                  <Upload className="w-8 h-8 text-teal-600 mx-auto mb-2" />
                   <p className="text-xs font-bold text-slate-800">
                     Drop any EnergyPlus <code className="text-teal-700">.epw</code> or OneBuilding <code className="text-teal-700">.zip</code> file here
                   </p>
                   <p className="text-[11px] text-slate-500 mt-0.5">
-                    or click to browse local weather files (100% client-side parsing)
+                    or click to browse local weather files (100% client-side instant parsing)
                   </p>
                   <input
                     ref={dropInputRef}
@@ -566,13 +566,13 @@ export const Stage1Climate: React.FC<Stage1ClimateProps> = ({
                 </div>
 
                 {uploadStatusMsg && (
-                  <div className="mt-2 p-2.5 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-semibold flex items-center gap-2">
+                  <div className="mt-2.5 p-2.5 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-semibold flex items-center gap-2">
                     <CheckCircle2 className="w-4 h-4 shrink-0 text-emerald-600" />
                     {uploadStatusMsg}
                   </div>
                 )}
                 {uploadErrorMsg && (
-                  <div className="mt-2 p-2.5 rounded-xl bg-rose-50 border border-rose-200 text-rose-800 text-xs font-semibold">
+                  <div className="mt-2.5 p-2.5 rounded-xl bg-rose-50 border border-rose-200 text-rose-800 text-xs font-semibold">
                     {uploadErrorMsg}
                   </div>
                 )}
@@ -612,51 +612,68 @@ export const Stage1Climate: React.FC<Stage1ClimateProps> = ({
               </div>
             </div>
 
-            {/* Built-In 8,760h Benchmark Climate Presets (7 cols) */}
-            <div className="xl:col-span-7 bg-white rounded-2xl border border-slate-200 shadow-sm p-4 space-y-3">
+            {/* Currently Active Weather Station & EPW Boundary Card (6 cols) */}
+            <div className="xl:col-span-6 bg-white rounded-2xl border border-slate-200 shadow-sm p-4 space-y-3 flex flex-col justify-between">
               <div>
-                <h3 className="text-sm font-bold text-slate-800 flex items-center gap-1.5">
-                  <Globe className="w-4 h-4 text-indigo-600" />
-                  Built-In 8,760-Hour Reference Climate Presets (Instant Switching)
-                </h3>
+                <div className="flex items-center justify-between gap-2">
+                  <h3 className="text-sm font-bold text-slate-800 flex items-center gap-1.5">
+                    <Globe className="w-4 h-4 text-teal-600" />
+                    Active Weather Station & EPW Boundary
+                  </h3>
+                  <span className="text-[10px] font-extrabold px-2.5 py-0.5 rounded-full bg-teal-50 text-teal-800 border border-teal-200">
+                    {climate.sourceType === 'energyplus-s3' ? 'DOE EnergyPlus' : climate.sourceType === 'open-meteo' ? 'Open-Meteo ERA5' : 'Active EPW'}
+                  </span>
+                </div>
                 <p className="text-[11px] text-slate-500 mt-0.5">
-                  Includes Milan/Mantova (Cfa), Vevey/Lausanne (Cfb), Rome (Csa), Stockholm (Dfb), Cairo (BWh), Palermo (Csa), and Bormio (Dfb)
+                  Currently loaded reference weather dataset applied across all bioclimatic charts and energy calculations
                 </p>
+
+                <div className="mt-3 p-3.5 rounded-xl bg-slate-50 border border-slate-200 space-y-2.5">
+                  <div className="flex items-start justify-between gap-2">
+                    <div>
+                      <div className="text-sm font-extrabold text-slate-900">
+                        {climate.name}
+                      </div>
+                      <div className="text-[11px] text-slate-500 mt-0.5">
+                        {climate.lat.toFixed(2)}°N, {climate.lon.toFixed(2)}°E • Elevation {climate.elev}m • Timezone GMT{climate.tz >= 0 ? `+${climate.tz}` : climate.tz}
+                      </div>
+                    </div>
+                    <div className="text-right shrink-0">
+                      <span className="inline-block px-2 py-0.5 rounded-md text-[11px] font-extrabold bg-slate-900 text-teal-300">
+                        {climate.koppen}
+                      </span>
+                      <span className="block text-[10px] font-semibold text-slate-600 mt-0.5">
+                        {climate.koppenDesc}
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-1 border-t border-slate-200 text-center">
+                    <div className="bg-white p-2 rounded-lg border border-slate-200">
+                      <span className="block text-[10px] text-slate-400 font-bold uppercase">Heating / Cooling</span>
+                      <span className="text-xs font-black text-slate-800">{climate.hdd} / {climate.cdd}</span>
+                    </div>
+                    <div className="bg-white p-2 rounded-lg border border-slate-200">
+                      <span className="block text-[10px] text-slate-400 font-bold uppercase">Italian Zone</span>
+                      <span className="text-xs font-black text-slate-800">Zone {climate.dpr412Zone}</span>
+                    </div>
+                    <div className="bg-white p-2 rounded-lg border border-slate-200">
+                      <span className="block text-[10px] text-slate-400 font-bold uppercase">Design DB (99.6%/0.4%)</span>
+                      <span className="text-xs font-black text-slate-800">{climate.designHeat996}°C / {climate.designCool004}°C</span>
+                    </div>
+                    <div className="bg-white p-2 rounded-lg border border-slate-200">
+                      <span className="block text-[10px] text-slate-400 font-bold uppercase">Solar Horiz Total</span>
+                      <span className="text-xs font-black text-slate-800">{climate.solarHoriz.reduce((a, b) => a + b, 0)} kWh/m²</span>
+                    </div>
+                  </div>
+                </div>
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5">
-                {Object.values(INITIAL_CLIMATE_PRESETS).map((preset) => {
-                  const selected = climateId === preset.id;
-                  return (
-                    <button
-                      key={preset.id}
-                      type="button"
-                      onClick={() => setClimateId(preset.id)}
-                      className={`p-3 rounded-xl border text-left transition flex items-start justify-between gap-2 ${
-                        selected
-                          ? 'bg-teal-50/80 border-teal-600 shadow-sm'
-                          : 'bg-slate-50/70 border-slate-200 hover:border-slate-300'
-                      }`}
-                    >
-                      <div>
-                        <div className="text-xs font-extrabold text-slate-900 flex items-center gap-1.5">
-                          {preset.name}
-                        </div>
-                        <div className="text-[10px] text-slate-500 mt-0.5">
-                          {preset.lat.toFixed(2)}°N, {preset.lon.toFixed(2)}°E • Elev {preset.elev}m • HDD {preset.hdd} / CDD {preset.cdd}
-                        </div>
-                      </div>
-                      <div className="text-right shrink-0">
-                        <span className="inline-block px-2 py-0.5 rounded-md text-[10px] font-extrabold bg-slate-900 text-teal-300">
-                          {preset.koppen}
-                        </span>
-                        <span className="block text-[9.5px] font-semibold text-slate-500 mt-0.5 max-w-[150px] truncate" title={preset.koppenDesc}>
-                          {preset.koppenDesc}
-                        </span>
-                      </div>
-                    </button>
-                  );
-                })}
+              <div className="text-[11px] text-slate-500 bg-teal-50/60 p-2.5 rounded-xl border border-teal-100 flex items-center gap-2">
+                <Globe className="w-4 h-4 text-teal-600 shrink-0" />
+                <span>
+                  Select any weather station worldwide using the interactive map or search bar below, or drop an EnergyPlus <code className="text-teal-800 font-bold">.epw</code> file above.
+                </span>
               </div>
             </div>
           </div>
@@ -2452,12 +2469,13 @@ export const Stage1Climate: React.FC<Stage1ClimateProps> = ({
                             fill="none"
                             stroke="#e2e8f0"
                             strokeDasharray="3 3"
+                            className="pointer-events-none"
                           />
                         ))}
 
-                        <polygon points={makePoly((r) => r.annualKwhM2)} fill="rgba(245, 158, 11, 0.25)" stroke="#f59e0b" strokeWidth={2.4} />
-                        <polygon points={makePoly((r) => r.summerKwhM2)} fill="rgba(225, 29, 72, 0.22)" stroke="#e11d48" strokeWidth={1.8} />
-                        <polygon points={makePoly((r) => r.winterKwhM2)} fill="rgba(2, 132, 199, 0.25)" stroke="#0284c7" strokeWidth={1.8} />
+                        <polygon points={makePoly((r) => r.annualKwhM2)} fill="rgba(245, 158, 11, 0.25)" stroke="#f59e0b" strokeWidth={2.4} className="pointer-events-none" />
+                        <polygon points={makePoly((r) => r.summerKwhM2)} fill="rgba(225, 29, 72, 0.22)" stroke="#e11d48" strokeWidth={1.8} className="pointer-events-none" />
+                        <polygon points={makePoly((r) => r.winterKwhM2)} fill="rgba(2, 132, 199, 0.25)" stroke="#0284c7" strokeWidth={1.8} className="pointer-events-none" />
 
                         {solarAnalytics.facadeRose8.map((r) => {
                           const rad = ((r.azDeg - 90) * Math.PI) / 180;
@@ -2481,7 +2499,7 @@ export const Stage1Climate: React.FC<Stage1ClimateProps> = ({
                               onMouseLeave={() => tooltipCtx.hide()}
                             >
                               {/* Stable invisible hit target to prevent mouseleave thrashing */}
-                              <circle cx={px} cy={py} r={16} fill="transparent" />
+                              <circle cx={px} cy={py} r={18} fill="#000000" fillOpacity={0} pointerEvents="all" />
                               {/* Stable visible point that highlights smoothly without moving */}
                               <circle
                                 cx={px}
@@ -2490,7 +2508,7 @@ export const Stage1Climate: React.FC<Stage1ClimateProps> = ({
                                 fill="#f59e0b"
                                 stroke="#ffffff"
                                 strokeWidth={2}
-                                className="transition-colors group-hover:fill-amber-400 group-hover:stroke-amber-200"
+                                className="transition-colors group-hover:fill-amber-400 group-hover:stroke-amber-200 pointer-events-none"
                               />
                               <text
                                 x={lx}
@@ -2498,7 +2516,7 @@ export const Stage1Climate: React.FC<Stage1ClimateProps> = ({
                                 textAnchor="middle"
                                 fontSize="10.5"
                                 fontWeight="700"
-                                className="fill-slate-800 transition-colors group-hover:fill-amber-600"
+                                className="fill-slate-800 transition-colors group-hover:fill-amber-600 pointer-events-none select-none"
                               >
                                 {r.dir} ({r.annualKwhM2})
                               </text>

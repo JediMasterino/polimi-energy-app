@@ -1,4 +1,8 @@
-import React, { useState, useMemo } from 'react';
+/// <reference lib="es2020" />
+/// <reference lib="dom" />
+/// <reference lib="dom.iterable" />
+import * as React from 'react';
+import { useState, useMemo } from 'react';
 import {
   Building2,
   Sun,

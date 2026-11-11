@@ -30,7 +30,6 @@ import {
   BuildingProgramType,
   LegislativeTargetType
 } from './context/DesignProjectContext';
-import { INITIAL_CLIMATE_PRESETS } from './data/climateAndStrategies';
 import { Stage1Climate } from './components/Stage1Climate';
 import { Stage2Urban } from './components/Stage2Urban';
 import { Stage3FormZoning } from './components/Stage3FormZoning';
@@ -434,28 +433,22 @@ const StudioWorkspace: React.FC = () => {
 
               <div>
                 <label className="text-[11px] font-semibold text-slate-600 block mb-1">
-                  Active Weather Station / Reference Preset:
+                  Active Weather Station / Loaded EPW:
                 </label>
                 <select
                   value={climateId}
                   onChange={(e) => setClimateId(e.target.value)}
                   className="w-full rounded-xl bg-slate-50 border border-slate-300 px-3 py-2 text-xs font-bold text-slate-800 focus:outline-none focus:border-teal-500"
                 >
-                  <optgroup label="Academic Reference Presets (8,760h)">
-                    {Object.values(INITIAL_CLIMATE_PRESETS).map((c) => (
-                      <option key={c.id} value={c.id}>
-                        {c.name} [{c.koppen} — {c.koppenDesc} • HDD {c.hdd}]
-                      </option>
-                    ))}
-                  </optgroup>
-                  {Object.keys(customClimates).length > 0 && (
-                    <optgroup label="Loaded EPW Weather Stations (8,760h)">
-                      {Object.values(customClimates).map((c) => (
-                        <option key={c.id} value={c.id}>
-                          ★ {c.name} [{c.koppen} — {c.koppenDesc} • HDD {c.hdd}]
-                        </option>
-                      ))}
-                    </optgroup>
+                  {Object.values(customClimates).map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.name} [{c.koppen} — {c.koppenDesc} • HDD {c.hdd}]
+                    </option>
+                  ))}
+                  {!customClimates[climate.id] && (
+                    <option value={climate.id}>
+                      {climate.name} [{climate.koppen} — {climate.koppenDesc} • HDD {climate.hdd}]
+                    </option>
                   )}
                 </select>
               </div>

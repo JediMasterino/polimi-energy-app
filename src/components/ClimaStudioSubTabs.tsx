@@ -737,7 +737,7 @@ export const SubTab5Wind: React.FC<{
                 <div className="flex flex-col items-center">
                   <svg ref={svgRef} viewBox={`0 0 ${size} ${size}`} className="w-full max-w-[460px] h-auto cursor-pointer">
                     {[0.25, 0.5, 0.75, 1].map((f, i) => (
-                      <g key={i}>
+                      <g key={i} className="pointer-events-none">
                         <circle
                           cx={cx}
                           cy={cy}
@@ -789,7 +789,7 @@ export const SubTab5Wind: React.FC<{
                           {r3 > r2 && <path d={wedgePath(s.deg, r2, r3)} fill="#0284c7" />}
                           {r4 > r3 && <path d={wedgePath(s.deg, r3, r4)} fill="#f59e0b" />}
                           {r5 > r4 && <path d={wedgePath(s.deg, r4, r5)} fill="#e11d48" />}
-                          <text x={lx} y={ly + 3.5} textAnchor="middle" fontSize="9.5" fontWeight="800" fill="#1e293b">
+                          <text x={lx} y={ly + 3.5} textAnchor="middle" fontSize="9.5" fontWeight="800" fill="#1e293b" className="pointer-events-none select-none">
                             {s.dir}
                           </text>
                         </g>

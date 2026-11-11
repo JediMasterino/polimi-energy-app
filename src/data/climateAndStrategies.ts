@@ -186,6 +186,8 @@ const RAW_CLIMATE_PRESETS = {
   }
 };
 
+export const DEFAULT_CLIMATE_DATASET: ClimateDataset = synthesizeHourlyFromPreset(RAW_CLIMATE_PRESETS.milan);
+
 export const INITIAL_CLIMATE_PRESETS: Record<string, ClimateDataset> = Object.fromEntries(
   Object.entries(RAW_CLIMATE_PRESETS).map(([k, v]) => [k, synthesizeHourlyFromPreset(v)])
 );

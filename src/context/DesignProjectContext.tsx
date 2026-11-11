@@ -1,8 +1,8 @@
 import React, { createContext, useContext, useState, useMemo, useEffect } from 'react';
-import { ClimateDataset, fetchPresetOfficialEpw } from '../utils/epwEngine';
+import { ClimateDataset, parseEpwText } from '../utils/epwEngine';
 import { morphClimateDataset } from '../utils/epwParser';
 import {
-  INITIAL_CLIMATE_PRESETS,
+  DEFAULT_CLIMATE_DATASET,
   CLIMATE_SCOUT_STRATEGIES,
   ENVELOPE_MATERIALS,
   MONTHS
@@ -346,20 +346,25 @@ export const DesignProjectProvider: React.FC<{ children: React.ReactNode }> = ({
     setClimateId(ds.id);
   };
 
-  // Automatically hydrate built-in presets with their official 8,760-hour DOE EnergyPlus .epw weather files
+  // Pre-load default initial 8,760h weather station on startup
   useEffect(() => {
     let cancelled = false;
-    if (INITIAL_CLIMATE_PRESETS[climateId] && !customClimates[climateId]) {
-      fetchPresetOfficialEpw(climateId).then((officialDs) => {
-        if (!cancelled && officialDs) {
-          setCustomClimates((prev) => ({ ...prev, [climateId]: officialDs }));
-        }
-      });
+    if (Object.keys(customClimates).length === 0) {
+      fetch('/weather/milan.epw')
+        .then((res) => (res.ok ? res.text() : ''))
+        .then((text) => {
+          if (!cancelled && text.includes('LOCATION,')) {
+            const ds = parseEpwText(text, 'Milano Linate WMO 160800');
+            setCustomClimates({ [ds.id]: ds });
+            setClimateId(ds.id);
+          }
+        })
+        .catch(() => {});
     }
     return () => {
       cancelled = true;
     };
-  }, [climateId, customClimates]);
+  }, [customClimates]);
 
   const toggleStrategy = (id: string) => {
     setActiveStrategies((prev) =>
@@ -372,7 +377,7 @@ export const DesignProjectProvider: React.FC<{ children: React.ReactNode }> = ({
   };
 
   const baseClimate: ClimateDataset =
-    customClimates[climateId] || INITIAL_CLIMATE_PRESETS[climateId] || INITIAL_CLIMATE_PRESETS.milan;
+    customClimates[climateId] || DEFAULT_CLIMATE_DATASET;
 
   const climate: ClimateDataset = useMemo(
     () => morphClimateDataset(baseClimate, morphTempOffsetC, morphWindMult, morphRhOffsetPct),
