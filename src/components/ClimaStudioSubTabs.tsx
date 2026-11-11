@@ -9,7 +9,10 @@ import {
   Sparkles,
   CheckCircle2,
   Sliders,
-  Filter
+  Filter,
+  Maximize2,
+  Minimize2,
+  X
 } from 'lucide-react';
 import { ClimateDataset, HourlyWeatherRecord, calcHumidityRatio } from '../utils/epwEngine';
 import {
@@ -78,38 +81,34 @@ export const ClimaChartCard: React.FC<ClimaChartCardProps> = ({
   footer
 }) => {
   const svgRef = useRef<SVGSVGElement | null>(null);
-  const containerRef = useRef<HTMLDivElement | null>(null);
+  const [isMaximized, setIsMaximized] = useState(false);
   const [tooltip, setTooltip] = useState<{
     visible: boolean;
-    x: number;
-    y: number;
+    clientX: number;
+    clientY: number;
     data: ClimaTooltipData | null;
   }>({
     visible: false,
-    x: 0,
-    y: 0,
+    clientX: 0,
+    clientY: 0,
     data: null
   });
 
   const tooltipCtx = useMemo<ClimaTooltipCtx>(
     () => ({
       show: (e, title, lines) => {
-        if (!containerRef.current) return;
-        const rect = containerRef.current.getBoundingClientRect();
         setTooltip({
           visible: true,
-          x: e.clientX - rect.left,
-          y: e.clientY - rect.top,
+          clientX: e.clientX,
+          clientY: e.clientY,
           data: { title, lines }
         });
       },
       move: (e) => {
-        if (!containerRef.current) return;
-        const rect = containerRef.current.getBoundingClientRect();
         setTooltip((prev) => ({
           ...prev,
-          x: e.clientX - rect.left,
-          y: e.clientY - rect.top
+          clientX: e.clientX,
+          clientY: e.clientY
         }));
       },
       hide: () => {
@@ -128,78 +127,156 @@ export const ClimaChartCard: React.FC<ClimaChartCardProps> = ({
     exportDataToCsvFile(headers, rows, csvFilename);
   };
 
+  // Smart non-clipped floating tooltip rendered with fixed viewport coordinates
+  const renderTooltip = () => {
+    if (!tooltip.visible || !tooltip.data) return null;
+    const windowWidth = typeof window !== 'undefined' ? window.innerWidth : 1200;
+    const isNearTop = tooltip.clientY < 180;
+    const isNearRight = tooltip.clientX > windowWidth - 280;
+    const isNearLeft = tooltip.clientX < 180;
+
+    const leftPos = isNearRight ? tooltip.clientX - 16 : isNearLeft ? tooltip.clientX + 16 : tooltip.clientX;
+    const topPos = isNearTop ? tooltip.clientY + 22 : tooltip.clientY - 14;
+    const transformX = isNearRight ? 'translateX(-100%)' : isNearLeft ? 'translateX(0)' : 'translateX(-50%)';
+    const transformY = isNearTop ? 'translateY(0)' : 'translateY(-100%)';
+
+    return (
+      <div
+        className="pointer-events-none fixed z-[999999] px-3.5 py-2.5 rounded-xl bg-slate-950/95 text-white shadow-2xl border border-slate-700/80 backdrop-blur-md max-w-sm select-none"
+        style={{
+          left: leftPos,
+          top: topPos,
+          transform: `${transformX} ${transformY}`
+        }}
+      >
+        <div className="font-extrabold text-[11px] text-teal-300 pb-1 border-b border-slate-800 flex items-center justify-between gap-3">
+          <span>{tooltip.data.title}</span>
+        </div>
+        <div className="space-y-1 pt-1.5 text-[10.5px]">
+          {tooltip.data.lines.map((ln, idx) => (
+            <div key={idx} className="flex items-center justify-between gap-3 font-medium">
+              <span className="text-slate-400 flex items-center gap-1.5">
+                {ln.color && (
+                  <span className="w-2.5 h-2.5 rounded-full shrink-0 shadow-sm" style={{ backgroundColor: ln.color }} />
+                )}
+                {ln.label}:
+              </span>
+              <span className="font-mono font-bold text-slate-100">{ln.value}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  };
+
   return (
-    <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-4 space-y-3 flex flex-col justify-between relative transition hover:shadow-md">
-      <div className="space-y-2">
-        <div className="flex flex-wrap items-start justify-between gap-2">
-          <div>
-            <h3 className="text-sm font-bold text-slate-800 flex items-center gap-1.5">
-              {icon}
-              {title}
-            </h3>
-            {subtitle && <p className="text-[11px] text-slate-500 mt-0.5">{subtitle}</p>}
+    <>
+      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-4 space-y-3 flex flex-col justify-between relative transition hover:shadow-md">
+        <div className="space-y-2">
+          <div className="flex flex-wrap items-start justify-between gap-2">
+            <div>
+              <h3 className="text-sm font-bold text-slate-800 flex items-center gap-1.5">
+                {icon}
+                {title}
+              </h3>
+              {subtitle && <p className="text-[11px] text-slate-500 mt-0.5">{subtitle}</p>}
+            </div>
+
+            <div className="flex flex-wrap items-center gap-1.5">
+              {badge}
+              <button
+                type="button"
+                onClick={() => setIsMaximized(true)}
+                title="Expand chart (CBE Clima High-Resolution presentation view)"
+                className="px-2.5 py-1 rounded-lg bg-teal-50 hover:bg-teal-100 text-teal-800 border border-teal-200 text-[10.5px] font-bold flex items-center gap-1 transition"
+              >
+                <Maximize2 className="w-3.5 h-3.5 text-teal-700" />
+                Expand
+              </button>
+              <button
+                type="button"
+                onClick={handleExportSvg}
+                title="Download publication-grade vector SVG chart"
+                className="px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200 text-[10.5px] font-bold flex items-center gap-1 transition"
+              >
+                <Download className="w-3.5 h-3.5 text-teal-600" />
+                Export SVG
+              </button>
+              <button
+                type="button"
+                onClick={handleExportCsv}
+                title="Download derived numerical table as CSV"
+                className="px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200 text-[10.5px] font-bold flex items-center gap-1 transition"
+              >
+                <FileSpreadsheet className="w-3.5 h-3.5 text-indigo-600" />
+                Export CSV
+              </button>
+            </div>
           </div>
 
-          <div className="flex flex-wrap items-center gap-1.5">
-            {badge}
-            <button
-              type="button"
-              onClick={handleExportSvg}
-              title="Download publication-grade vector SVG chart"
-              className="px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200 text-[10.5px] font-bold flex items-center gap-1 transition"
-            >
-              <Download className="w-3.5 h-3.5 text-teal-600" />
-              Export SVG
-            </button>
-            <button
-              type="button"
-              onClick={handleExportCsv}
-              title="Download derived numerical table as CSV"
-              className="px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200 text-[10.5px] font-bold flex items-center gap-1 transition"
-            >
-              <FileSpreadsheet className="w-3.5 h-3.5 text-indigo-600" />
-              Export CSV
-            </button>
-          </div>
+          {controls && <div className="pt-1">{controls}</div>}
         </div>
 
-        {controls && <div className="pt-1">{controls}</div>}
+        <div className="w-full relative min-h-[160px]">
+          {children(svgRef, tooltipCtx)}
+        </div>
+
+        {footer && <div className="pt-1">{footer}</div>}
       </div>
 
-      <div ref={containerRef} className="w-full overflow-x-auto relative min-h-[160px]">
-        {children(svgRef, tooltipCtx)}
-
-        {/* Global Floating Glassmorphism Tooltip */}
-        {tooltip.visible && tooltip.data && (
-          <div
-            className="pointer-events-none absolute z-50 px-3.5 py-2.5 rounded-xl bg-slate-950/95 text-white shadow-2xl border border-slate-700/80 backdrop-blur-md max-w-xs -translate-x-1/2 -translate-y-full transition-all duration-75"
-            style={{
-              left: Math.max(100, Math.min(800, tooltip.x)),
-              top: Math.max(15, tooltip.y - 10)
-            }}
-          >
-            <div className="font-extrabold text-[11px] text-teal-300 pb-1 border-b border-slate-800 flex items-center justify-between gap-3">
-              <span>{tooltip.data.title}</span>
-            </div>
-            <div className="space-y-1 pt-1.5 text-[10.5px]">
-              {tooltip.data.lines.map((ln, idx) => (
-                <div key={idx} className="flex items-center justify-between gap-3 font-medium">
-                  <span className="text-slate-400 flex items-center gap-1.5">
-                    {ln.color && (
-                      <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: ln.color }} />
-                    )}
-                    {ln.label}:
+      {/* High-Resolution Presentation Modal when Maximized */}
+      {isMaximized && (
+        <div className="fixed inset-0 z-[9999] bg-slate-950/85 backdrop-blur-md flex items-center justify-center p-3 lg:p-6 animate-in fade-in duration-150">
+          <div className="bg-white rounded-3xl shadow-2xl border border-slate-300 w-full max-w-7xl max-h-[94vh] flex flex-col p-6 space-y-4 overflow-y-auto">
+            <div className="flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-slate-200">
+              <div className="space-y-0.5">
+                <div className="flex items-center gap-2">
+                  <span className="p-1.5 rounded-xl bg-teal-50 text-teal-700 border border-teal-200">
+                    {icon}
                   </span>
-                  <span className="font-mono font-bold text-slate-100">{ln.value}</span>
+                  <h2 className="text-base font-extrabold text-slate-900">{title}</h2>
                 </div>
-              ))}
+                {subtitle && <p className="text-xs text-slate-500 pl-8">{subtitle}</p>}
+              </div>
+              <div className="flex items-center gap-2">
+                {badge}
+                <button
+                  type="button"
+                  onClick={handleExportSvg}
+                  className="px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200 text-xs font-bold flex items-center gap-1.5"
+                >
+                  <Download className="w-3.5 h-3.5 text-teal-600" />
+                  Export SVG
+                </button>
+                <button
+                  type="button"
+                  onClick={handleExportCsv}
+                  className="px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200 text-xs font-bold flex items-center gap-1.5"
+                >
+                  <FileSpreadsheet className="w-3.5 h-3.5 text-indigo-600" />
+                  Export CSV
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setIsMaximized(false)}
+                  className="p-1.5 rounded-xl bg-slate-100 hover:bg-rose-50 hover:text-rose-600 text-slate-700 border border-slate-200 transition"
+                  title="Close Fullscreen"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
             </div>
+            {controls && <div className="bg-slate-50 p-3 rounded-2xl border border-slate-200">{controls}</div>}
+            <div className="flex-1 w-full min-h-[480px] flex items-center justify-center">
+              {children(svgRef, tooltipCtx)}
+            </div>
+            {footer && <div className="pt-2 border-t border-slate-200">{footer}</div>}
           </div>
-        )}
-      </div>
+        </div>
+      )}
 
-      {footer && <div className="pt-1">{footer}</div>}
-    </div>
+      {renderTooltip()}
+    </>
   );
 };
 
@@ -225,12 +302,12 @@ export const CarpetHeatmap24x365: React.FC<CarpetHeatmapProps> = ({
   unitLabel,
   legendItems
 }) => {
-  const W = 860;
-  const H = 240;
-  const padL = 42;
-  const padR = 16;
-  const padT = 16;
-  const padB = 30;
+  const W = 920;
+  const H = 280;
+  const padL = 48;
+  const padR = 20;
+  const padT = 18;
+  const padB = 34;
   const plotW = W - padL - padR;
   const plotH = H - padT - padB;
   const cellW = plotW / 365;
@@ -260,14 +337,13 @@ export const CarpetHeatmap24x365: React.FC<CarpetHeatmapProps> = ({
     if (rec && tooltipCtx) {
       const val = getValue(rec, idx);
       const mName = MONTHS[rec.month];
-      tooltipCtx.show(e, `${mName} ${rec.dayOfMonth} • ${String(hour).padStart(2, '0')}:00`, [
+      tooltipCtx.show(e, `${mName} ${rec.dayOfMonth} • ${String(hour).padStart(2, '0')}:00 (DOY ${dayOfYear})`, [
         { label: unitLabel, value: typeof val === 'number' ? val.toFixed(1) : String(val), color: getColor(val) },
         { label: 'Dry-Bulb Temp', value: `${rec.dryBulb}°C` },
         { label: 'Relative Humidity', value: `${rec.relHum}%` },
         { label: 'Wind Speed', value: `${rec.windSpeed} m/s` },
-        { label: 'GHI', value: `${rec.ghi} W/m²` }
+        { label: 'GHI Solar', value: `${rec.ghi} W/m²` }
       ]);
-      tooltipCtx.move(e);
     }
   };
 
@@ -283,12 +359,12 @@ export const CarpetHeatmap24x365: React.FC<CarpetHeatmapProps> = ({
         viewBox={`0 0 ${W} ${H}`}
         onMouseMove={handleMouseMove}
         onMouseLeave={handleMouseLeave}
-        className="w-full h-auto bg-slate-950 rounded-xl p-1 cursor-crosshair shadow-inner"
+        className="w-full h-auto bg-slate-950 rounded-2xl p-1.5 cursor-crosshair shadow-lg border border-slate-800"
       >
-        {[0, 6, 12, 18, 23].map((hr) => {
+        {[0, 4, 8, 12, 16, 20, 23].map((hr) => {
           const y = padT + (23 - hr) * cellH + cellH * 0.5;
           return (
-            <text key={hr} x={padL - 6} y={y + 3.5} textAnchor="end" fontSize="9" fontWeight="600" fill="#94a3b8">
+            <text key={hr} x={padL - 8} y={y + 3.5} textAnchor="end" fontSize="10" fontWeight="600" fill="#94a3b8">
               {String(hr).padStart(2, '0')}:00
             </text>
           );
@@ -303,25 +379,44 @@ export const CarpetHeatmap24x365: React.FC<CarpetHeatmapProps> = ({
               key={idx}
               x={x}
               y={y}
-              width={cellW + 0.45}
-              height={cellH + 0.45}
+              width={cellW + 0.5}
+              height={cellH + 0.5}
               fill={getColor(val)}
             />
           );
         })}
 
-        {/* Highlight Active Cell Border */}
+        {/* Crosshair Guideline & Cell Highlight */}
         {activeCell && (
-          <rect
-            x={padL + (activeCell.dayOfYear - 1) * cellW}
-            y={padT + (23 - activeCell.hour) * cellH}
-            width={cellW + 1}
-            height={cellH + 1}
-            fill="none"
-            stroke="#ffffff"
-            strokeWidth={1.8}
-            className="animate-pulse"
-          />
+          <g pointerEvents="none">
+            <line
+              x1={padL + (activeCell.dayOfYear - 0.5) * cellW}
+              y1={padT}
+              x2={padL + (activeCell.dayOfYear - 0.5) * cellW}
+              y2={padT + plotH}
+              stroke="rgba(255, 255, 255, 0.45)"
+              strokeWidth={1}
+              strokeDasharray="2 2"
+            />
+            <line
+              x1={padL}
+              y1={padT + (23 - activeCell.hour + 0.5) * cellH}
+              x2={padL + plotW}
+              y2={padT + (23 - activeCell.hour + 0.5) * cellH}
+              stroke="rgba(255, 255, 255, 0.45)"
+              strokeWidth={1}
+              strokeDasharray="2 2"
+            />
+            <rect
+              x={padL + (activeCell.dayOfYear - 1) * cellW - 0.5}
+              y={padT + (23 - activeCell.hour) * cellH - 0.5}
+              width={cellW + 1}
+              height={cellH + 1}
+              fill="none"
+              stroke="#ffffff"
+              strokeWidth={2}
+            />
+          </g>
         )}
 
         {MONTHS.map((m, i) => {
@@ -333,10 +428,10 @@ export const CarpetHeatmap24x365: React.FC<CarpetHeatmapProps> = ({
                 y1={padT}
                 x2={padL + i * (plotW / 12)}
                 y2={padT + plotH}
-                stroke="rgba(255,255,255,0.18)"
+                stroke="rgba(255,255,255,0.2)"
                 strokeWidth={0.8}
               />
-              <text x={x} y={H - 9} textAnchor="middle" fontSize="10" fill="#e2e8f0" fontWeight="700">
+              <text x={x} y={H - 10} textAnchor="middle" fontSize="11" fill="#f1f5f9" fontWeight="700">
                 {m}
               </text>
             </g>
@@ -344,14 +439,14 @@ export const CarpetHeatmap24x365: React.FC<CarpetHeatmapProps> = ({
         })}
       </svg>
 
-      <div className="flex flex-wrap items-center justify-between gap-2 text-[10.5px] text-slate-600 px-1">
-        <span className="font-semibold text-slate-500">
-          365 Days × 24 Hours (8,760h Annual Matrix • {unitLabel} • Hover to inspect any hour)
+      <div className="flex flex-wrap items-center justify-between gap-2 text-[11px] text-slate-600 px-1 font-medium">
+        <span className="font-semibold text-slate-700">
+          365 Days × 24 Hours (8,760h Annual Matrix • {unitLabel} • Crosshair active)
         </span>
-        <div className="flex flex-wrap items-center gap-2.5">
+        <div className="flex flex-wrap items-center gap-3">
           {legendItems.map((it, idx) => (
-            <span key={idx} className="flex items-center gap-1.5 font-medium">
-              <span className="w-3 h-3 rounded-sm inline-block shadow-sm" style={{ backgroundColor: it.color }} />
+            <span key={idx} className="flex items-center gap-1.5 font-bold text-slate-700">
+              <span className="w-3.5 h-3.5 rounded-sm inline-block shadow-sm border border-black/10" style={{ backgroundColor: it.color }} />
               {it.label}
             </span>
           ))}
@@ -2137,13 +2232,13 @@ export const SubTab9DataExplorer: React.FC<{
             rows: stats.grid.map((row, rIdx) => [rIdx + 1, ...row])
           })}
         >
-          {(svgRef) => {
-            const W = 500;
-            const H = 310;
-            const padL = 46;
-            const padR = 20;
-            const padT = 18;
-            const padB = 34;
+          {(svgRef, tooltipCtx) => {
+            const W = 560;
+            const H = 340;
+            const padL = 48;
+            const padR = 24;
+            const padT = 20;
+            const padB = 38;
             const plotW = W - padL - padR;
             const plotH = H - padT - padB;
             const N = 12;
@@ -2167,8 +2262,25 @@ export const SubTab9DataExplorer: React.FC<{
                         : frac < 0.75
                         ? '#10b981'
                         : '#f59e0b';
+                    const x0 = stats.xHist.min + (gx / N) * (stats.xHist.max - stats.xHist.min);
+                    const x1 = stats.xHist.min + ((gx + 1) / N) * (stats.xHist.max - stats.xHist.min);
+                    const y0 = stats.yHist.min + (gy / N) * (stats.yHist.max - stats.yHist.min);
+                    const y1 = stats.yHist.min + ((gy + 1) / N) * (stats.yHist.max - stats.yHist.min);
+
                     return (
-                      <g key={`${gx}_${gy}`}>
+                      <g
+                        key={`${gx}_${gy}`}
+                        className="cursor-pointer"
+                        onMouseEnter={(e) => {
+                          tooltipCtx.show(e, `Joint 2D Frequency Bin`, [
+                            { label: `${xMeta.label} Bin`, value: `${x0.toFixed(1)} to ${x1.toFixed(1)} ${xMeta.unit}`, color: '#0d9488' },
+                            { label: `${yMeta.label} Bin`, value: `${y0.toFixed(1)} to ${y1.toFixed(1)} ${yMeta.unit}`, color: '#6366f1' },
+                            { label: 'Sampled Hours', value: `${cnt} hrs (${((cnt / Math.max(1, filtered.length)) * 100).toFixed(1)}%)`, color: '#38bdf8' }
+                          ]);
+                        }}
+                        onMouseMove={(e) => tooltipCtx.move(e)}
+                        onMouseLeave={() => tooltipCtx.hide()}
+                      >
                         <rect
                           x={x}
                           y={y}
@@ -2176,13 +2288,14 @@ export const SubTab9DataExplorer: React.FC<{
                           height={ch - 1}
                           fill={fill}
                           rx={2}
+                          className="hover:opacity-90 transition"
                         />
                         {cnt > 0 && (
                           <text
                             x={x + cw / 2}
                             y={y + ch / 2 + 3}
                             textAnchor="middle"
-                            fontSize="7.5"
+                            fontSize="8"
                             fontWeight="700"
                             fill="#f8fafc"
                           >
@@ -2194,17 +2307,17 @@ export const SubTab9DataExplorer: React.FC<{
                   })
                 )}
 
-                <text x={padL + plotW / 2} y={H - 9} textAnchor="middle" fontSize="9.5" fontWeight="700" fill="#cbd5e1">
+                <text x={padL + plotW / 2} y={H - 12} textAnchor="middle" fontSize="10.5" fontWeight="700" fill="#cbd5e1">
                   {xMeta.label} ({stats.xHist.min} → {stats.xHist.max} {xMeta.unit})
                 </text>
                 <text
-                  x={14}
+                  x={16}
                   y={padT + plotH / 2}
                   textAnchor="middle"
-                  fontSize="9.5"
+                  fontSize="10.5"
                   fontWeight="700"
                   fill="#cbd5e1"
-                  transform={`rotate(-90, 14, ${padT + plotH / 2})`}
+                  transform={`rotate(-90, 16, ${padT + plotH / 2})`}
                 >
                   {yMeta.label} ({stats.yHist.min} → {stats.yHist.max} {yMeta.unit})
                 </text>
