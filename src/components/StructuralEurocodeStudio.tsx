@@ -294,7 +294,7 @@ export const StructuralEurocodeStudio: React.FC<StructuralEurocodeStudioProps> =
         autoLoadTakedown: true
       });
       handleOccupancyPresetChange('Cat_B_Office');
-      setActiveMember('steel_beam');
+      setActiveMember((prev) => (prev === 'none' ? 'none' : 'steel_beam'));
     } else if (preset === 'residential') {
       setBayConfig({
         spanL: 5.0,
@@ -306,7 +306,7 @@ export const StructuralEurocodeStudio: React.FC<StructuralEurocodeStudioProps> =
         autoLoadTakedown: true
       });
       handleOccupancyPresetChange('Cat_A_Residential');
-      setActiveMember('rc_slab');
+      setActiveMember((prev) => (prev === 'none' ? 'none' : 'rc_slab'));
     } else if (preset === 'timber') {
       setBayConfig({
         spanL: 8.0,
@@ -318,7 +318,7 @@ export const StructuralEurocodeStudio: React.FC<StructuralEurocodeStudioProps> =
         autoLoadTakedown: true
       });
       handleOccupancyPresetChange('Cat_C_Assembly');
-      setActiveMember('clt_slab');
+      setActiveMember((prev) => (prev === 'none' ? 'none' : 'clt_slab'));
     } else if (preset === 'masonry') {
       setBayConfig({
         spanL: 4.5,
@@ -330,14 +330,14 @@ export const StructuralEurocodeStudio: React.FC<StructuralEurocodeStudioProps> =
         autoLoadTakedown: true
       });
       handleOccupancyPresetChange('Cat_A_Residential');
-      setActiveMember('masonry_wall');
+      setActiveMember((prev) => (prev === 'none' ? 'none' : 'masonry_wall'));
     }
   };
 
   // --------------------------------------------------------------------------
   // ACTIVE MEMBER & MEMBER INPUT PARAMETERS (11 SHEETS)
   // --------------------------------------------------------------------------
-  const [activeMember, setActiveMember] = useState<SelectedMemberType>('rc_slab');
+  const [activeMember, setActiveMember] = useState<SelectedMemberType>('none');
 
   // Tributary Load Takedown derivation
   const takedown = useMemo(
@@ -1397,10 +1397,13 @@ export const StructuralEurocodeStudio: React.FC<StructuralEurocodeStudioProps> =
                       type="button"
                       onClick={() => {
                         setBayConfig({ ...bayConfig, materialSystem: mat });
-                        if (mat === 'RC') setActiveMember('rc_slab');
-                        else if (mat === 'Steel') setActiveMember('steel_beam');
-                        else if (mat === 'Timber') setActiveMember('clt_slab');
-                        else setActiveMember('masonry_wall');
+                        setActiveMember((prev) => {
+                          if (prev === 'none') return 'none';
+                          if (mat === 'RC') return 'rc_slab';
+                          if (mat === 'Steel') return 'steel_beam';
+                          if (mat === 'Timber') return 'clt_slab';
+                          return 'masonry_wall';
+                        });
                       }}
                       className={`px-3 py-2 rounded-xl font-bold transition text-left flex flex-col ${
                         bayConfig.materialSystem === mat

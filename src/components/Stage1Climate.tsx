@@ -2764,11 +2764,13 @@ export const Stage1Climate: React.FC<Stage1ClimateProps> = ({
 
                     return (
                       <div className="space-y-3">
-                        <svg ref={svgRef} viewBox={`0 0 ${W} ${H}`} className="w-full h-auto bg-slate-950 rounded-2xl border border-slate-800 shadow-inner">
+                        <svg ref={svgRef} viewBox={`0 0 ${W} ${H}`} className="w-full h-auto bg-white rounded-2xl border border-slate-200 shadow-xs">
+                          {/* Inner Plot Area Background */}
+                          <rect x={padL} y={padT} width={plotW} height={plotH} fill="#f8fafc" stroke="#cbd5e1" strokeWidth={1} rx={4} />
                           {/* Altitude gridlines */}
                           {[0, 15, 30, 45, 60, 75, 90].map((alt) => (
                             <g key={alt}>
-                              <line x1={padL} y1={yForAlt(alt)} x2={W - padR} y2={yForAlt(alt)} stroke="#1e293b" strokeDasharray="3 3" />
+                              <line x1={padL} y1={yForAlt(alt)} x2={W - padR} y2={yForAlt(alt)} stroke="#e2e8f0" strokeDasharray="3 3" />
                               <text x={padL - 8} y={yForAlt(alt) + 3.5} textAnchor="end" fontSize="10" fontWeight="600" fill="#64748b">
                                 {alt}°
                               </text>
@@ -2778,8 +2780,8 @@ export const Stage1Climate: React.FC<Stage1ClimateProps> = ({
                           {/* Azimuth gridlines */}
                           {[0, 45, 90, 135, 180, 225, 270, 315, 360].map((az) => (
                             <g key={az}>
-                              <line x1={xForAz(az)} y1={padT} x2={xForAz(az)} y2={H - padB} stroke="#1e293b" />
-                              <text x={xForAz(az)} y={H - 14} textAnchor="middle" fontSize="10" fontWeight="700" fill="#94a3b8">
+                              <line x1={xForAz(az)} y1={padT} x2={xForAz(az)} y2={H - padB} stroke="#e2e8f0" />
+                              <text x={xForAz(az)} y={H - 14} textAnchor="middle" fontSize="10" fontWeight="700" fill="#475569">
                                 {az === 0 || az === 360
                                   ? 'N'
                                   : az === 90
@@ -2801,7 +2803,9 @@ export const Stage1Climate: React.FC<Stage1ClimateProps> = ({
                               y={padT}
                               width={r.w}
                               height={plotH}
-                              fill="rgba(15, 23, 42, 0.55)"
+                              fill="rgba(100, 116, 139, 0.12)"
+                              stroke="#94a3b8"
+                              strokeDasharray="3 3"
                             />
                           ))}
 
@@ -2811,7 +2815,7 @@ export const Stage1Climate: React.FC<Stage1ClimateProps> = ({
                             y1={padT}
                             x2={xForAz(facadeAzimuthDeg)}
                             y2={H - padB}
-                            stroke="#f59e0b"
+                            stroke="#d97706"
                             strokeWidth={2}
                             strokeDasharray="5 3"
                           />
@@ -2821,7 +2825,7 @@ export const Stage1Climate: React.FC<Stage1ClimateProps> = ({
                             textAnchor="middle"
                             fontSize="10"
                             fontWeight="800"
-                            fill="#f59e0b"
+                            fill="#b45309"
                           >
                             ▲ Facade Normal ({facadeAzimuthDeg}°)
                           </text>
@@ -2830,8 +2834,8 @@ export const Stage1Climate: React.FC<Stage1ClimateProps> = ({
                           {showUrbanSkylineMask && (
                             <polygon
                               points={`${xForAz(0)},${yForAlt(0)} ${xForAz(45)},${yForAlt(canyonE * 0.7)} ${xForAz(90)},${yForAlt(canyonE)} ${xForAz(135)},${yForAlt((canyonE + canyonS) / 2)} ${xForAz(180)},${yForAlt(canyonS)} ${xForAz(225)},${yForAlt((canyonS + canyonW) / 2)} ${xForAz(270)},${yForAlt(canyonW)} ${xForAz(315)},${yForAlt(canyonW * 0.7)} ${xForAz(360)},${yForAlt(canyonE * 0.7)} ${xForAz(360)},${yForAlt(0)}`}
-                              fill="rgba(30, 41, 59, 0.65)"
-                              stroke="#475569"
+                              fill="rgba(148, 163, 184, 0.35)"
+                              stroke="#64748b"
                               strokeWidth={1.5}
                             />
                           )}
@@ -2844,7 +2848,7 @@ export const Stage1Climate: React.FC<Stage1ClimateProps> = ({
                                 y1={padT}
                                 x2={xForAz((facadeAzimuthDeg - effLeftFin + 360) % 360)}
                                 y2={H - padB}
-                                stroke="#818cf8"
+                                stroke="#6366f1"
                                 strokeWidth={1.5}
                                 strokeDasharray="4 2"
                               />
@@ -2853,7 +2857,7 @@ export const Stage1Climate: React.FC<Stage1ClimateProps> = ({
                                 y1={padT}
                                 x2={xForAz((facadeAzimuthDeg + effRightFin) % 360)}
                                 y2={H - padB}
-                                stroke="#818cf8"
+                                stroke="#6366f1"
                                 strokeWidth={1.5}
                                 strokeDasharray="4 2"
                               />
@@ -2864,7 +2868,7 @@ export const Stage1Climate: React.FC<Stage1ClimateProps> = ({
                           {showProtractor && overhangMaskPoints.length > 1 && (
                             <polyline
                               fill="none"
-                              stroke="#f59e0b"
+                              stroke="#d97706"
                               strokeWidth={2}
                               strokeDasharray="4 2"
                               points={overhangMaskPoints.join(' ')}
@@ -2913,7 +2917,7 @@ export const Stage1Climate: React.FC<Stage1ClimateProps> = ({
                                     y={yForAlt(peak.alt) - 4}
                                     fontSize="9"
                                     fontWeight="700"
-                                    fill="#cbd5e1"
+                                    fill="#334155"
                                     textAnchor="middle"
                                     className="font-mono pointer-events-none select-none"
                                   >
@@ -2923,11 +2927,11 @@ export const Stage1Climate: React.FC<Stage1ClimateProps> = ({
                               );
                             })}
 
-                          {/* Selected Day of Year Trajectory Curve (Highlighted in Gold) */}
+                          {/* Selected Day of Year Trajectory Curve (Highlighted in Warm Amber/Gold) */}
                           {dayTrajectoryPts.length > 1 && (
                             <polyline
                               fill="none"
-                              stroke="#fbbf24"
+                              stroke="#d97706"
                               strokeWidth={3}
                               points={dayTrajectoryPts.map((p) => `${xForAz(p.az).toFixed(1)},${yForAlt(p.alt).toFixed(1)}`).join(' ')}
                             />
@@ -2944,10 +2948,10 @@ export const Stage1Climate: React.FC<Stage1ClimateProps> = ({
                                 cy={yForAlt(h.solarAlt)}
                                 r={sh.isBlocked ? 2.5 : 3.4}
                                 fillOpacity={sh.isBlocked ? 0.35 : 0.95}
-                                stroke={sh.isBlocked ? '#475569' : '#ffffff'}
+                                stroke={sh.isBlocked ? '#cbd5e1' : '#ffffff'}
                                 strokeWidth={sh.isBlocked ? 0.5 : 0.9}
                                 fill={fill}
-                                className="cursor-pointer transition hover:scale-150 hover:stroke-amber-300 hover:stroke-[2px]"
+                                className="cursor-pointer transition hover:scale-150 hover:stroke-amber-400 hover:stroke-[2px]"
                                 onMouseEnter={(e) => {
                                   let dAz = h.solarAz - facadeAzimuthDeg;
                                   while (dAz > 180) dAz -= 360;
@@ -2986,7 +2990,7 @@ export const Stage1Climate: React.FC<Stage1ClimateProps> = ({
                                 cy={yForAlt(activeSunPos.alt)}
                                 r={12}
                                 fill="none"
-                                stroke="#f59e0b"
+                                stroke="#d97706"
                                 strokeWidth={2}
                                 strokeDasharray="3 2"
                                 className="animate-spin"
@@ -2996,7 +3000,7 @@ export const Stage1Climate: React.FC<Stage1ClimateProps> = ({
                                 cx={xForAz(activeSunPos.az)}
                                 cy={yForAlt(activeSunPos.alt)}
                                 r={6}
-                                fill="#fbbf24"
+                                fill="#f59e0b"
                                 stroke="#ffffff"
                                 strokeWidth={2}
                                 className="shadow-lg"
@@ -3096,7 +3100,10 @@ export const Stage1Climate: React.FC<Stage1ClimateProps> = ({
 
                   return (
                     <div className="flex flex-col items-center space-y-3">
-                      <svg ref={svgRef} viewBox={`0 0 ${size} ${size}`} className="w-full max-w-[620px] h-auto bg-slate-950 rounded-2xl border border-slate-800 shadow-inner">
+                      <svg ref={svgRef} viewBox={`0 0 ${size} ${size}`} className="w-full max-w-[620px] h-auto bg-white rounded-2xl border border-slate-200 shadow-xs">
+                        {/* Sky Dome Background Circle */}
+                        <circle cx={cx} cy={cy} r={R} fill="#f8fafc" stroke="#94a3b8" strokeWidth={1.5} />
+
                         {/* Concentric Altitude Rings */}
                         {[0, 15, 30, 45, 60, 75, 90].map((alt) => (
                           <g key={alt}>
@@ -3105,8 +3112,8 @@ export const Stage1Climate: React.FC<Stage1ClimateProps> = ({
                               cy={cy}
                               r={stereoR(alt)}
                               fill="none"
-                              stroke={alt === 0 ? '#475569' : '#1e293b'}
-                              strokeWidth={alt === 0 ? 2 : 1}
+                              stroke={alt === 0 ? '#64748b' : '#e2e8f0'}
+                              strokeWidth={alt === 0 ? 1.5 : 1}
                               strokeDasharray={alt === 0 ? undefined : '3 3'}
                             />
                             {alt > 0 && alt < 90 && (
@@ -3129,17 +3136,17 @@ export const Stage1Climate: React.FC<Stage1ClimateProps> = ({
                               y1={cy}
                               x2={x2}
                               y2={y2}
-                              stroke="#1e293b"
+                              stroke="#e2e8f0"
                               strokeWidth={0.8}
                             />
                           );
                         })}
 
                         {/* Cardinal Direction Markers */}
-                        <text x={cx} y={24} textAnchor="middle" fontSize="13" fontWeight="900" fill="#94a3b8">N</text>
-                        <text x={cx} y={size - 12} textAnchor="middle" fontSize="13" fontWeight="900" fill="#f43f5e">S</text>
-                        <text x={size - 18} y={cy + 4.5} textAnchor="middle" fontSize="13" fontWeight="900" fill="#94a3b8">E</text>
-                        <text x={18} y={cy + 4.5} textAnchor="middle" fontSize="13" fontWeight="900" fill="#94a3b8">W</text>
+                        <text x={cx} y={24} textAnchor="middle" fontSize="13" fontWeight="900" fill="#334155">N</text>
+                        <text x={cx} y={size - 12} textAnchor="middle" fontSize="13" fontWeight="900" fill="#e11d48">S</text>
+                        <text x={size - 18} y={cy + 4.5} textAnchor="middle" fontSize="13" fontWeight="900" fill="#334155">E</text>
+                        <text x={18} y={cy + 4.5} textAnchor="middle" fontSize="13" fontWeight="900" fill="#334155">W</text>
                         <text x={cx + (R + 18) * Math.cos(Math.PI / 4)} y={cy + (R + 18) * Math.sin(Math.PI / 4) + 4} textAnchor="middle" fontSize="9.5" fontWeight="700" fill="#64748b">SE</text>
                         <text x={cx - (R + 18) * Math.cos(Math.PI / 4)} y={cy + (R + 18) * Math.sin(Math.PI / 4) + 4} textAnchor="middle" fontSize="9.5" fontWeight="700" fill="#64748b">SW</text>
                         <text x={cx + (R + 18) * Math.cos(Math.PI / 4)} y={cy - (R + 18) * Math.sin(Math.PI / 4) + 4} textAnchor="middle" fontSize="9.5" fontWeight="700" fill="#64748b">NE</text>
@@ -3147,12 +3154,30 @@ export const Stage1Climate: React.FC<Stage1ClimateProps> = ({
 
                         {/* Rear Building Envelope Self-Shaded Semicircle Mask */}
                         {showProtractor && rearSemicirclePts.length > 2 && (
-                          <polygon
-                            points={rearSemicirclePts.join(' ')}
-                            fill="rgba(15, 23, 42, 0.42)"
-                            stroke="#334155"
-                            strokeWidth={1.2}
-                          />
+                          <g>
+                            <polygon
+                              points={rearSemicirclePts.join(' ')}
+                              fill="rgba(100, 116, 139, 0.16)"
+                              stroke="#94a3b8"
+                              strokeWidth={1.2}
+                            />
+                            {(() => {
+                              const rearRad = ((facadeAzimuthDeg + 90) * Math.PI) / 180;
+                              return (
+                                <text
+                                  x={cx + (R * 0.52) * Math.cos(rearRad)}
+                                  y={cy + (R * 0.52) * Math.sin(rearRad) + 3}
+                                  fontSize="8.5"
+                                  fontWeight="700"
+                                  fill="#64748b"
+                                  textAnchor="middle"
+                                  className="pointer-events-none select-none"
+                                >
+                                  Rear Envelope
+                                </text>
+                              );
+                            })()}
+                          </g>
                         )}
 
                         {/* Stage 2 Urban Canyon Skyline Obstruction Mask */}
@@ -3162,7 +3187,7 @@ export const Stage1Climate: React.FC<Stage1ClimateProps> = ({
                             cy={cy}
                             r={R}
                             fill="none"
-                            stroke="rgba(30, 41, 59, 0.75)"
+                            stroke="rgba(148, 163, 184, 0.35)"
                             strokeWidth={(Math.max(canyonS, canyonE, canyonW) / 90) * R * 2}
                           />
                         )}
@@ -3171,8 +3196,8 @@ export const Stage1Climate: React.FC<Stage1ClimateProps> = ({
                         {showProtractor && leftFinWedgePts.length > 2 && (
                           <polygon
                             points={leftFinWedgePts.join(' ')}
-                            fill="rgba(99, 102, 241, 0.22)"
-                            stroke="#818cf8"
+                            fill="rgba(99, 102, 241, 0.18)"
+                            stroke="#6366f1"
                             strokeWidth={1.5}
                             strokeDasharray="4 2"
                           />
@@ -3182,8 +3207,8 @@ export const Stage1Climate: React.FC<Stage1ClimateProps> = ({
                         {showProtractor && rightFinWedgePts.length > 2 && (
                           <polygon
                             points={rightFinWedgePts.join(' ')}
-                            fill="rgba(99, 102, 241, 0.22)"
-                            stroke="#818cf8"
+                            fill="rgba(99, 102, 241, 0.18)"
+                            stroke="#6366f1"
                             strokeWidth={1.5}
                             strokeDasharray="4 2"
                           />
@@ -3193,7 +3218,7 @@ export const Stage1Climate: React.FC<Stage1ClimateProps> = ({
                         {showProtractor && overhangStereoPts.length > 2 && (
                           <polygon
                             points={overhangStereoPts.join(' ')}
-                            fill="rgba(245, 158, 11, 0.22)"
+                            fill="rgba(245, 158, 11, 0.20)"
                             stroke="#d97706"
                             strokeWidth={1.8}
                             strokeDasharray="4 2"
@@ -3207,15 +3232,15 @@ export const Stage1Climate: React.FC<Stage1ClimateProps> = ({
                           const arrowY = cy + (R + 2) * Math.sin(rad);
                           return (
                             <g>
-                              <line x1={cx} y1={cy} x2={arrowX} y2={arrowY} stroke="#f59e0b" strokeWidth={2.4} strokeDasharray="5 3" />
-                              <circle cx={arrowX} cy={arrowY} r={5} fill="#f59e0b" />
+                              <line x1={cx} y1={cy} x2={arrowX} y2={arrowY} stroke="#d97706" strokeWidth={2.4} strokeDasharray="5 3" />
+                              <circle cx={arrowX} cy={arrowY} r={5} fill="#d97706" />
                               <text
                                 x={cx + (R + 24) * Math.cos(rad)}
                                 y={cy + (R + 24) * Math.sin(rad) + 4}
                                 textAnchor="middle"
                                 fontSize="10.5"
                                 fontWeight="800"
-                                fill="#f59e0b"
+                                fill="#b45309"
                               >
                                 Facade Normal ({facadeAzimuthDeg}°)
                               </text>
@@ -3281,7 +3306,7 @@ export const Stage1Climate: React.FC<Stage1ClimateProps> = ({
                                   y={peakPt.y - 4}
                                   fontSize="8.5"
                                   fontWeight="800"
-                                  fill="#cbd5e1"
+                                  fill="#334155"
                                   textAnchor="middle"
                                   className="select-none pointer-events-none font-mono"
                                 >
@@ -3295,7 +3320,7 @@ export const Stage1Climate: React.FC<Stage1ClimateProps> = ({
                         {dayTrajectoryPts.length > 1 && (
                           <polyline
                             fill="none"
-                            stroke="#fbbf24"
+                            stroke="#d97706"
                             strokeWidth={3}
                             points={dayTrajectoryPts.map((p) => {
                               const pt = polarPt(p.alt, p.az);
@@ -3316,10 +3341,10 @@ export const Stage1Climate: React.FC<Stage1ClimateProps> = ({
                               cy={p.y}
                               r={sh.isBlocked ? 2.5 : 3.4}
                               fillOpacity={sh.isBlocked ? 0.35 : 0.95}
-                              stroke={sh.isBlocked ? '#475569' : '#ffffff'}
+                              stroke={sh.isBlocked ? '#cbd5e1' : '#ffffff'}
                               strokeWidth={sh.isBlocked ? 0.5 : 0.9}
                               fill={fill}
-                              className="cursor-pointer transition hover:scale-150 hover:stroke-amber-300 hover:stroke-[2px]"
+                              className="cursor-pointer transition hover:scale-150 hover:stroke-amber-400 hover:stroke-[2px]"
                               onMouseEnter={(e) => {
                                 let dAz = h.solarAz - facadeAzimuthDeg;
                                 while (dAz > 180) dAz -= 360;
@@ -3362,7 +3387,7 @@ export const Stage1Climate: React.FC<Stage1ClimateProps> = ({
                                     cy={p.y}
                                     r={13}
                                     fill="none"
-                                    stroke="#f59e0b"
+                                    stroke="#d97706"
                                     strokeWidth={2}
                                     strokeDasharray="3 2"
                                     className="animate-spin"
@@ -3372,7 +3397,7 @@ export const Stage1Climate: React.FC<Stage1ClimateProps> = ({
                                     cx={p.x}
                                     cy={p.y}
                                     r={6.5}
-                                    fill="#fbbf24"
+                                    fill="#f59e0b"
                                     stroke="#ffffff"
                                     strokeWidth={2}
                                     className="shadow-lg"

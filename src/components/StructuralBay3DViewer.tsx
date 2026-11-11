@@ -542,6 +542,8 @@ export const StructuralBay3DViewer: React.FC<StructuralBay3DViewerProps> = ({
     // Prioritizes columns > beams > walls > slabs so the roof slab never intercepts columns/beams!
     // 5. Unified Pointer Orbit Controls (Touchscreen, Pen & Mouse)
     let isDragging = false;
+    let didMove = false;
+    let pointerDownPos = { x: 0, y: 0 };
     let previousPosition = { x: 0, y: 0 };
     let cameraAngleTheta = cameraStateRef.current.theta;
     let cameraAnglePhi = cameraStateRef.current.phi;
@@ -572,6 +574,8 @@ export const StructuralBay3DViewer: React.FC<StructuralBay3DViewerProps> = ({
       // Only process primary interaction
       if (e.button !== 0 && e.pointerType === 'mouse') return;
       isDragging = true;
+      didMove = false;
+      pointerDownPos = { x: e.clientX, y: e.clientY };
       previousPosition = { x: e.clientX, y: e.clientY };
     };
 
@@ -579,6 +583,10 @@ export const StructuralBay3DViewer: React.FC<StructuralBay3DViewerProps> = ({
       if (!isDragging) return;
       const deltaX = e.clientX - previousPosition.x;
       const deltaY = e.clientY - previousPosition.y;
+
+      if (Math.abs(e.clientX - pointerDownPos.x) > 4 || Math.abs(e.clientY - pointerDownPos.y) > 4) {
+        didMove = true;
+      }
 
       cameraAngleTheta -= deltaX * 0.008;
       cameraAnglePhi = Math.max(0.1, Math.min(Math.PI / 2 - 0.05, cameraAnglePhi + deltaY * 0.008));
@@ -589,8 +597,49 @@ export const StructuralBay3DViewer: React.FC<StructuralBay3DViewerProps> = ({
       previousPosition = { x: e.clientX, y: e.clientY };
     };
 
-    const onPointerUp = () => {
+    const onPointerUp = (e: PointerEvent) => {
+      const wasDragging = isDragging;
       isDragging = false;
+      if (wasDragging && !didMove) {
+        // Precise click/tap on 3D canvas
+        const rect = dom.getBoundingClientRect();
+        if (rect.width > 0 && rect.height > 0) {
+          const mouseX = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+          const mouseY = -((e.clientY - rect.top) / rect.height) * 2 + 1;
+          const raycaster = new THREE.Raycaster();
+          raycaster.setFromCamera(new THREE.Vector2(mouseX, mouseY), camera);
+          const intersects = raycaster.intersectObjects(scene.children, true);
+
+          const hitMembers: string[] = [];
+          for (const hit of intersects) {
+            let curr: THREE.Object3D | null = hit.object;
+            while (curr && curr !== scene) {
+              if (curr.userData && curr.userData.id) {
+                hitMembers.push(curr.userData.id as string);
+                break;
+              }
+              curr = curr.parent;
+            }
+          }
+
+          if (hitMembers.length > 0) {
+            // Prioritize columns > beams > walls > slabs so thin columns/beams are easily selectable
+            const priority = (id: string) => {
+              if (id.includes('column')) return 1;
+              if (id.includes('beam')) return 2;
+              if (id.includes('wall')) return 3;
+              if (id.includes('slab')) return 4;
+              return 5;
+            };
+            hitMembers.sort((a, b) => priority(a) - priority(b));
+            const chosen = hitMembers[0] as SelectedMemberType;
+            onSelectMemberRef.current?.(chosen === activeMember ? 'none' : chosen);
+          } else {
+            // Clicked empty canvas space deselects to 'none'
+            onSelectMemberRef.current?.('none');
+          }
+        }
+      }
     };
 
     const onWheel = (e: WheelEvent) => {
