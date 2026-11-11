@@ -58,7 +58,7 @@ const SCALE_STAGES: Array<{
   { id: 1, shortTitle: '1. Climate & Program', subTitle: 'Macro-Climate & Brief', icon: Globe },
   { id: 2, shortTitle: '2. Urban 2.5D District', subTitle: 'SVF & Shading Mask', icon: Building2 },
   { id: 3, shortTitle: '3. Massing & Zoning', subTitle: 'ASHRAE 209 #1–2', icon: Box },
-  { id: 4, shortTitle: '4. Facade & Fabric', subTitle: 'DALEC+ 3D & ISO 13786', icon: Layers },
+  { id: 4, shortTitle: '4. Facade & Fabric', subTitle: 'Shoebox & ISO 13786', icon: Layers },
   { id: 5, shortTitle: '5. Energy & Comfort', subTitle: 'ISO 52000-1 & HVAC', icon: Zap },
   { id: 6, shortTitle: '6. Whole-Life LCA', subTitle: 'EN 15978 A–D & 5Rs', icon: Recycle }
 ];
