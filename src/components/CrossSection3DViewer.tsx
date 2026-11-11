@@ -19,11 +19,16 @@ import {
   HelpCircle,
   Maximize2,
   Minimize2,
-  Sliders
+  Sliders,
+  Activity
 } from 'lucide-react';
 import { STEEL_PROFILES, CONCRETE_CLASSES, TIMBER_CLASSES } from '../data/eurocodeDataset';
 import { SelectedMemberType } from './StructuralBay3DViewer';
-import { EurocodeStatus } from '../utils/eurocodeCalculators';
+import {
+  EurocodeStatus,
+  generateRcInteractionCurve,
+  generateBucklingCurves
+} from '../utils/eurocodeCalculators';
 
 interface CrossSection3DViewerProps {
   memberType: SelectedMemberType;
@@ -31,7 +36,7 @@ interface CrossSection3DViewerProps {
   result: any;
 }
 
-type ViewMode = '3d' | '2d' | 'split';
+type ViewMode = '3d' | '2d' | 'split' | 'envelope';
 
 export const CrossSection3DViewer: React.FC<CrossSection3DViewerProps> = ({
   memberType,
@@ -1223,6 +1228,301 @@ export const CrossSection3DViewer: React.FC<CrossSection3DViewerProps> = ({
     );
   };
 
+  // ==========================================================================
+  // PILLAR 1: RC N-M INTERACTION ENVELOPE (P-M DIAGRAM)
+  // ==========================================================================
+  const renderRcInteractionEnvelope = () => {
+    if (memberType !== 'rc_column' && memberType !== 'rc_wall') return null;
+
+    const b = params.b || 400;
+    const h = params.h || 400;
+    const a = params.a || 50;
+    const d = h - a;
+    const conc = CONCRETE_CLASSES[params.concreteClass] || CONCRETE_CLASSES['C30/37'];
+    const fcd = (0.85 * conc.fck) / 1.5;
+    const fyd = (params.fyk || 500) / 1.15;
+    const Es = 200000;
+
+    let As_face = 0;
+    if (memberType === 'rc_column') {
+      const phi = params.phi || 20;
+      const n_bars = params.n_bars || 3;
+      As_face = (Math.PI * Math.pow(phi, 2) / 4) * n_bars;
+    } else {
+      const phi = params.phi || 12;
+      const s = params.s || 200;
+      As_face = (Math.PI * Math.pow(phi, 2) / 4) * (1000 / s);
+    }
+
+    const curve = generateRcInteractionCurve(b, h, a, d, As_face, fcd, fyd, Es);
+    const opN = result?.NEd || 0;
+    const opM = result?.MEd || 0;
+
+    const W = 620;
+    const H = 340;
+    const padL = 75;
+    const padR = 40;
+    const padT = 30;
+    const padB = 45;
+    const plotW = W - padL - padR;
+    const plotH = H - padT - padB;
+
+    const maxM = Math.max(curve.M_bal * 1.35, opM * 1.25, 60);
+    const minN = curve.NRd_t * 1.2;
+    const maxN = Math.max(curve.NRd_c * 1.12, opN * 1.15);
+
+    const xForM = (m: number) => padL + (Math.max(0, m) / maxM) * plotW;
+    const yForN = (n: number) => padT + plotH - ((n - minN) / (maxN - minN)) * plotH;
+
+    const yZero = yForN(0);
+
+    const polyPoints = [
+      `${xForM(0).toFixed(1)},${yForN(curve.NRd_t).toFixed(1)}`,
+      ...curve.points.map((p) => `${xForM(p.M).toFixed(1)},${yForN(p.N).toFixed(1)}`),
+      `${xForM(0).toFixed(1)},${yForN(curve.NRd_c).toFixed(1)}`
+    ].join(' ');
+
+    const isExceeded = result?.status === 'EXCEEDS SCREEN' || result?.status === 'OUT OF SCOPE' || result?.eta_max > 1.0;
+    const opX = xForM(opM);
+    const opY = yForN(opN);
+
+    // Grid ticks
+    const nTicks = [-500, 0, 500, 1000, 1500, 2000, 2500, 3000, 3500, 4000].filter((n) => n >= minN && n <= maxN);
+    const mTicks = [0, 50, 100, 150, 200, 250, 300].filter((m) => m <= maxM);
+
+    return (
+      <div className="w-full flex flex-col items-center space-y-2">
+        <svg viewBox={`0 0 ${W} ${H}`} className="w-full max-w-[620px] h-auto bg-slate-950/80 rounded-xl border border-slate-800 shadow-inner">
+          <defs>
+            <linearGradient id="rcEnvelopeGrad" x1="0" y1="0" x2="1" y2="0">
+              <stop offset="0%" stopColor="#10b981" stopOpacity="0.32" />
+              <stop offset="70%" stopColor="#0ea5e9" stopOpacity="0.22" />
+              <stop offset="100%" stopColor="#f59e0b" stopOpacity="0.10" />
+            </linearGradient>
+          </defs>
+
+          {/* Grid lines */}
+          {nTicks.map((n) => (
+            <g key={n}>
+              <line x1={padL} y1={yForN(n)} x2={W - padR} y2={yForN(n)} stroke="#1e293b" strokeDasharray={n === 0 ? undefined : '3 3'} strokeWidth={n === 0 ? 1.5 : 1} />
+              <text x={padL - 8} y={yForN(n) + 3.5} textAnchor="end" fontSize="9.5" fontWeight="600" fill={n === 0 ? '#94a3b8' : '#64748b'}>
+                {n} kN
+              </text>
+            </g>
+          ))}
+
+          {mTicks.map((m) => (
+            <g key={m}>
+              <line x1={xForM(m)} y1={padT} x2={xForM(m)} y2={H - padB} stroke="#1e293b" strokeDasharray="3 3" />
+              <text x={xForM(m)} y={H - padB + 14} textAnchor="middle" fontSize="9.5" fontWeight="600" fill="#64748b">
+                {m} kNm
+              </text>
+            </g>
+          ))}
+
+          {/* Axes labels */}
+          <text x={W - padR} y={H - padB + 28} textAnchor="end" fontSize="10" fontWeight="700" fill="#94a3b8">
+            Design Bending Moment MRd (kNm) →
+          </text>
+          <text x={padL} y={16} textAnchor="start" fontSize="10" fontWeight="700" fill="#94a3b8">
+            ↑ Axial Force NRd (kN, Compression +)
+          </text>
+
+          {/* Filled Envelope Polygon */}
+          <polygon points={polyPoints} fill="url(#rcEnvelopeGrad)" stroke="#10b981" strokeWidth={2.2} />
+
+          {/* Balanced Point Line */}
+          <line
+            x1={padL}
+            y1={yForN(curve.N_bal)}
+            x2={xForM(curve.M_bal)}
+            y2={yForN(curve.N_bal)}
+            stroke="#38bdf8"
+            strokeDasharray="4 3"
+            strokeWidth={1.2}
+          />
+          <circle cx={xForM(curve.M_bal)} cy={yForN(curve.N_bal)} r={4} fill="#38bdf8" />
+          <text x={xForM(curve.M_bal) + 6} y={yForN(curve.N_bal) - 5} fontSize="9" fontWeight="700" fill="#38bdf8">
+            Balanced Pt ({curve.M_bal.toFixed(0)} kNm, {curve.N_bal.toFixed(0)} kN)
+          </text>
+
+          {/* Pure Tension Point */}
+          <circle cx={xForM(0)} cy={yForN(curve.NRd_t)} r={4} fill="#f43f5e" />
+          <text x={xForM(0) + 8} y={yForN(curve.NRd_t) + 3} fontSize="9" fontWeight="700" fill="#f43f5e">
+            Pure Tension NRd,t = {curve.NRd_t.toFixed(0)} kN
+          </text>
+
+          {/* Pure Squash Point */}
+          <circle cx={xForM(0)} cy={yForN(curve.NRd_c)} r={4} fill="#f59e0b" />
+          <text x={xForM(0) + 8} y={yForN(curve.NRd_c) + 3} fontSize="9" fontWeight="700" fill="#f59e0b">
+            Pure Squash NRd,c = {curve.NRd_c.toFixed(0)} kN
+          </text>
+
+          {/* Pure Flexure at N=0 */}
+          <circle cx={xForM(curve.MRd_0)} cy={yZero} r={3.5} fill="#10b981" />
+          <text x={xForM(curve.MRd_0)} y={yZero - 6} textAnchor="middle" fontSize="8.5" fontWeight="700" fill="#10b981">
+            MRd,0 = {curve.MRd_0.toFixed(0)} kNm
+          </text>
+
+          {/* Active Operating Demand Point (NEd, MEd) */}
+          <g>
+            <line x1={opX} y1={H - padB} x2={opX} y2={opY} stroke={isExceeded ? '#ef4444' : '#10b981'} strokeDasharray="3 2" strokeWidth={1.5} />
+            <line x1={padL} y1={opY} x2={opX} y2={opY} stroke={isExceeded ? '#ef4444' : '#10b981'} strokeDasharray="3 2" strokeWidth={1.5} />
+
+            <circle cx={opX} cy={opY} r={10} fill="none" stroke={isExceeded ? '#ef4444' : '#10b981'} strokeWidth={1.8} className="animate-ping" style={{ transformOrigin: `${opX}px ${opY}px` }} />
+            <circle cx={opX} cy={opY} r={5.5} fill={isExceeded ? '#ef4444' : '#10b981'} stroke="#ffffff" strokeWidth={1.8} />
+
+            <text x={opX + 9} y={opY - 8} fontSize="10" fontWeight="800" fill={isExceeded ? '#f87171' : '#34d399'}>
+              Demand (NEd={opN.toFixed(0)} kN, MEd={opM.toFixed(1)} kNm)
+            </text>
+          </g>
+        </svg>
+
+        {/* Legend & Diagnostic Summary */}
+        <div className="w-full flex flex-wrap items-center justify-between gap-2 text-[10.5px] px-1 text-slate-300">
+          <div className="flex items-center gap-3">
+            <span className="flex items-center gap-1 font-semibold text-emerald-400">
+              <span className="w-2.5 h-2.5 rounded-sm bg-emerald-500/40 border border-emerald-400 inline-block" /> Safe P-M Domain (EN 1992-1-1 §6.1)
+            </span>
+            <span className="flex items-center gap-1 font-semibold text-sky-400">
+              <span className="w-2.5 h-2.5 rounded-full bg-sky-400 inline-block" /> Balanced Pivot
+            </span>
+          </div>
+          <div className="font-mono text-[11px] font-bold">
+            Status: <span className={isExceeded ? 'text-rose-400' : 'text-emerald-400'}>{isExceeded ? 'EXCEEDS CAPACITY' : 'VERIFIED IN DOMAIN'}</span>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  // ==========================================================================
+  // PILLAR 1: EUROPEAN BUCKLING CURVES (CHI VS LAMBDA_BAR)
+  // ==========================================================================
+  const renderBucklingDiagram = () => {
+    const pts = generateBucklingCurves();
+    const W = 620;
+    const H = 320;
+    const padL = 50;
+    const padR = 30;
+    const padT = 25;
+    const padB = 40;
+    const plotW = W - padL - padR;
+    const plotH = H - padT - padB;
+
+    const maxL = 2.6;
+    const xForL = (l: number) => padL + (Math.min(maxL, Math.max(0, l)) / maxL) * plotW;
+    const yForChi = (c: number) => padT + plotH - Math.min(1.0, Math.max(0, c)) * plotH;
+
+    let opLy = 0;
+    let opLz = 0;
+    let opChiy = 0;
+    let opChiz = 0;
+
+    if (memberType === 'steel_column') {
+      opLy = parseFloat(result?.rows.find((r: any) => r.symbol === 'λy')?.value || '0.8');
+      opLz = parseFloat(result?.rows.find((r: any) => r.symbol === 'λz')?.value || '1.1');
+      opChiy = parseFloat(result?.rows.find((r: any) => r.symbol === 'χy')?.value || '0.75');
+      opChiz = parseFloat(result?.rows.find((r: any) => r.symbol === 'χz')?.value || '0.55');
+    } else if (memberType === 'wood_column') {
+      opLy = parseFloat(result?.rows.find((r: any) => r.symbol === 'λrel,y')?.value || '0.8');
+      opLz = parseFloat(result?.rows.find((r: any) => r.symbol === 'λrel,z')?.value || '1.0');
+      opChiy = result?.kc_y || 0.7;
+      opChiz = result?.kc_z || 0.6;
+    }
+
+    const makeLine = (pick: (p: typeof pts[0]) => number) =>
+      pts.map((p) => `${xForL(p.lambda_bar).toFixed(1)},${yForChi(pick(p)).toFixed(1)}`).join(' ');
+
+    return (
+      <div className="w-full flex flex-col items-center space-y-2">
+        <svg viewBox={`0 0 ${W} ${H}`} className="w-full max-w-[620px] h-auto bg-slate-950/80 rounded-xl border border-slate-800 shadow-inner">
+          {/* Grid lines */}
+          {[0, 0.2, 0.4, 0.6, 0.8, 1.0].map((c) => (
+            <g key={c}>
+              <line x1={padL} y1={yForChi(c)} x2={W - padR} y2={yForChi(c)} stroke="#1e293b" strokeDasharray="3 3" />
+              <text x={padL - 8} y={yForChi(c) + 3.5} textAnchor="end" fontSize="9.5" fontWeight="600" fill="#64748b">
+                {c.toFixed(1)}
+              </text>
+            </g>
+          ))}
+
+          {[0, 0.5, 1.0, 1.5, 2.0, 2.5].map((l) => (
+            <g key={l}>
+              <line x1={xForL(l)} y1={padT} x2={xForL(l)} y2={H - padB} stroke="#1e293b" strokeDasharray="3 3" />
+              <text x={xForL(l)} y={H - padB + 14} textAnchor="middle" fontSize="9.5" fontWeight="600" fill="#64748b">
+                {l.toFixed(1)}
+              </text>
+            </g>
+          ))}
+
+          {/* Axes labels */}
+          <text x={W - padR} y={H - padB + 28} textAnchor="end" fontSize="10" fontWeight="700" fill="#94a3b8">
+            Non-Dimensional Slenderness λ_bar →
+          </text>
+          <text x={padL} y={16} textAnchor="start" fontSize="10" fontWeight="700" fill="#94a3b8">
+            ↑ Buckling Reduction Factor χ
+          </text>
+
+          {/* Euler reference curve */}
+          <polyline points={makeLine((p) => p.chi_euler)} fill="none" stroke="#475569" strokeWidth={1.5} strokeDasharray="4 3" />
+
+          {/* European Buckling Curves */}
+          <polyline points={makeLine((p) => p.chi_a0)} fill="none" stroke="#10b981" strokeWidth={1.8} />
+          <polyline points={makeLine((p) => p.chi_a)} fill="none" stroke="#38bdf8" strokeWidth={1.8} />
+          <polyline points={makeLine((p) => p.chi_b)} fill="none" stroke="#f59e0b" strokeWidth={2.0} />
+          <polyline points={makeLine((p) => p.chi_c)} fill="none" stroke="#f43f5e" strokeWidth={1.8} />
+          <polyline points={makeLine((p) => p.chi_d)} fill="none" stroke="#a855f7" strokeWidth={1.8} />
+
+          {/* Member operating points */}
+          {opLy > 0 && (
+            <g>
+              <line x1={xForL(opLy)} y1={H - padB} x2={xForL(opLy)} y2={yForChi(opChiy)} stroke="#38bdf8" strokeDasharray="3 2" />
+              <circle cx={xForL(opLy)} cy={yForChi(opChiy)} r={5} fill="#38bdf8" stroke="#ffffff" strokeWidth={1.5} />
+              <text x={xForL(opLy) + 6} y={yForChi(opChiy) - 4} fontSize="9" fontWeight="800" fill="#38bdf8">
+                y-y (λ={opLy.toFixed(2)}, χ={opChiy.toFixed(2)})
+              </text>
+            </g>
+          )}
+
+          {opLz > 0 && (
+            <g>
+              <line x1={xForL(opLz)} y1={H - padB} x2={xForL(opLz)} y2={yForChi(opChiz)} stroke="#f59e0b" strokeDasharray="3 2" />
+              <circle cx={xForL(opLz)} cy={yForChi(opChiz)} r={5} fill="#f59e0b" stroke="#ffffff" strokeWidth={1.5} />
+              <text x={xForL(opLz) + 6} y={yForChi(opChiz) - 4} fontSize="9" fontWeight="800" fill="#f59e0b">
+                z-z (λ={opLz.toFixed(2)}, χ={opChiz.toFixed(2)})
+              </text>
+            </g>
+          )}
+        </svg>
+
+        {/* Legend */}
+        <div className="w-full flex flex-wrap items-center justify-between gap-3 text-[10px] px-1 text-slate-300">
+          <div className="flex flex-wrap items-center gap-3">
+            <span className="flex items-center gap-1 font-semibold text-emerald-400">
+              <span className="w-3 h-0.5 bg-emerald-400 inline-block" /> Curve a0 (0.13)
+            </span>
+            <span className="flex items-center gap-1 font-semibold text-sky-400">
+              <span className="w-3 h-0.5 bg-sky-400 inline-block" /> Curve a (0.21)
+            </span>
+            <span className="flex items-center gap-1 font-semibold text-amber-400">
+              <span className="w-3 h-0.5 bg-amber-400 inline-block" /> Curve b (0.34)
+            </span>
+            <span className="flex items-center gap-1 font-semibold text-rose-400">
+              <span className="w-3 h-0.5 bg-rose-400 inline-block" /> Curve c (0.49)
+            </span>
+            <span className="flex items-center gap-1 font-semibold text-slate-500">
+              <span className="w-3 h-0.5 bg-slate-500 inline-block" /> Euler Elastic
+            </span>
+          </div>
+          <span className="font-mono text-[10.5px] text-slate-400 font-bold">
+            EN 1993-1-1 §6.3.1.2 / EN 1995-1-1 §6.3.2
+          </span>
+        </div>
+      </div>
+    );
+  };
+
   if (memberType === 'none') {
     return (
       <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl flex flex-col items-center justify-center text-center space-y-3 min-h-[420px]">
@@ -1285,6 +1585,16 @@ export const CrossSection3DViewer: React.FC<CrossSection3DViewerProps> = ({
               <Maximize2 className="w-3 h-3" />
               Split
             </button>
+            <button
+              type="button"
+              onClick={() => setViewMode('envelope')}
+              className={`px-2.5 py-1 rounded-lg font-bold transition flex items-center gap-1 ${
+                viewMode === 'envelope' ? 'bg-amber-600 text-white shadow' : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              <Activity className="w-3 h-3 text-amber-300" />
+              {memberType === 'rc_column' || memberType === 'rc_wall' ? 'P-M Envelope' : 'Buckling Curve (χ-λ)'}
+            </button>
           </div>
 
           {/* Fullscreen / Enlarge View Button */}
@@ -1304,7 +1614,7 @@ export const CrossSection3DViewer: React.FC<CrossSection3DViewerProps> = ({
       </div>
 
       {/* Visual Toggles Bar */}
-      {viewMode !== '2d' && (
+      {viewMode !== '2d' && viewMode !== 'envelope' && (
         <div className="flex flex-wrap items-center justify-between gap-2 text-[10px] bg-slate-950/60 px-3 py-1.5 rounded-xl border border-slate-800/80">
           <div className="flex items-center gap-3">
             <label className="flex items-center gap-1.5 cursor-pointer text-slate-300">
@@ -1368,6 +1678,13 @@ export const CrossSection3DViewer: React.FC<CrossSection3DViewerProps> = ({
         {(viewMode === '2d' || viewMode === 'split') && (
           <div className="bg-slate-950/90 rounded-xl border border-slate-800/80 p-3 flex items-center justify-center overflow-x-auto shadow-inner">
             {render2DCadAndStressDiagram()}
+          </div>
+        )}
+
+        {/* Eurocode Interaction Envelope / Buckling Diagram */}
+        {viewMode === 'envelope' && (
+          <div className="bg-slate-950/90 rounded-xl border border-slate-800/80 p-3 flex items-center justify-center overflow-x-auto shadow-inner">
+            {(memberType === 'rc_column' || memberType === 'rc_wall') ? renderRcInteractionEnvelope() : renderBucklingDiagram()}
           </div>
         )}
       </div>

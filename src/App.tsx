@@ -409,7 +409,7 @@ const StudioWorkspace: React.FC = () => {
                 ← Return to Building Physics & BEM Stages
               </button>
             </div>
-            <StructuralEurocodeStudio />
+            <StructuralEurocodeStudio climate={climate} />
           </div>
         ) : (
           <>

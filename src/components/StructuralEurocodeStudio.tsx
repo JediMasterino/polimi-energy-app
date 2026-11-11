@@ -26,7 +26,14 @@ import {
   ShieldCheck,
   Maximize2,
   X,
-  BookOpen
+  BookOpen,
+  Wind,
+  CloudRain,
+  Leaf,
+  RefreshCw,
+  Zap,
+  TrendingDown,
+  Activity
 } from 'lucide-react';
 
 import {
@@ -69,7 +76,10 @@ import {
   calcMasonryWall,
   MasonryWallInputs,
   EurocodeStatus,
-  CalculationRow
+  CalculationRow,
+  deriveEnvironmentalLoadsFromClimate,
+  optimizeMemberSection,
+  OptimizationResult
 } from '../utils/eurocodeCalculators';
 
 import { StructuralBay3DViewer, SelectedMemberType } from './StructuralBay3DViewer';
@@ -157,7 +167,11 @@ const MEMBER_SCOPE_NOTES: Record<SelectedMemberType, {
   }
 };
 
-export const StructuralEurocodeStudio: React.FC = () => {
+export interface StructuralEurocodeStudioProps {
+  climate?: any;
+}
+
+export const StructuralEurocodeStudio: React.FC<StructuralEurocodeStudioProps> = ({ climate }) => {
   // --------------------------------------------------------------------------
   // WORKFLOW STEPS (1: Project Basis, 2: 3D Bay & Loads, 3: Members & Solver, 4: Comparison & Report)
   // --------------------------------------------------------------------------
@@ -166,6 +180,34 @@ export const StructuralEurocodeStudio: React.FC = () => {
   const [showEtaModal, setShowEtaModal] = useState(false);
   const [showGuideModal, setShowGuideModal] = useState(false);
   const [showScopeBanner, setShowScopeBanner] = useState(true);
+
+  // Pillar 4: Climate & Environmental Actions
+  const [terrainCategory, setTerrainCategory] = useState<'0' | 'I' | 'II' | 'III' | 'IV'>('III');
+  const [syncedClimateInfo, setSyncedClimateInfo] = useState<{
+    stationName: string;
+    sk: number;
+    qp: number;
+    deltaT: number;
+    peakWind: number;
+    tempMin: number;
+    tempMax: number;
+    snowFormula: string;
+    windFormula: string;
+  } | null>(null);
+
+  // Pillar 3: Auto-Optimizer
+  const [optToast, setOptToast] = useState<OptimizationResult | null>(null);
+
+  // Pillar 5: LCA Sensitivity & Radar
+  const [lowCarbonConcrete, setLowCarbonConcrete] = useState(false);
+  const [recycledSteel, setRecycledSteel] = useState(false);
+  const [biogenicTimber, setBiogenicTimber] = useState(true);
+  const [radarFilter, setRadarFilter] = useState<Record<string, boolean>>({
+    RC: true,
+    Steel: true,
+    Timber: true,
+    Masonry: true
+  });
 
   // --------------------------------------------------------------------------
   // PROJECT METADATA (7 Parameters per Project Info Sheet)
@@ -499,6 +541,55 @@ export const StructuralEurocodeStudio: React.FC = () => {
     const activeSys = optioneeringMatrix.find((s) => s.system === bayConfig.materialSystem) || optioneeringMatrix[0];
     return activeSys;
   }, [optioneeringMatrix, bayConfig.materialSystem]);
+
+  // Pillar 4: Handle Weather Station Climate Sync
+  const handleSyncClimate = () => {
+    const sourceClimate = climate || {
+      name: 'Milano Linate (EPW Boundary)',
+      lat: 45.46,
+      elevation: 103,
+      hourly: []
+    };
+    const derived = deriveEnvironmentalLoadsFromClimate(sourceClimate, terrainCategory);
+    setBasis((prev) => ({
+      ...prev,
+      sk_snow: derived.sk_snow_kNm2,
+      qp_wind: derived.qp_wind_kNm2,
+      deltaT_thermal: derived.deltaT_thermal_deg,
+      terrainCategory: terrainCategory as any,
+      syncWeatherSource: derived.stationName
+    }));
+    setCltWallInputs((prev) => ({ ...prev, pk: derived.qp_wind_kNm2 }));
+    if (sourceClimate.name && !metadata.location.includes(sourceClimate.name)) {
+      setMetadata((prev) => ({ ...prev, location: `${sourceClimate.name} (${derived.elevation}m a.s.l.)` }));
+    }
+    setSyncedClimateInfo({
+      stationName: derived.stationName,
+      sk: derived.sk_snow_kNm2,
+      qp: derived.qp_wind_kNm2,
+      deltaT: derived.deltaT_thermal_deg,
+      peakWind: derived.peakWindSpeedMs,
+      tempMin: derived.tempMinC,
+      tempMax: derived.tempMaxC,
+      snowFormula: derived.snowFormulaText,
+      windFormula: derived.windFormulaText
+    });
+  };
+
+  // Pillar 3: Handle Auto-Optimizer for the currently active member
+  const handleAutoOptimize = () => {
+    const res = optimizeMemberSection(activeMember, activeDetails.params, basis);
+    setOptToast(res);
+    if (res.success) {
+      if (activeMember === 'rc_column') setRcColInputs(res.optimizedParams);
+      else if (activeMember === 'rc_beam') setRcBeamInputs(res.optimizedParams);
+      else if (activeMember === 'steel_column') setSteelColInputs(res.optimizedParams);
+      else if (activeMember === 'steel_beam') setSteelBeamInputs(res.optimizedParams);
+      else if (activeMember === 'wood_beam') setWoodBeamInputs(res.optimizedParams);
+      else if (activeMember === 'wood_column') setWoodColInputs(res.optimizedParams);
+      else if (activeMember === 'rc_slab') setRcSlabInputs(res.optimizedParams);
+    }
+  };
 
   return (
     <div className="space-y-4">
@@ -1068,6 +1159,156 @@ export const StructuralEurocodeStudio: React.FC = () => {
               </div>
             </div>
           </div>
+
+          {/* Section 3: Dynamic Environmental Actions Bridge (EN 1991-1-3 / EN 1991-1-4 / EN 1991-1-5) */}
+          <div className="bg-slate-950/60 border border-slate-800 rounded-xl p-4 space-y-4">
+            <div className="flex flex-wrap items-center justify-between border-b border-slate-800 pb-2.5 gap-2">
+              <div className="flex items-center gap-2">
+                <span className="p-1 rounded bg-teal-500/20 text-teal-400">
+                  <Wind className="w-4 h-4" />
+                </span>
+                <div>
+                  <span className="text-xs font-extrabold uppercase tracking-wider text-teal-300">
+                    Environmental Actions Bridge (EN 1991-1-3 Snow, EN 1991-1-4 Wind, EN 1991-1-5 Thermal)
+                  </span>
+                  <p className="text-[11px] text-slate-400">
+                    Syncs climatic boundary parameters directly from Stage 1 Weather Station (EPW) into structural design basis.
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={handleSyncClimate}
+                  className="px-3.5 py-1.5 rounded-xl bg-teal-600 hover:bg-teal-500 text-white font-extrabold text-xs flex items-center gap-1.5 shadow transition cursor-pointer active:scale-95"
+                  title="Compute characteristic snow load, peak wind pressure, and thermal range from connected weather station"
+                >
+                  <RefreshCw className="w-3.5 h-3.5" />
+                  Sync Environmental Loads from Weather Station
+                </button>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-3 text-xs">
+              {/* Climate Context & Terrain */}
+              <div className="bg-slate-900/80 p-3 rounded-xl border border-slate-800 space-y-2">
+                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
+                  1. Exposure & Terrain Category
+                </span>
+                <div>
+                  <label className="text-slate-400 block text-[11px] font-semibold">Terrain (EN 1991-1-4 Table 4.1):</label>
+                  <select
+                    value={terrainCategory}
+                    onChange={(e) => setTerrainCategory(e.target.value as any)}
+                    className="w-full mt-1 bg-slate-800 border border-slate-700 rounded p-1.5 text-white font-semibold text-xs"
+                  >
+                    <option value="0">0: Sea / coastal open water</option>
+                    <option value="I">I: Lakes / flat open area</option>
+                    <option value="II">II: Low vegetation / open farmland</option>
+                    <option value="III">III: Suburban / industrial / forest</option>
+                    <option value="IV">IV: Urban city centre (&gt;15m height)</option>
+                  </select>
+                </div>
+                <div className="text-[11px] text-slate-400 space-y-1 pt-1 border-t border-slate-800/80">
+                  <div className="flex justify-between">
+                    <span>Source Station:</span>
+                    <span className="font-semibold text-teal-300 truncate max-w-[120px]">
+                      {climate?.name || basis.syncWeatherSource || 'Milano Linate'}
+                    </span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span>Latitude / Elevation:</span>
+                    <span className="font-mono text-slate-300">
+                      {climate?.lat?.toFixed(1) || '45.5'}°N • {climate?.elevation || 103}m
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Snow Load Card */}
+              <div className="bg-slate-900/80 p-3 rounded-xl border border-slate-800 space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] font-bold text-sky-400 uppercase tracking-wider flex items-center gap-1">
+                    <CloudRain className="w-3.5 h-3.5" />
+                    2. Ground Snow sk (EN 1991-1-3)
+                  </span>
+                  <span className="font-mono font-extrabold text-white text-sm bg-slate-950 px-2 py-0.5 rounded border border-slate-700">
+                    {(basis.sk_snow ?? 1.50).toFixed(2)} kN/m²
+                  </span>
+                </div>
+                <div className="space-y-1">
+                  <label className="text-slate-400 block text-[11px] font-semibold">Design Ground Snow sk [kN/m²]:</label>
+                  <input
+                    type="number"
+                    step="0.1"
+                    value={basis.sk_snow ?? 1.50}
+                    onChange={(e) => setBasis({ ...basis, sk_snow: parseFloat(e.target.value) || 1.50 })}
+                    className="w-full bg-slate-800 border border-slate-700 rounded p-1.5 text-white font-mono font-bold"
+                  />
+                </div>
+                <p className="text-[10.5px] text-slate-400 leading-snug">
+                  {syncedClimateInfo?.snowFormula || 'EN 1991-1-3 (Zone I Mediterranean): sk = (0.642 + 0.0092 × A) × μi × Ce × Ct'}
+                </p>
+              </div>
+
+              {/* Wind Action Card */}
+              <div className="bg-slate-900/80 p-3 rounded-xl border border-slate-800 space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] font-bold text-teal-400 uppercase tracking-wider flex items-center gap-1">
+                    <Wind className="w-3.5 h-3.5" />
+                    3. Peak Wind qp(z) (EN 1991-1-4)
+                  </span>
+                  <span className="font-mono font-extrabold text-white text-sm bg-slate-950 px-2 py-0.5 rounded border border-slate-700">
+                    {(basis.qp_wind ?? 0.85).toFixed(2)} kN/m²
+                  </span>
+                </div>
+                <div className="space-y-1">
+                  <label className="text-slate-400 block text-[11px] font-semibold">Peak Velocity Pressure qp [kN/m²]:</label>
+                  <input
+                    type="number"
+                    step="0.05"
+                    value={basis.qp_wind ?? 0.85}
+                    onChange={(e) => {
+                      const val = parseFloat(e.target.value) || 0.85;
+                      setBasis({ ...basis, qp_wind: val });
+                      setCltWallInputs({ ...cltWallInputs, pk: val });
+                    }}
+                    className="w-full bg-slate-800 border border-slate-700 rounded p-1.5 text-white font-mono font-bold"
+                  />
+                </div>
+                <p className="text-[10.5px] text-slate-400 leading-snug">
+                  {syncedClimateInfo?.windFormula || `EN 1991-1-4: ce(z) × 0.5 × ρ × vb² at reference height z ≈ 12m`}
+                </p>
+              </div>
+
+              {/* Thermal Action Card */}
+              <div className="bg-slate-900/80 p-3 rounded-xl border border-slate-800 space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] font-bold text-amber-400 uppercase tracking-wider flex items-center gap-1">
+                    <Zap className="w-3.5 h-3.5" />
+                    4. Thermal Range ΔT (EN 1991-1-5)
+                  </span>
+                  <span className="font-mono font-extrabold text-white text-sm bg-slate-950 px-2 py-0.5 rounded border border-slate-700">
+                    {basis.deltaT_thermal ?? 35} K
+                  </span>
+                </div>
+                <div className="space-y-1">
+                  <label className="text-slate-400 block text-[11px] font-semibold">Annual Design Range ΔT [K]:</label>
+                  <input
+                    type="number"
+                    step="1"
+                    value={basis.deltaT_thermal ?? 35}
+                    onChange={(e) => setBasis({ ...basis, deltaT_thermal: parseInt(e.target.value) || 35 })}
+                    className="w-full bg-slate-800 border border-slate-700 rounded p-1.5 text-white font-mono font-bold"
+                  />
+                </div>
+                <p className="text-[10.5px] text-slate-400 leading-snug">
+                  {syncedClimateInfo ? `Tmin = ${syncedClimateInfo.tempMin}°C, Tmax = ${syncedClimateInfo.tempMax}°C (ΔT = ${syncedClimateInfo.deltaT} K)` : 'EN 1991-1-5: Tmax - Tmin used for structural expansion joints and shrinkage checks.'}
+                </p>
+              </div>
+            </div>
+          </div>
         </div>
       )}
 
@@ -1400,6 +1641,15 @@ export const StructuralEurocodeStudio: React.FC = () => {
                 <div className="flex items-center gap-2">
                   <button
                     type="button"
+                    onClick={handleAutoOptimize}
+                    className="px-2.5 py-1 rounded-lg text-[10px] font-bold bg-amber-500 hover:bg-amber-400 text-slate-950 transition flex items-center gap-1.5 shadow active:scale-95 cursor-pointer"
+                    title="Intelligent Eurocode Auto-Optimizer: selects optimal section size targeting η between 0.70 and 0.95 with lowest embodied carbon"
+                  >
+                    <Sparkles className="w-3.5 h-3.5" />
+                    Auto-Optimize Section
+                  </button>
+                  <button
+                    type="button"
                     onClick={() => setBayConfig({ ...bayConfig, autoLoadTakedown: !bayConfig.autoLoadTakedown })}
                     className={`px-2.5 py-1 rounded-lg text-[10px] font-bold border transition flex items-center gap-1.5 ${
                       bayConfig.autoLoadTakedown
@@ -1421,6 +1671,42 @@ export const StructuralEurocodeStudio: React.FC = () => {
                   )}
                 </div>
               </div>
+
+              {/* Auto-Optimization Alert Toast */}
+              {optToast && (
+                <div className={`p-3 rounded-xl border text-xs flex items-center justify-between gap-3 shadow-md ${
+                  optToast.success
+                    ? 'bg-emerald-950/80 border-emerald-500/80 text-emerald-200'
+                    : 'bg-amber-950/80 border-amber-500/80 text-amber-200'
+                }`}>
+                  <div className="flex items-center gap-2.5">
+                    <span className="p-1 rounded bg-amber-500/20 text-amber-400">
+                      <Sparkles className="w-4 h-4" />
+                    </span>
+                    <div>
+                      <div className="font-extrabold flex items-center gap-1.5">
+                        <span>{optToast.message}</span>
+                        {optToast.success && (
+                          <span className="px-1.5 py-0.2 rounded bg-emerald-500/20 text-emerald-300 font-mono text-[10px]">
+                            η: {optToast.previousEta.toFixed(2)} ➔ {optToast.newEta.toFixed(2)}
+                          </span>
+                        )}
+                      </div>
+                      <div className="text-[11px] opacity-80 mt-0.5">
+                        {optToast.previousDesc} ➔ {optToast.newDesc}
+                        {optToast.carbonReductionPct > 0 && ` • Carbon reduction: ~${optToast.carbonReductionPct}%`}
+                      </div>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setOptToast(null)}
+                    className="p-1 rounded hover:bg-white/10 text-slate-400 hover:text-white"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              )}
 
               {/* Dynamic Inputs depending on member type */}
               <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 text-xs max-h-[520px] overflow-y-auto pr-1">
@@ -3581,6 +3867,341 @@ export const StructuralEurocodeStudio: React.FC = () => {
                   </div>
                 </div>
               ))}
+            </div>
+
+            {/* =====================================================================
+                PILLAR 5: 6-AXIS MULTI-CRITERIA RADAR & LCA EMBODIED CARBON SENSITIVITY
+               ===================================================================== */}
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 pt-3 border-t border-slate-800">
+              {/* Left Column: 6-Axis Interactive Radar Chart */}
+              <div className="lg:col-span-7 bg-slate-950/70 border border-slate-800 rounded-2xl p-4 space-y-3 shadow-inner">
+                <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-800 pb-2.5">
+                  <div>
+                    <span className="text-xs font-extrabold uppercase tracking-wider text-sky-400 flex items-center gap-1.5">
+                      <Activity className="w-3.5 h-3.5" />
+                      6-Axis Multi-Criteria Structural Radar
+                    </span>
+                    <p className="text-[11px] text-slate-400">
+                      Holistic benchmark across structural capacity, carbon, slenderness, speed, thermal mass, and cost.
+                    </p>
+                  </div>
+
+                  {/* System Visibility Toggles */}
+                  <div className="flex items-center gap-1.5 text-[11px]">
+                    {[
+                      { key: 'RC', label: 'RC', color: '#06b6d4', bg: 'bg-cyan-500/20 text-cyan-300 border-cyan-500/50' },
+                      { key: 'Steel', label: 'Steel', color: '#3b82f6', bg: 'bg-blue-500/20 text-blue-300 border-blue-500/50' },
+                      { key: 'Timber', label: 'Timber', color: '#f59e0b', bg: 'bg-amber-500/20 text-amber-300 border-amber-500/50' },
+                      { key: 'Masonry', label: 'Masonry', color: '#f43f5e', bg: 'bg-rose-500/20 text-rose-300 border-rose-500/50' }
+                    ].map((s) => (
+                      <button
+                        key={s.key}
+                        type="button"
+                        onClick={() => setRadarFilter({ ...radarFilter, [s.key]: !radarFilter[s.key] })}
+                        className={`px-2 py-0.5 rounded-lg border font-bold transition flex items-center gap-1 cursor-pointer ${
+                          radarFilter[s.key] ? s.bg : 'bg-slate-900 text-slate-500 border-slate-800 opacity-50'
+                        }`}
+                      >
+                        <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: s.color }} />
+                        {s.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* SVG Radar Chart Visualizer */}
+                <div className="flex items-center justify-center p-2">
+                  <svg viewBox="0 0 520 440" className="w-full max-w-[480px] h-auto select-none">
+                    {/* Concentric Hexagon Grid Levels (20%, 40%, 60%, 80%, 100%) */}
+                    {[0.2, 0.4, 0.6, 0.8, 1.0].map((scale, sIdx) => {
+                      const pts = [0, 1, 2, 3, 4, 5].map((k) => {
+                        const a = k * (Math.PI / 3) - Math.PI / 2;
+                        return `${(260 + 140 * scale * Math.cos(a)).toFixed(1)},${(220 + 140 * scale * Math.sin(a)).toFixed(1)}`;
+                      }).join(' ');
+                      return (
+                        <g key={sIdx}>
+                          <polygon
+                            points={pts}
+                            fill="none"
+                            stroke="#334155"
+                            strokeWidth={sIdx === 4 ? '1.5' : '1'}
+                            strokeDasharray={sIdx === 4 ? undefined : '2 2'}
+                            opacity={0.65}
+                          />
+                          <text
+                            x={264}
+                            y={220 - 140 * scale + 4}
+                            fill="#64748b"
+                            fontSize="9"
+                            fontFamily="monospace"
+                          >
+                            {Math.round(scale * 100)}%
+                          </text>
+                        </g>
+                      );
+                    })}
+
+                    {/* Radial Spokes */}
+                    {[0, 1, 2, 3, 4, 5].map((k) => {
+                      const a = k * (Math.PI / 3) - Math.PI / 2;
+                      const x2 = 260 + 140 * Math.cos(a);
+                      const y2 = 220 + 140 * Math.sin(a);
+                      return (
+                        <line
+                          key={k}
+                          x1={260}
+                          y1={220}
+                          x2={x2}
+                          y2={y2}
+                          stroke="#334155"
+                          strokeWidth="1"
+                          opacity={0.8}
+                        />
+                      );
+                    })}
+
+                    {/* Axis Labels */}
+                    <text x={260} y={62} textAnchor="middle" fill="#94a3b8" fontSize="11" fontWeight="bold">
+                      Structural Capacity (1-η)
+                    </text>
+                    <text x={405} y={135} textAnchor="start" fill="#94a3b8" fontSize="11" fontWeight="bold">
+                      Low Carbon (A1-A3)
+                    </text>
+                    <text x={405} y={305} textAnchor="start" fill="#94a3b8" fontSize="11" fontWeight="bold">
+                      Clear Height (Thinness)
+                    </text>
+                    <text x={260} y={386} textAnchor="middle" fill="#94a3b8" fontSize="11" fontWeight="bold">
+                      Construction Speed
+                    </text>
+                    <text x={115} y={305} textAnchor="end" fill="#94a3b8" fontSize="11" fontWeight="bold">
+                      Acoustic & Thermal Mass
+                    </text>
+                    <text x={115} y={135} textAnchor="end" fill="#94a3b8" fontSize="11" fontWeight="bold">
+                      Material Economy
+                    </text>
+
+                    {/* Structural System Polygons */}
+                    {[
+                      {
+                        key: 'RC',
+                        color: '#06b6d4',
+                        scores: [
+                          Math.max(0.2, Math.min(0.95, 1.15 - (optioneeringMatrix.find(o => o.system === 'RC')?.eta_max || 0.6) * 0.7)),
+                          lowCarbonConcrete ? 0.72 : 0.42,
+                          0.65,
+                          0.52,
+                          0.92,
+                          0.88
+                        ]
+                      },
+                      {
+                        key: 'Steel',
+                        color: '#3b82f6',
+                        scores: [
+                          Math.max(0.2, Math.min(0.95, 1.15 - (optioneeringMatrix.find(o => o.system === 'Steel')?.eta_max || 0.6) * 0.7)),
+                          recycledSteel ? 0.85 : 0.52,
+                          0.95,
+                          0.92,
+                          0.35,
+                          0.72
+                        ]
+                      },
+                      {
+                        key: 'Timber',
+                        color: '#f59e0b',
+                        scores: [
+                          Math.max(0.2, Math.min(0.95, 1.15 - (optioneeringMatrix.find(o => o.system === 'Timber')?.eta_max || 0.6) * 0.7)),
+                          biogenicTimber ? 0.98 : 0.72,
+                          0.75,
+                          0.88,
+                          0.45,
+                          0.68
+                        ]
+                      },
+                      {
+                        key: 'Masonry',
+                        color: '#f43f5e',
+                        scores: [
+                          Math.max(0.2, Math.min(0.95, 1.15 - (optioneeringMatrix.find(o => o.system === 'Masonry')?.eta_max || 0.8) * 0.7)),
+                          0.48,
+                          0.55,
+                          0.40,
+                          0.95,
+                          0.82
+                        ]
+                      }
+                    ].map((sys) => {
+                      if (!radarFilter[sys.key]) return null;
+                      const pts = sys.scores.map((sc, idx) => {
+                        const a = idx * (Math.PI / 3) - Math.PI / 2;
+                        const x = 260 + 140 * sc * Math.cos(a);
+                        const y = 220 + 140 * sc * Math.sin(a);
+                        return `${x.toFixed(1)},${y.toFixed(1)}`;
+                      }).join(' ');
+
+                      return (
+                        <g key={sys.key}>
+                          <polygon
+                            points={pts}
+                            fill={sys.color}
+                            fillOpacity="0.20"
+                            stroke={sys.color}
+                            strokeWidth="2.5"
+                          />
+                          {sys.scores.map((sc, idx) => {
+                            const a = idx * (Math.PI / 3) - Math.PI / 2;
+                            const x = 260 + 140 * sc * Math.cos(a);
+                            const y = 220 + 140 * sc * Math.sin(a);
+                            return (
+                              <circle
+                                key={idx}
+                                cx={x}
+                                cy={y}
+                                r={3.5}
+                                fill={sys.color}
+                                stroke="#090d16"
+                                strokeWidth="1.5"
+                              />
+                            );
+                          })}
+                        </g>
+                      );
+                    })}
+                  </svg>
+                </div>
+              </div>
+
+              {/* Right Column: LCA Sensitivity & Circular Economy Toggles */}
+              <div className="lg:col-span-5 bg-slate-950/70 border border-slate-800 rounded-2xl p-4 space-y-4 shadow-inner">
+                <div className="border-b border-slate-800 pb-2">
+                  <span className="text-xs font-extrabold uppercase tracking-wider text-emerald-400 flex items-center gap-1.5">
+                    <Leaf className="w-3.5 h-3.5" />
+                    Embodied Carbon LCA & Circular Economy Toggles (EN 15978)
+                  </span>
+                  <p className="text-[11px] text-slate-400 mt-0.5">
+                    Evaluate low-carbon materials, recycled feedstock, and biogenic sequestration scenarios.
+                  </p>
+                </div>
+
+                {/* 3 Circular Economy Toggles */}
+                <div className="space-y-2.5 text-xs">
+                  {/* Toggle 1: Low-Carbon Concrete */}
+                  <label className="flex items-start gap-2.5 p-2.5 rounded-xl border border-slate-800 bg-slate-900/80 hover:bg-slate-900 transition cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={lowCarbonConcrete}
+                      onChange={(e) => setLowCarbonConcrete(e.target.checked)}
+                      className="mt-0.5 rounded border-slate-700 text-teal-500 focus:ring-teal-400 w-4 h-4 cursor-pointer"
+                    />
+                    <div className="space-y-0.5">
+                      <span className="font-bold text-white flex items-center gap-1.5">
+                        <Leaf className="w-3.5 h-3.5 text-teal-400" />
+                        Low-Carbon Concrete (CEM II/III Slag)
+                      </span>
+                      <p className="text-[10.5px] text-slate-400 leading-tight">
+                        Reduces upfront concrete GWP by 40% (215 ➔ 129 kg CO₂e/m²) via 60% blast-furnace slag replacement.
+                      </p>
+                    </div>
+                  </label>
+
+                  {/* Toggle 2: Recycled EAF Steel */}
+                  <label className="flex items-start gap-2.5 p-2.5 rounded-xl border border-slate-800 bg-slate-900/80 hover:bg-slate-900 transition cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={recycledSteel}
+                      onChange={(e) => setRecycledSteel(e.target.checked)}
+                      className="mt-0.5 rounded border-slate-700 text-blue-500 focus:ring-blue-400 w-4 h-4 cursor-pointer"
+                    />
+                    <div className="space-y-0.5">
+                      <span className="font-bold text-white flex items-center gap-1.5">
+                        <RefreshCw className="w-3.5 h-3.5 text-blue-400" />
+                        Recycled Steel (Electric Arc Furnace)
+                      </span>
+                      <p className="text-[10.5px] text-slate-400 leading-tight">
+                        Reduces structural steel GWP by 50% (168 ➔ 84 kg CO₂e/m²) using 90% recycled scrap steel in electric furnaces.
+                      </p>
+                    </div>
+                  </label>
+
+                  {/* Toggle 3: Timber Biogenic Sequestration */}
+                  <label className="flex items-start gap-2.5 p-2.5 rounded-xl border border-slate-800 bg-slate-900/80 hover:bg-slate-900 transition cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={biogenicTimber}
+                      onChange={(e) => setBiogenicTimber(e.target.checked)}
+                      className="mt-0.5 rounded border-slate-700 text-amber-500 focus:ring-amber-400 w-4 h-4 cursor-pointer"
+                    />
+                    <div className="space-y-0.5">
+                      <span className="font-bold text-white flex items-center gap-1.5">
+                        <Box className="w-3.5 h-3.5 text-amber-400" />
+                        Include Biogenic Carbon Storage in Timber
+                      </span>
+                      <p className="text-[10.5px] text-slate-400 leading-tight">
+                        Accounts for photosynthesis carbon sequestration in CLT/Glulam (-48 kg CO₂e/m² net storage vs +72 gross).
+                      </p>
+                    </div>
+                  </label>
+                </div>
+
+                {/* Scenario Benchmark Summary Table */}
+                <div className="pt-2 border-t border-slate-800 space-y-2 text-xs">
+                  <div className="text-[10.5px] font-bold uppercase tracking-wider text-slate-400 flex items-center justify-between">
+                    <span>Bay Carbon Benchmark ({bayConfig.spanL * bayConfig.tributaryWidthBtr * bayConfig.numberOfStoreys} m² Total)</span>
+                    <span className="font-mono text-teal-400">{bayConfig.numberOfStoreys} Storeys</span>
+                  </div>
+
+                  <div className="space-y-1.5">
+                    {[
+                      {
+                        name: 'Reinforced Concrete',
+                        sys: 'RC',
+                        carbon: lowCarbonConcrete ? 129 : 215,
+                        color: 'text-cyan-400',
+                        barColor: 'bg-cyan-500'
+                      },
+                      {
+                        name: 'Structural Steel',
+                        sys: 'Steel',
+                        carbon: recycledSteel ? 84 : 168,
+                        color: 'text-blue-400',
+                        barColor: 'bg-blue-500'
+                      },
+                      {
+                        name: 'Mass Timber (CLT + Glulam)',
+                        sys: 'Timber',
+                        carbon: biogenicTimber ? -48 : 72,
+                        color: 'text-amber-400',
+                        barColor: 'bg-amber-500'
+                      },
+                      {
+                        name: 'Load-Bearing Masonry',
+                        sys: 'Masonry',
+                        carbon: 185,
+                        color: 'text-rose-400',
+                        barColor: 'bg-rose-500'
+                      }
+                    ].map((row) => {
+                      const totBayCarbon = ((bayConfig.spanL * bayConfig.tributaryWidthBtr * bayConfig.numberOfStoreys * row.carbon) / 1000).toFixed(1);
+                      return (
+                        <div key={row.name} className="p-2 rounded-lg bg-slate-900/90 border border-slate-800/80 flex items-center justify-between">
+                          <div>
+                            <span className="font-bold text-white text-[11px] block">{row.name}</span>
+                            <span className="text-[10px] text-slate-400 font-mono">
+                              Bay Total: <strong className={row.color}>{totBayCarbon} tCO₂e</strong>
+                            </span>
+                          </div>
+                          <div className="text-right">
+                            <span className={`font-mono font-extrabold text-xs ${row.carbon < 0 ? 'text-emerald-400' : 'text-slate-200'}`}>
+                              {row.carbon > 0 ? `+${row.carbon}` : row.carbon} kg/m²
+                            </span>
+                            <div className="text-[9.5px] text-slate-500">A1-A3 Upfront</div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
         </div>

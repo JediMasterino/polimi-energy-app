@@ -11,7 +11,10 @@ import {
   Box,
   Layers,
   ArrowDown,
-  ArrowRight
+  ArrowRight,
+  TrendingDown,
+  Activity,
+  Footprints
 } from 'lucide-react';
 import { StructuralBayConfig } from '../utils/eurocodeCalculators';
 
@@ -122,6 +125,9 @@ export const StructuralBay3DViewer: React.FC<StructuralBay3DViewerProps> = ({
   const [showLoads, setShowLoads] = useState(true);
   const [showDimensions, setShowDimensions] = useState(true);
   const [wireframe, setWireframe] = useState(false);
+  const [showStoreyGradient, setShowStoreyGradient] = useState(true);
+  const [showFootings, setShowFootings] = useState(true);
+  const [diagramMode, setDiagramMode] = useState<'none' | 'moment' | 'shear'>('none');
 
   // Keep refs for callback stability in event listeners
   const onSelectMemberRef = useRef(onSelectMember);
@@ -220,6 +226,43 @@ export const StructuralBay3DViewer: React.FC<StructuralBay3DViewerProps> = ({
     else if (config.materialSystem === 'Timber') baseMatColor = 0xd97706;
     else if (config.materialSystem === 'Masonry') baseMatColor = 0xb45309;
 
+    // Foundation Pad Footings (at ground level Y = 0)
+    if (showFootings) {
+      const footingPadSize = Math.max(1.0, Math.min(2.4, 0.8 + 0.12 * Math.sqrt(nFloors * (L * B))));
+      const footingPadHeight = 0.45;
+      const footingGeo = new THREE.BoxGeometry(footingPadSize, footingPadHeight, footingPadSize);
+      const footingMat = new THREE.MeshStandardMaterial({
+        color: 0x475569, // slate-600 concrete
+        roughness: 0.9,
+        metalness: 0.1
+      });
+
+      if (config.materialSystem === 'Masonry') {
+        const stripGeo = new THREE.BoxGeometry(L + 0.4, footingPadHeight, 0.6);
+        [[L / 2, 0], [L / 2, B]].forEach(([fx, fz]) => {
+          const footingMesh = new THREE.Mesh(stripGeo, footingMat);
+          footingMesh.position.set(fx, -footingPadHeight / 2, fz);
+          footingMesh.receiveShadow = true;
+          footingMesh.castShadow = true;
+          scene.add(footingMesh);
+        });
+      } else {
+        const colPositions = [
+          [0, 0],
+          [L, 0],
+          [0, B],
+          [L, B]
+        ];
+        colPositions.forEach(([fx, fz]) => {
+          const footingMesh = new THREE.Mesh(footingGeo, footingMat);
+          footingMesh.position.set(fx, -footingPadHeight / 2, fz);
+          footingMesh.receiveShadow = true;
+          footingMesh.castShadow = true;
+          scene.add(footingMesh);
+        });
+      }
+    }
+
     // Build storeys
     for (let fl = 0; fl < nFloors; fl++) {
       const baseY = fl * H;
@@ -231,8 +274,12 @@ export const StructuralBay3DViewer: React.FC<StructuralBay3DViewerProps> = ({
         const wallGeo = new THREE.BoxGeometry(L, H, 0.25);
         const wallRes = memberUtilisations['masonry_wall'];
         const wallEta = wallRes?.eta_max || 0.85;
+        const storeyLoadRatio = (showStoreyGradient && nFloors > 1) ? (nFloors - fl) / nFloors : 1.0;
+        const wallEtaFloor = wallEta * storeyLoadRatio;
+        const wallColor = getEtaColorHex(wallEtaFloor, fl === 0 ? wallRes?.status : (wallEtaFloor > 1.0 ? 'EXCEEDS SCREEN' : 'OK'));
+
         const wallMat = new THREE.MeshStandardMaterial({
-          color: getEtaColorHex(wallEta, wallRes?.status),
+          color: wallColor,
           wireframe,
           roughness: 0.85,
           metalness: 0.1
@@ -243,7 +290,7 @@ export const StructuralBay3DViewer: React.FC<StructuralBay3DViewerProps> = ({
         wallFront.position.set(L / 2, baseY + H / 2, 0);
         wallFront.castShadow = true;
         wallFront.receiveShadow = true;
-        wallFront.userData = { id: 'masonry_wall', name: 'Masonry Wall Strip (250mm)', eta: wallEta };
+        wallFront.userData = { id: 'masonry_wall', name: 'Masonry Wall Strip (250mm)', eta: wallEtaFloor };
         attachActiveHighlight(wallFront, wallGeo, 'masonry_wall');
         scene.add(wallFront);
 
@@ -252,7 +299,7 @@ export const StructuralBay3DViewer: React.FC<StructuralBay3DViewerProps> = ({
         wallBack.position.set(L / 2, baseY + H / 2, B);
         wallBack.castShadow = true;
         wallBack.receiveShadow = true;
-        wallBack.userData = { id: 'masonry_wall', name: 'Masonry Wall Strip (250mm)', eta: wallEta };
+        wallBack.userData = { id: 'masonry_wall', name: 'Masonry Wall Strip (250mm)', eta: wallEtaFloor };
         attachActiveHighlight(wallBack, wallGeo, 'masonry_wall');
         scene.add(wallBack);
       } else {
@@ -267,7 +314,9 @@ export const StructuralBay3DViewer: React.FC<StructuralBay3DViewerProps> = ({
         const colId = config.materialSystem === 'RC' ? 'rc_column' : config.materialSystem === 'Steel' ? 'steel_column' : 'wood_column';
         const colRes = memberUtilisations[colId];
         const colEta = colRes?.eta_max || 0.35;
-        const colColor = getEtaColorHex(colEta, colRes?.status);
+        const storeyLoadRatio = (showStoreyGradient && nFloors > 1) ? (nFloors - fl) / nFloors : 1.0;
+        const colEtaFloor = colEta * storeyLoadRatio;
+        const colColor = getEtaColorHex(colEtaFloor, fl === 0 ? colRes?.status : (colEtaFloor > 1.0 ? 'EXCEEDS SCREEN' : 'OK'));
 
         const colGeo = new THREE.BoxGeometry(colSize, H, colSize);
         const colMat = new THREE.MeshStandardMaterial({
@@ -282,7 +331,7 @@ export const StructuralBay3DViewer: React.FC<StructuralBay3DViewerProps> = ({
           colMesh.position.set(cx, baseY + H / 2, cz);
           colMesh.castShadow = true;
           colMesh.receiveShadow = true;
-          colMesh.userData = { id: colId, name: `${config.materialSystem} Column`, eta: colEta };
+          colMesh.userData = { id: colId, name: `${config.materialSystem} Column`, eta: colEtaFloor };
           attachActiveHighlight(colMesh, colGeo, colId);
           scene.add(colMesh);
         });
@@ -319,6 +368,107 @@ export const StructuralBay3DViewer: React.FC<StructuralBay3DViewerProps> = ({
       b2.userData = { id: beamId, name: `Primary Beam (Span ${L}m)`, eta: beamEta };
       attachActiveHighlight(b2, pBeamGeo, beamId);
       scene.add(b2);
+
+      // Internal Force Overlays (Bending Moment M_Ed or Shear Force V_Ed)
+      if (diagramMode !== 'none') {
+        const segments = 24;
+        const beamY = topY - bHeight / 2;
+        [0, B].forEach((bz) => {
+          if (diagramMode === 'moment') {
+            const maxDrop = Math.min(1.2, L * 0.12);
+            const geom = new THREE.BufferGeometry();
+            const positions: number[] = [];
+            const colors: number[] = [];
+            for (let i = 0; i < segments; i++) {
+              const x1 = (i / segments) * L;
+              const x2 = ((i + 1) / segments) * L;
+              const m1 = 4 * maxDrop * (x1 / L) * (1 - x1 / L);
+              const m2 = 4 * maxDrop * (x2 / L) * (1 - x2 / L);
+
+              positions.push(
+                x1, beamY, bz,
+                x1, beamY - m1, bz,
+                x2, beamY - m2, bz,
+
+                x1, beamY, bz,
+                x2, beamY - m2, bz,
+                x2, beamY, bz
+              );
+
+              const c1 = new THREE.Color().setHSL(0.55 - (m1 / maxDrop) * 0.45, 0.95, 0.5);
+              const c2 = new THREE.Color().setHSL(0.55 - (m2 / maxDrop) * 0.45, 0.95, 0.5);
+
+              colors.push(
+                0.2, 0.8, 0.9,
+                c1.r, c1.g, c1.b,
+                c2.r, c2.g, c2.b,
+
+                0.2, 0.8, 0.9,
+                c2.r, c2.g, c2.b,
+                0.2, 0.8, 0.9
+              );
+            }
+            geom.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+            geom.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+            const ribbonMat = new THREE.MeshBasicMaterial({
+              vertexColors: true,
+              side: THREE.DoubleSide,
+              transparent: true,
+              opacity: 0.75
+            });
+            scene.add(new THREE.Mesh(geom, ribbonMat));
+
+            // Parabolic contour line
+            const linePts: THREE.Vector3[] = [];
+            for (let i = 0; i <= segments; i++) {
+              const x = (i / segments) * L;
+              const m = 4 * maxDrop * (x / L) * (1 - x / L);
+              linePts.push(new THREE.Vector3(x, beamY - m, bz));
+            }
+            const lineGeo = new THREE.BufferGeometry().setFromPoints(linePts);
+            const lineMat = new THREE.LineBasicMaterial({ color: 0xf59e0b, linewidth: 2 });
+            scene.add(new THREE.Line(lineGeo, lineMat));
+          } else if (diagramMode === 'shear') {
+            const maxV = Math.min(0.9, L * 0.09);
+            const geom = new THREE.BufferGeometry();
+            const positions: number[] = [];
+            const colors: number[] = [];
+            for (let i = 0; i < segments; i++) {
+              const x1 = (i / segments) * L;
+              const x2 = ((i + 1) / segments) * L;
+              const v1 = maxV * (1 - (2 * x1) / L);
+              const v2 = maxV * (1 - (2 * x2) / L);
+
+              positions.push(
+                x1, beamY, bz,
+                x1, beamY + v1, bz,
+                x2, beamY + v2, bz,
+
+                x1, beamY, bz,
+                x2, beamY + v2, bz,
+                x2, beamY, bz
+              );
+
+              const col1 = v1 >= 0 ? [0.2, 0.8, 0.4] : [0.9, 0.3, 0.3];
+              const col2 = v2 >= 0 ? [0.2, 0.8, 0.4] : [0.9, 0.3, 0.3];
+
+              colors.push(
+                0.3, 0.5, 0.6, col1[0], col1[1], col1[2], col2[0], col2[1], col2[2],
+                0.3, 0.5, 0.6, col2[0], col2[1], col2[2], 0.3, 0.5, 0.6
+              );
+            }
+            geom.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+            geom.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+            const ribbonMat = new THREE.MeshBasicMaterial({
+              vertexColors: true,
+              side: THREE.DoubleSide,
+              transparent: true,
+              opacity: 0.7
+            });
+            scene.add(new THREE.Mesh(geom, ribbonMat));
+          }
+        });
+      }
 
       // Transverse Edge Beams along Z at X = 0 and X = L
       const secBeamGeo = new THREE.BoxGeometry(bWidth, bHeight, B);
@@ -481,7 +631,7 @@ export const StructuralBay3DViewer: React.FC<StructuralBay3DViewerProps> = ({
         container.removeChild(container.firstChild);
       }
     };
-  }, [config, memberUtilisations, wireframe, showLoads, showDimensions, activeMember]);
+  }, [config, memberUtilisations, wireframe, showLoads, showDimensions, activeMember, showStoreyGradient, showFootings, diagramMode]);
 
   const currentEta = memberUtilisations[activeMember]?.eta_max || 0.45;
 
@@ -550,7 +700,46 @@ export const StructuralBay3DViewer: React.FC<StructuralBay3DViewerProps> = ({
       </div>
 
       {/* Top Right Quick Toggles */}
-      <div className="absolute top-3 right-3 z-10 flex items-center gap-1.5">
+      <div className="absolute top-3 right-3 z-10 flex flex-wrap items-center justify-end gap-1.5 max-w-[50%]">
+        <button
+          type="button"
+          onClick={() => setShowStoreyGradient((v) => !v)}
+          className={`px-2.5 py-1 rounded-lg text-xs font-bold transition flex items-center gap-1 border ${
+            showStoreyGradient
+              ? 'bg-emerald-600/30 text-emerald-300 border-emerald-500/50'
+              : 'bg-slate-900/80 text-slate-400 border-slate-700'
+          }`}
+          title="Toggle multi-storey axial stress gradient (lighter load on upper floors, cumulative at ground)"
+        >
+          <TrendingDown className="w-3.5 h-3.5" />
+          Storey Gradient
+        </button>
+        <button
+          type="button"
+          onClick={() => setDiagramMode((m) => (m === 'none' ? 'moment' : m === 'moment' ? 'shear' : 'none'))}
+          className={`px-2.5 py-1 rounded-lg text-xs font-bold transition flex items-center gap-1 border ${
+            diagramMode !== 'none'
+              ? 'bg-amber-600/30 text-amber-300 border-amber-500/50'
+              : 'bg-slate-900/80 text-slate-400 border-slate-700'
+          }`}
+          title="Toggle internal force diagram overlays along primary beams (Moment M_Ed, Shear V_Ed, or Off)"
+        >
+          <Activity className="w-3.5 h-3.5" />
+          {diagramMode === 'none' ? 'Diagrams: Off' : diagramMode === 'moment' ? 'M(x) Moment' : 'V(x) Shear'}
+        </button>
+        <button
+          type="button"
+          onClick={() => setShowFootings((v) => !v)}
+          className={`px-2.5 py-1 rounded-lg text-xs font-bold transition flex items-center gap-1 border ${
+            showFootings
+              ? 'bg-teal-600/30 text-teal-300 border-teal-500/50'
+              : 'bg-slate-900/80 text-slate-400 border-slate-700'
+          }`}
+          title="Toggle concrete pad footings at column bases"
+        >
+          <Footprints className="w-3.5 h-3.5" />
+          Footings
+        </button>
         <button
           type="button"
           onClick={() => setShowLoads((v) => !v)}

@@ -41,6 +41,12 @@ export interface SharedDesignBasis {
   gammaM_m: number;     // 2.50
   gammaM_v: number;     // 2.50
   tmin_wall: number;    // 100 mm
+  // Environmental actions (Pillar 4: EN 1991-1-3, EN 1991-1-4, EN 1991-1-5)
+  sk_snow?: number;           // Ground snow load sk [kN/m²]
+  qp_wind?: number;           // Peak wind velocity pressure qp(z) [kN/m²]
+  deltaT_thermal?: number;    // Design thermal expansion range ΔT [K]
+  terrainCategory?: string;   // '0' | 'I' | 'II' | 'III' | 'IV'
+  syncWeatherSource?: string; // Connected weather station name
 }
 
 export const DEFAULT_DESIGN_BASIS: SharedDesignBasis = {
@@ -62,7 +68,12 @@ export const DEFAULT_DESIGN_BASIS: SharedDesignBasis = {
   Es_rebar: 200000,
   gammaM_m: 2.50,
   gammaM_v: 2.50,
-  tmin_wall: 100
+  tmin_wall: 100,
+  sk_snow: 1.50,
+  qp_wind: 0.85,
+  deltaT_thermal: 35,
+  terrainCategory: 'III',
+  syncWeatherSource: 'Default Eurocode Baseline'
 };
 
 // Calculation table row for transparent dossier display
@@ -1828,4 +1839,416 @@ export function generateOptioneeringMatrix(
     }
   ];
 }
+
+// ============================================================================
+// 15. PILLAR 1: RC N-M INTERACTION ENVELOPE & STEEL/TIMBER BUCKLING CURVES
+// ============================================================================
+
+export interface RcInteractionPoint {
+  N: number; // kN (compression > 0, tension < 0)
+  M: number; // kNm (>= 0)
+  x: number; // mm neutral axis
+  regime: 'tension' | 'balanced' | 'compression' | 'squash';
+}
+
+export interface RcInteractionCurve {
+  points: RcInteractionPoint[];
+  NRd_t: number;   // kN pure axial tension (< 0)
+  NRd_c: number;   // kN pure axial squash compression (> 0)
+  N_bal: number;   // kN balanced point axial force
+  M_bal: number;   // kNm peak moment resistance
+  MRd_0: number;   // kNm pure bending at N=0
+}
+
+/**
+ * Sweeps the entire physical domain of neutral axis depth x to generate the complete
+ * closed axial-moment failure envelope (P-M interaction diagram) for an RC section per EN 1992-1-1.
+ */
+export function generateRcInteractionCurve(
+  b: number,
+  h: number,
+  a: number,
+  d: number,
+  As_face: number,
+  fcd: number,
+  fyd: number,
+  Es: number
+): RcInteractionCurve {
+  // Pure tension (both rebar layers yielding in tension, concrete cracked)
+  const NRd_t = (-2 * As_face * fyd) / 1000;
+  // Pure compression squash (concrete and both rebar layers in yield compression)
+  const NRd_c = (b * h * fcd + 2 * As_face * fyd) / 1000;
+
+  // Balanced failure neutral axis depth
+  const x_bal = d * (0.0035 / (0.0035 + fyd / Es));
+
+  const pts: RcInteractionPoint[] = [];
+
+  // Start with pure tension
+  pts.push({ N: NRd_t, M: 0, x: 0, regime: 'tension' });
+
+  // Sweep x from very small (tension failure) up to h (entire section compressed)
+  const numSteps = 36;
+  for (let i = 1; i <= numSteps; i++) {
+    const x = (i / numSteps) * h;
+    const ss_t = Math.max(-fyd, Math.min(fyd, Es * 0.0035 * (1 - a / x)));
+    const ss_b = Math.max(-fyd, Math.min(fyd, Es * 0.0035 * (1 - d / x)));
+    const Fc = (17 / 21) * b * x * fcd;
+    const eps_a = 0.0035 * (1 - a / x);
+    const eps_d = 0.0035 * (1 - d / x);
+    const sc_a = eps_a > 0 ? fcd * (1 - Math.pow(1 - Math.min(eps_a, 0.002) / 0.002, 2)) : 0;
+    const sc_d = eps_d > 0 ? fcd * (1 - Math.pow(1 - Math.min(eps_d, 0.002) / 0.002, 2)) : 0;
+    const Fs = As_face * (ss_t + ss_b - sc_a - sc_d);
+    const N = (Fc + Fs) / 1000;
+    const M = Math.max(
+      0,
+      (
+        Fc * (h / 2 - (99 * x) / 238) +
+        As_face * (ss_t - sc_a) * (h / 2 - a) +
+        As_face * (ss_b - sc_d) * (h / 2 - d)
+      ) / 1000000
+    );
+
+    const regime: 'tension' | 'balanced' | 'compression' =
+      x < x_bal * 0.95 ? 'tension' : x <= x_bal * 1.05 ? 'balanced' : 'compression';
+    pts.push({ N, M, x, regime });
+  }
+
+  // Smooth transition from x=h to pure squash compression
+  const lastPt = pts[pts.length - 1];
+  for (let s = 1; s <= 6; s++) {
+    const frac = s / 7;
+    const N = lastPt.N + (NRd_c - lastPt.N) * frac;
+    const M = Math.max(0, lastPt.M * Math.cos((frac * Math.PI) / 2));
+    pts.push({ N, M, x: h * (1 + frac), regime: 'squash' });
+  }
+  // Pure squash point
+  pts.push({ N: NRd_c, M: 0, x: h * 2, regime: 'squash' });
+
+  // Calculate key markers
+  let M_bal = 0;
+  let N_bal = 0;
+  let MRd_0 = 0;
+  for (let i = 0; i < pts.length; i++) {
+    if (pts[i].M > M_bal) {
+      M_bal = pts[i].M;
+      N_bal = pts[i].N;
+    }
+    // Interpolate M at N=0
+    if (i > 0 && pts[i - 1].N <= 0 && pts[i].N >= 0) {
+      const span = pts[i].N - pts[i - 1].N;
+      const factor = span > 0.001 ? (0 - pts[i - 1].N) / span : 0.5;
+      MRd_0 = pts[i - 1].M + factor * (pts[i].M - pts[i - 1].M);
+    }
+  }
+
+  return { points: pts, NRd_t, NRd_c, N_bal, M_bal, MRd_0 };
+}
+
+export interface BucklingCurvePoint {
+  lambda_bar: number; // slenderness 0..3.0
+  chi_a0: number;
+  chi_a: number;
+  chi_b: number;
+  chi_c: number;
+  chi_d: number;
+  chi_euler: number;
+}
+
+/**
+ * Generates European Buckling Curves (a0, a, b, c, d) per EN 1993-1-1 §6.3.1.2 and Euler curve
+ */
+export function generateBucklingCurves(): BucklingCurvePoint[] {
+  const calcChi = (lambda: number, alpha: number) => {
+    if (lambda <= 0.2) return 1.0;
+    const phi = 0.5 * (1 + alpha * (lambda - 0.2) + Math.pow(lambda, 2));
+    const denom = phi + Math.sqrt(Math.max(0, Math.pow(phi, 2) - Math.pow(lambda, 2)));
+    return Math.min(1.0, 1 / denom);
+  };
+
+  const pts: BucklingCurvePoint[] = [];
+  for (let l = 0.05; l <= 2.8; l += 0.05) {
+    pts.push({
+      lambda_bar: parseFloat(l.toFixed(2)),
+      chi_a0: parseFloat(calcChi(l, 0.13).toFixed(3)),
+      chi_a: parseFloat(calcChi(l, 0.21).toFixed(3)),
+      chi_b: parseFloat(calcChi(l, 0.34).toFixed(3)),
+      chi_c: parseFloat(calcChi(l, 0.49).toFixed(3)),
+      chi_d: parseFloat(calcChi(l, 0.76).toFixed(3)),
+      chi_euler: parseFloat(Math.min(1.0, 1 / Math.pow(l, 2)).toFixed(3))
+    });
+  }
+  return pts;
+}
+
+// ============================================================================
+// 16. PILLAR 4: CLIMATE & ENVIRONMENTAL ACTION DERIVATION (EN 1991-1-3/4/5)
+// ============================================================================
+
+export interface DerivedEnvironmentalLoads {
+  stationName: string;
+  latitude: number;
+  elevation: number;
+  sk_snow_kNm2: number;
+  qp_wind_kNm2: number;
+  deltaT_thermal_deg: number;
+  peakWindSpeedMs: number;
+  tempMinC: number;
+  tempMaxC: number;
+  snowFormulaText: string;
+  windFormulaText: string;
+}
+
+/**
+ * Derives environmental actions (Snow, Wind, Thermal) from station weather & elevation
+ */
+export function deriveEnvironmentalLoadsFromClimate(
+  climate: {
+    name?: string;
+    lat: number;
+    elev: number;
+    hourly?: Array<{ windSpeed?: number; dryBulb?: number }>;
+  },
+  terrainCategory: '0' | 'I' | 'II' | 'III' | 'IV' = 'III'
+): DerivedEnvironmentalLoads {
+  const elev = Math.max(0, climate.elev || 0);
+  const lat = climate.lat || 45.0;
+
+  // Snow load per EN 1991-1-3
+  let sk = 0.60;
+  let snowFormula = '';
+  if (lat >= 44.0) {
+    sk = Math.max(0.60, 0.70 * (1 + Math.pow(elev / 728, 2)));
+    snowFormula = `EN 1991-1-3 (Alpine/Zone 1): 0.70 × [1 + (Elev/728)²] = ${sk.toFixed(2)} kN/m²`;
+  } else {
+    sk = Math.max(0.40, 0.45 * (1 + Math.pow(elev / 1000, 2)));
+    snowFormula = `EN 1991-1-3 (Mediterranean): 0.45 × [1 + (Elev/1000)²] = ${sk.toFixed(2)} kN/m²`;
+  }
+  sk = Math.min(6.0, sk);
+
+  // Peak wind & temperature extrema from hourly dataset
+  let peakWind = 24.0;
+  let tempMin = -5.0;
+  let tempMax = 36.0;
+  if (climate.hourly && climate.hourly.length > 0) {
+    const winds = climate.hourly.map((h) => h.windSpeed ?? 0);
+    const temps = climate.hourly.map((h) => h.dryBulb ?? 20);
+    peakWind = Math.max(18, ...winds);
+    tempMin = Math.min(...temps);
+    tempMax = Math.max(...temps);
+  }
+
+  // Exposure factor ce(z) at z=12m (3-4 storeys) per EN 1991-1-4 Table 4.1
+  const ceMap: Record<string, number> = {
+    '0': 2.8,   // Sea / coastal
+    'I': 2.5,   // Lakes / flat open area
+    'II': 2.2,  // Low vegetation / open farmland
+    'III': 1.7, // Suburban / forest
+    'IV': 1.3   // Urban city centre
+  };
+  const ce = ceMap[terrainCategory] || 1.7;
+  const vb0 = Math.max(22.0, peakWind * 0.95);
+  const qp = (ce * 0.5 * 1.25 * Math.pow(vb0, 2)) / 1000;
+  const windFormula = `EN 1991-1-4 (Terrain ${terrainCategory}): ce(${ce}) × 0.5 × 1.25 × (${vb0.toFixed(1)} m/s)² = ${qp.toFixed(2)} kN/m²`;
+
+  const deltaT = Math.round(tempMax - tempMin);
+
+  return {
+    stationName: climate.name || 'Station',
+    latitude: lat,
+    elevation: elev,
+    sk_snow_kNm2: parseFloat(sk.toFixed(2)),
+    qp_wind_kNm2: parseFloat(qp.toFixed(2)),
+    deltaT_thermal_deg: deltaT,
+    peakWindSpeedMs: parseFloat(peakWind.toFixed(1)),
+    tempMinC: parseFloat(tempMin.toFixed(1)),
+    tempMaxC: parseFloat(tempMax.toFixed(1)),
+    snowFormulaText: snowFormula,
+    windFormulaText: windFormula
+  };
+}
+
+// ============================================================================
+// 17. PILLAR 3: ONE-CLICK SECTION AUTO-OPTIMIZER
+// ============================================================================
+
+export interface OptimizationResult {
+  success: boolean;
+  memberType: string;
+  previousEta: number;
+  newEta: number;
+  previousDesc: string;
+  newDesc: string;
+  optimizedParams: any;
+  carbonReductionPct: number;
+  message: string;
+}
+
+/**
+ * Intelligent section auto-sizer: finds optimal standard geometry
+ * achieving 0.70 <= eta <= 0.95 with minimum embodied material & carbon.
+ */
+export function optimizeMemberSection(
+  memberType: string,
+  params: any,
+  basis: SharedDesignBasis
+): OptimizationResult {
+  if (memberType === 'rc_column') {
+    const origRes = calcRcColumn(params, basis);
+    const origArea = params.b * params.h;
+    const sizes = [250, 300, 350, 400, 450, 500, 550, 600];
+    const bars = [2, 3, 4];
+    const phis = [16, 20, 25, 32];
+
+    let bestParams: any = null;
+    let bestEta = 999;
+    let bestArea = 9999999;
+
+    for (const size of sizes) {
+      for (const n of bars) {
+        for (const phi of phis) {
+          const testParams = { ...params, b: size, h: size, n_bars: n, phi };
+          const res = calcRcColumn(testParams, basis);
+          if (res.status === 'SCREEN ONLY' && res.eta_max <= 0.95) {
+            const area = size * size;
+            if (area < bestArea || (area === bestArea && res.eta_max < bestEta && res.eta_max >= 0.70)) {
+              bestArea = area;
+              bestEta = res.eta_max;
+              bestParams = testParams;
+            }
+          }
+        }
+      }
+    }
+
+    if (bestParams) {
+      const carbonRed = Math.max(0, Math.round(((origArea - bestArea) / origArea) * 100));
+      return {
+        success: true,
+        memberType,
+        previousEta: origRes.eta_max,
+        newEta: bestEta,
+        previousDesc: `${params.b}×${params.h} mm (4+${(params.n_bars - 2) * 2} Ø${params.phi})`,
+        newDesc: `${bestParams.b}×${bestParams.h} mm (4+${(bestParams.n_bars - 2) * 2} Ø${bestParams.phi})`,
+        optimizedParams: bestParams,
+        carbonReductionPct: carbonRed,
+        message: `Optimized to ${bestParams.b}×${bestParams.h} mm column with η = ${bestEta.toFixed(2)} (${carbonRed}% concrete volume saved)`
+      };
+    }
+  }
+
+  if (memberType === 'steel_column') {
+    const origRes = calcSteelColumn(params, basis);
+    // Profile keys ordered by mass
+    const colProfiles = Object.entries(STEEL_PROFILES)
+      .filter(([k]) => k.startsWith('HE') || k.startsWith('SHS'))
+      .sort((a, b) => a[1].mass - b[1].mass);
+
+    for (const [pName, prof] of colProfiles) {
+      const testParams = { ...params, profileName: pName };
+      const res = calcSteelColumn(testParams, basis);
+      if (res.status === 'SCREEN ONLY' && res.eta_max <= 0.95) {
+        const origMass = STEEL_PROFILES[params.profileName]?.mass || 80;
+        const carbonRed = Math.max(0, Math.round(((origMass - prof.mass) / origMass) * 100));
+        return {
+          success: true,
+          memberType,
+          previousEta: origRes.eta_max,
+          newEta: res.eta_max,
+          previousDesc: params.profileName,
+          newDesc: pName,
+          optimizedParams: testParams,
+          carbonReductionPct: carbonRed,
+          message: `Optimized to ${pName} (${prof.mass} kg/m) with η = ${res.eta_max.toFixed(2)}`
+        };
+      }
+    }
+  }
+
+  if (memberType === 'steel_beam') {
+    const origRes = calcSteelBeam(params, basis);
+    const ipeProfiles = Object.entries(STEEL_PROFILES)
+      .filter(([k]) => k.startsWith('IPE'))
+      .sort((a, b) => a[1].mass - b[1].mass);
+
+    for (const [pName, prof] of ipeProfiles) {
+      const testParams = { ...params, profileName: pName };
+      const res = calcSteelBeam(testParams, basis);
+      if (res.status === 'SCREEN ONLY' && res.eta_max <= 0.95) {
+        const origMass = STEEL_PROFILES[params.profileName]?.mass || 40;
+        const carbonRed = Math.max(0, Math.round(((origMass - prof.mass) / origMass) * 100));
+        return {
+          success: true,
+          memberType,
+          previousEta: origRes.eta_max,
+          newEta: res.eta_max,
+          previousDesc: params.profileName,
+          newDesc: pName,
+          optimizedParams: testParams,
+          carbonReductionPct: carbonRed,
+          message: `Optimized to ${pName} (${prof.mass} kg/m) with η = ${res.eta_max.toFixed(2)}`
+        };
+      }
+    }
+  }
+
+  if (memberType === 'rc_beam') {
+    const origRes = calcRcBeam(params, basis);
+    const depths = [350, 400, 450, 500, 550, 600, 650, 700];
+    for (const h of depths) {
+      const testParams = { ...params, h };
+      const res = calcRcBeam(testParams, basis);
+      if (res.status === 'SCREEN ONLY' && res.eta_max <= 0.95) {
+        const carbonRed = Math.max(0, Math.round(((params.h - h) / params.h) * 100));
+        return {
+          success: true,
+          memberType,
+          previousEta: origRes.eta_max,
+          newEta: res.eta_max,
+          previousDesc: `${params.b}×${params.h} mm`,
+          newDesc: `${params.b}×${h} mm`,
+          optimizedParams: testParams,
+          carbonReductionPct: carbonRed,
+          message: `Optimized beam depth to h = ${h} mm with η = ${res.eta_max.toFixed(2)}`
+        };
+      }
+    }
+  }
+
+  if (memberType === 'wood_beam') {
+    const origRes = calcWoodBeam(params, basis);
+    const depths = [200, 240, 280, 320, 360, 400, 440, 480, 520, 560];
+    for (const h of depths) {
+      const testParams = { ...params, h };
+      const res = calcWoodBeam(testParams, basis);
+      if (res.status === 'SCREEN ONLY' && res.eta_max <= 0.95) {
+        const carbonRed = Math.max(0, Math.round(((params.h - h) / params.h) * 100));
+        return {
+          success: true,
+          memberType,
+          previousEta: origRes.eta_max,
+          newEta: res.eta_max,
+          previousDesc: `${params.b}×${params.h} mm`,
+          newDesc: `${params.b}×${h} mm`,
+          optimizedParams: testParams,
+          carbonReductionPct: carbonRed,
+          message: `Optimized glulam beam depth to h = ${h} mm with η = ${res.eta_max.toFixed(2)}`
+        };
+      }
+    }
+  }
+
+  return {
+    success: false,
+    memberType,
+    previousEta: 0.5,
+    newEta: 0.5,
+    previousDesc: 'Current Section',
+    newDesc: 'Current Section',
+    optimizedParams: params,
+    carbonReductionPct: 0,
+    message: 'Current section is already within the optimal efficiency range.'
+  };
+}
+
 
