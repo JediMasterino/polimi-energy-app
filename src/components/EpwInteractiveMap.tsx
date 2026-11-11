@@ -16,7 +16,8 @@ import {
   ExternalLink,
   FileText,
   Download,
-  Check
+  Check,
+  RefreshCw
 } from 'lucide-react';
 import {
   ClimateDataset,
@@ -140,6 +141,22 @@ export const EpwInteractiveMap: React.FC<EpwInteractiveMapProps> = ({
       )
       .slice(0, 4);
   }, [selectedStation, catalog]);
+
+  // Find catalog station corresponding to current active climate
+  const activeStationInCatalog = React.useMemo(() => {
+    if (!catalog || catalog.length === 0) return null;
+    if (currentClimate.wmo) {
+      const byWmo = catalog.find((st) => st.wmo === currentClimate.wmo && st.source === 'onebuilding');
+      if (byWmo) return byWmo;
+    }
+    return (
+      catalog.find(
+        (st) =>
+          st.source === 'onebuilding' &&
+          haversineKm(currentClimate.lat, currentClimate.lon, st.lat, st.lon) < 10
+      ) || null
+    );
+  }, [catalog, currentClimate.wmo, currentClimate.lat, currentClimate.lon]);
 
   // In-map quick filter / search (especially useful in Fullscreen mode)
   const [mapQuery, setMapQuery] = useState('');
@@ -670,11 +687,15 @@ export const EpwInteractiveMap: React.FC<EpwInteractiveMapProps> = ({
           ))}
         </div>
 
-        <div className="flex items-center gap-1">
+        <div className="flex items-center gap-1.5 flex-wrap">
           <span className="text-slate-400 font-semibold">OneBuilding TMYx Baseline:</span>
           <select
             value={oneBuildingPeriod}
-            onChange={(e) => onChangeOneBuildingPeriod(e.target.value as OneBuildingPeriod)}
+            onChange={(e) => {
+              const p = e.target.value as OneBuildingPeriod;
+              onChangeOneBuildingPeriod(p);
+              setStationActivePeriod(p);
+            }}
             className="bg-slate-800 text-sky-300 border border-slate-700 rounded px-1.5 py-0.5 font-semibold focus:outline-none cursor-pointer text-xs"
             title="Select TMYx historical baseline window when loading Climate.OneBuilding.org stations"
           >
@@ -684,6 +705,37 @@ export const EpwInteractiveMap: React.FC<EpwInteractiveMapProps> = ({
               </option>
             ))}
           </select>
+          {selectedStation && selectedStation.source === 'onebuilding' ? (
+            <button
+              type="button"
+              disabled={loadingStationId === selectedStation.id}
+              onClick={() => onSelectStation(selectedStation, stationActivePeriod)}
+              className="px-2 py-0.5 rounded bg-teal-500 hover:bg-teal-400 text-slate-950 font-bold text-[11px] flex items-center gap-1 transition shadow"
+              title={`Load ${selectedStation.city} (${stationActivePeriod})`}
+            >
+              {loadingStationId === selectedStation.id ? (
+                <Loader2 className="w-3 h-3 animate-spin" />
+              ) : (
+                <CheckCircle2 className="w-3 h-3" />
+              )}
+              Load for {selectedStation.city.split(' ')[0]} ({stationActivePeriod})
+            </button>
+          ) : activeStationInCatalog && currentClimate.period !== oneBuildingPeriod ? (
+            <button
+              type="button"
+              disabled={loadingStationId === activeStationInCatalog.id}
+              onClick={() => onSelectStation(activeStationInCatalog, oneBuildingPeriod)}
+              className="px-2 py-0.5 rounded bg-sky-500 hover:bg-sky-400 text-slate-950 font-bold text-[11px] flex items-center gap-1 transition shadow"
+              title={`Switch active site (${activeStationInCatalog.city}) to ${oneBuildingPeriod}`}
+            >
+              {loadingStationId === activeStationInCatalog.id ? (
+                <Loader2 className="w-3 h-3 animate-spin" />
+              ) : (
+                <RefreshCw className="w-3 h-3" />
+              )}
+              Switch Active Site to {oneBuildingPeriod}
+            </button>
+          ) : null}
         </div>
       </div>
 
@@ -823,7 +875,7 @@ export const EpwInteractiveMap: React.FC<EpwInteractiveMapProps> = ({
           <div className="absolute bottom-2 left-2 z-20 bg-slate-900/90 backdrop-blur-sm text-white px-2.5 py-1.5 rounded-lg border border-slate-700 text-[10px] flex flex-wrap items-center gap-2.5 pointer-events-none">
             <span className="flex items-center gap-1">
               <span className="w-2.5 h-2.5 rounded-full bg-teal-500 border border-white inline-block" />
-              Active: {currentClimate.name.split(',')[0]}
+              Active: {currentClimate.name.split(',')[0]} {currentClimate.period ? `(${currentClimate.period})` : ''}
             </span>
             <span className="flex items-center gap-1">
               <span className="w-2.5 h-2.5 rounded-full bg-sky-500 inline-block" />
@@ -882,11 +934,19 @@ export const EpwInteractiveMap: React.FC<EpwInteractiveMapProps> = ({
                     const fileUrl = getOneBuildingDownloadUrl(selectedStation.epwUrl, period.id);
                     const fileName = fileUrl.split('/').pop() || '';
                     const isCurrent = stationActivePeriod === period.id;
+                    const isLoadedActive =
+                      currentClimate.period === period.id &&
+                      Boolean(
+                        (currentClimate.wmo && selectedStation.wmo && currentClimate.wmo === selectedStation.wmo) ||
+                          currentClimate.name.includes(selectedStation.city.split(' ')[0])
+                      );
                     return (
                       <div
                         key={period.id}
                         className={`p-2 rounded-lg border text-xs flex items-center justify-between gap-2 transition ${
-                          isCurrent
+                          isLoadedActive
+                            ? 'bg-teal-500/20 border-teal-400'
+                            : isCurrent
                             ? 'bg-sky-500/20 border-sky-400'
                             : 'bg-slate-800/80 border-slate-700/80 hover:bg-slate-800'
                         }`}
@@ -897,6 +957,11 @@ export const EpwInteractiveMap: React.FC<EpwInteractiveMapProps> = ({
                             <span className="px-1.5 py-0.2 rounded text-[9px] font-extrabold bg-sky-950 text-sky-300 border border-sky-700">
                               {period.badge}
                             </span>
+                            {isLoadedActive && (
+                              <span className="px-1.5 py-0.2 rounded text-[9px] font-extrabold bg-teal-950 text-teal-300 border border-teal-600">
+                                Active in BEM
+                              </span>
+                            )}
                           </div>
                           <div className="text-[9px] text-slate-400 font-mono truncate" title={fileName}>
                             {fileName}

@@ -43,6 +43,7 @@ export interface WindRoseSector {
 export interface ClimateDataset {
   id: string;
   name: string;
+  period?: string;
   country?: string;
   wmo?: string;
   koppen: string;
@@ -318,6 +319,7 @@ export function buildClimateFromHourly(
   meta: {
     id: string;
     name: string;
+    period?: string;
     country?: string;
     wmo?: string;
     lat: number;
@@ -497,6 +499,7 @@ export function buildClimateFromHourly(
   return {
     id: meta.id,
     name: meta.name,
+    period: meta.period,
     country: meta.country,
     wmo: meta.wmo,
     koppen: kop.code,
@@ -651,7 +654,11 @@ export function synthesizeHourlyFromPreset(preset: {
 }
 
 // Parse standard EnergyPlus .epw text file with full 8-line header preservation & Spencer (1971) solar position
-export function parseEpwText(epwContent: string, fallbackName = 'Custom EPW Station'): ClimateDataset {
+export function parseEpwText(
+  epwContent: string,
+  fallbackName = 'Custom EPW Station',
+  preferredPeriod?: string
+): ClimateDataset {
   const lines = epwContent.split(/\r?\n/).filter((l) => l.trim().length > 0);
   if (lines.length < 100) {
     throw new Error('Invalid EPW file: fewer than 100 lines found.');
@@ -660,14 +667,62 @@ export function parseEpwText(epwContent: string, fallbackName = 'Custom EPW Stat
   // Header Line 1: LOCATION,City,State,Country,Source,WMO,Lat,Lon,Tz,Elev
   const locLine = lines.find((l) => l.toUpperCase().startsWith('LOCATION,')) || lines[0];
   const locParts = locLine.split(',');
-  const city = (locParts[1] || fallbackName).trim();
-  const country = (locParts[3] || '').trim();
+  const rawCity = (locParts[1] || '').trim();
+  const rawCountry = (locParts[3] || '').trim();
   const wmo = (locParts[5] || '').trim();
   const lat = parseFloat(locParts[6]) || 45.46;
   const lon = parseFloat(locParts[7]) || 9.19;
   const rawTz = parseFloat(locParts[8]);
   const tz = !isNaN(rawTz) ? rawTz : Math.round(lon / 15);
   const elev = parseFloat(locParts[9]) || 100;
+
+  // 1. Detect period:
+  let detectedPeriod = preferredPeriod || '';
+
+  // Scan EPW COMMENTS (e.g. COMMENTS 1,"... Period of Record=2011-2025; ...")
+  if (!detectedPeriod) {
+    for (const line of lines.slice(0, 15)) {
+      const m = line.match(/Period of Record\s*=\s*([0-9]{4}-[0-9]{4})/i);
+      if (m) {
+        detectedPeriod = m[1];
+        break;
+      }
+    }
+  }
+
+  // Scan fallbackName (e.g. uploaded file name "ITA_LM_Milano-Linate.AP.160800_TMYx.2011-2025")
+  if (!detectedPeriod && fallbackName) {
+    const m = fallbackName.match(/(\d{4}[–-]\d{4})/);
+    if (m) {
+      detectedPeriod = m[1].replace('–', '-');
+    } else if (/TMYx Full/i.test(fallbackName) || /Full Period/i.test(fallbackName)) {
+      detectedPeriod = 'full';
+    }
+  }
+
+  const cleanCity = (rawCity || fallbackName || 'Custom EPW Station')
+    .replace(/__/g, ' ')
+    .replace(/\.AP\b/gi, ' AP')
+    .replace(/\.Intl\b/gi, ' Intl')
+    .trim();
+  const country = rawCountry || '';
+
+  let displayName = '';
+  if (
+    fallbackName &&
+    fallbackName !== 'Custom EPW Station' &&
+    (fallbackName.includes('(') || fallbackName.includes(','))
+  ) {
+    displayName = fallbackName;
+  } else {
+    const periodLabel = detectedPeriod
+      ? detectedPeriod === 'full'
+        ? 'TMYx Full Period'
+        : `TMYx ${detectedPeriod}`
+      : '';
+    const cityWithPeriod = periodLabel ? `${cleanCity} (${periodLabel})` : cleanCity;
+    displayName = country ? `${cityWithPeriod}, ${country}` : cityWithPeriod;
+  }
 
   // Find first data row (starts with 4-digit year or numeric month)
   let startIdx = 8;
@@ -744,11 +799,15 @@ export function parseEpwText(epwContent: string, fallbackName = 'Custom EPW Stat
     });
   }
 
-  const displayName = country ? `${city}, ${country}` : city;
+  const safePeriod = detectedPeriod ? detectedPeriod.replace(/[^a-zA-Z0-9_-]/g, '_') : `${Date.now()}`;
+  const safeCity = cleanCity.toLowerCase().replace(/[^a-z0-9]/g, '_');
+  const datasetId = `epw_${safeCity}_${safePeriod}`;
+
   return buildClimateFromHourly(
     {
-      id: `epw_${city.toLowerCase().replace(/[^a-z0-9]/g, '_')}_${Date.now()}`,
+      id: datasetId,
       name: displayName,
+      period: detectedPeriod || undefined,
       country,
       wmo,
       lat,
@@ -1203,80 +1262,141 @@ const WMO_TO_BUNDLED_TMYX: Record<string, { localUrl: string; displayName: strin
   '160200': { localUrl: '/weather/bormio.epw', displayName: 'Alpine Valley (Bolzano WMO 160200), IT' }
 };
 
-// Helper to build candidate OneBuilding .zip URLs for a chosen TMYx period with automatic fallback
-function buildOneBuildingCandidateUrls(rawUrl: string, period: OneBuildingPeriod): string[] {
+// Helper to construct the exact OneBuilding .zip URL for a requested baseline period
+function getOneBuildingPeriodUrl(
+  rawUrl: string,
+  period: OneBuildingPeriod
+): {
+  proxiedUrl: string;
+  directUrl: string;
+  isTmyx: boolean;
+  stripPeriod: string;
+} {
+  const rawStripPeriod = rawUrl.replace(/_TMYx(?:\.\d{4}-\d{4})?\.zip$/i, '');
   const proxiedBase = rawUrl.replace('https://climate.onebuilding.org', '/onebuilding');
   const stripPeriod = proxiedBase.replace(/_TMYx(?:\.\d{4}-\d{4})?\.zip$/i, '');
-  if (stripPeriod === proxiedBase) {
-    return [proxiedBase];
+  const isTmyx = stripPeriod !== proxiedBase;
+
+  const proxiedUrl = isTmyx
+    ? (period === 'full' ? `${stripPeriod}_TMYx.zip` : `${stripPeriod}_TMYx.${period}.zip`)
+    : proxiedBase;
+  const directUrl = isTmyx
+    ? (period === 'full' ? `${rawStripPeriod}_TMYx.zip` : `${rawStripPeriod}_TMYx.${period}.zip`)
+    : rawUrl;
+
+  return { proxiedUrl, directUrl, isTmyx, stripPeriod };
+}
+
+// Helper to fetch OneBuilding zip buffer trying proxy first, direct fallback second
+async function fetchOneBuildingZipBuffer(proxiedUrl: string, directUrl: string): Promise<ArrayBuffer | null> {
+  try {
+    const resp = await fetch(proxiedUrl);
+    if (resp.ok) {
+      return await resp.arrayBuffer();
+    }
+  } catch {
+    // Relative URL or proxy error, attempt direct fetch
   }
-  const periodUrl =
-    period === 'full' ? `${stripPeriod}_TMYx.zip` : `${stripPeriod}_TMYx.${period}.zip`;
-  const candidates = [
-    periodUrl,
-    `${stripPeriod}_TMYx.2011-2025.zip`,
-    `${stripPeriod}_TMYx.2009-2023.zip`,
-    `${stripPeriod}_TMYx.2007-2021.zip`,
-    `${stripPeriod}_TMYx.2004-2018.zip`,
-    proxiedBase,
-    `${stripPeriod}_TMYx.zip`
-  ];
-  return Array.from(new Set(candidates));
+  try {
+    const respDirect = await fetch(directUrl);
+    if (respDirect.ok) {
+      return await respDirect.arrayBuffer();
+    }
+  } catch {
+    // Both failed
+  }
+  return null;
 }
 
 // Fetch and build a full 8,760-hour ClimateDataset from an EpwStationSearchResult
 // Supports:
-//  - Bundled high-resolution reference TMYx files (Milan, Rome, Geneva, Stockholm, Cairo, Palermo, Bolzano)
-//  - Climate.OneBuilding.org (.zip containing .epw via /onebuilding proxy + native ZIP deflate extractor)
+//  - Climate.OneBuilding.org (exact requested baseline TMYx period via /onebuilding proxy + ZIP deflation)
 //  - Official DOE/NREL EnergyPlus S3 (.epw or .zip via /epw-s3 proxy)
+//  - Offline fallback to bundled reference files (Milan, Rome, Geneva, Stockholm, Cairo, Palermo, Bolzano)
 //  - Open-Meteo ERA5 8,760-hour Archive (when explicitly selected)
 export async function fetchStationClimateDataset(
   station: EpwStationSearchResult,
   oneBuildingPeriod: OneBuildingPeriod = '2009-2023'
 ): Promise<ClimateDataset> {
-  // Case 0: If station matches one of our pre-bundled official OneBuilding TMYx reference datasets
-  if (station.wmo && WMO_TO_BUNDLED_TMYX[station.wmo]) {
-    const bundled = WMO_TO_BUNDLED_TMYX[station.wmo];
-    try {
-      const resp = await fetch(bundled.localUrl);
-      if (resp.ok) {
-        const text = await resp.text();
-        if (text && text.includes('LOCATION,')) {
-          const parsed = parseEpwText(text, bundled.displayName);
-          parsed.id = station.id;
-          parsed.sourceType = 'onebuilding';
-          return parsed;
+  // Case A: Climate.OneBuilding.org (.zip -> extract requested baseline .epw in browser)
+  if (station.source === 'onebuilding' && station.epwUrl.includes('climate.onebuilding.org')) {
+    const { proxiedUrl, directUrl, isTmyx, stripPeriod } = getOneBuildingPeriodUrl(
+      station.epwUrl,
+      oneBuildingPeriod
+    );
+
+    // 1. Prioritize streaming the user's explicitly requested baseline period
+    const targetBuf = await fetchOneBuildingZipBuffer(proxiedUrl, directUrl);
+    if (targetBuf) {
+      const epwText = await extractEpwFromZipBuffer(targetBuf);
+      if (epwText && epwText.includes('LOCATION,')) {
+        const periodDisplay = oneBuildingPeriod === 'full' ? 'TMYx Full Period' : `TMYx ${oneBuildingPeriod}`;
+        const parsed = parseEpwText(
+          epwText,
+          `${station.city} (${periodDisplay}), ${station.country}`,
+          oneBuildingPeriod
+        );
+        parsed.id = `${station.id}_${oneBuildingPeriod}`;
+        parsed.period = oneBuildingPeriod;
+        parsed.sourceType = 'onebuilding';
+        return parsed;
+      }
+    }
+
+    // 2. If the requested historical period was not published for this station (HTTP 404),
+    // try available standard OneBuilding periods in order of relevance:
+    if (isTmyx) {
+      const fallbackPeriods: OneBuildingPeriod[] = (['2011-2025', '2009-2023', '2007-2021', '2004-2018', 'full'] as OneBuildingPeriod[])
+        .filter((p) => p !== oneBuildingPeriod);
+
+      const rawStrip = station.epwUrl.replace(/_TMYx(?:\.\d{4}-\d{4})?\.zip$/i, '');
+
+      for (const altPeriod of fallbackPeriods) {
+        const altProxied = altPeriod === 'full' ? `${stripPeriod}_TMYx.zip` : `${stripPeriod}_TMYx.${altPeriod}.zip`;
+        const altDirect = altPeriod === 'full' ? `${rawStrip}_TMYx.zip` : `${rawStrip}_TMYx.${altPeriod}.zip`;
+
+        const altBuf = await fetchOneBuildingZipBuffer(altProxied, altDirect);
+        if (altBuf) {
+          const epwText = await extractEpwFromZipBuffer(altBuf);
+          if (epwText && epwText.includes('LOCATION,')) {
+            const altDisplay = altPeriod === 'full' ? 'TMYx Full Period' : `TMYx ${altPeriod}`;
+            const parsed = parseEpwText(
+              epwText,
+              `${station.city} (${altDisplay} — ${oneBuildingPeriod} not published), ${station.country}`,
+              altPeriod
+            );
+            parsed.id = `${station.id}_${altPeriod}`;
+            parsed.period = altPeriod;
+            parsed.sourceType = 'onebuilding';
+            return parsed;
+          }
         }
       }
-    } catch {
-      // Continue to remote streaming
     }
-  }
 
-  // Case A: Climate.OneBuilding.org (.zip -> extract .epw in browser)
-  if (station.source === 'onebuilding' && station.epwUrl.includes('climate.onebuilding.org')) {
-    const candidateUrls = buildOneBuildingCandidateUrls(station.epwUrl, oneBuildingPeriod);
-    for (const url of candidateUrls) {
+    // 3. If remote network streaming failed entirely (e.g. offline) AND station is a bundled demo reference city:
+    if (station.wmo && WMO_TO_BUNDLED_TMYX[station.wmo]) {
+      const bundled = WMO_TO_BUNDLED_TMYX[station.wmo];
       try {
-        const resp = await fetch(url);
+        const resp = await fetch(bundled.localUrl);
         if (resp.ok) {
-          const buf = await resp.arrayBuffer();
-          const epwText = await extractEpwFromZipBuffer(buf);
-          if (epwText && epwText.includes('LOCATION,')) {
-            const periodTag = url.match(/(\d{4}-\d{4})/)?.[1] || 'TMYx';
-            const parsed = parseEpwText(epwText, `${station.city} (${periodTag}), ${station.country}`);
+          const text = await resp.text();
+          if (text && text.includes('LOCATION,')) {
+            const parsed = parseEpwText(text, `${bundled.displayName} (Offline Bundle 2007–2021)`, '2007-2021');
+            parsed.id = `${station.id}_bundle_2007-2021`;
+            parsed.period = '2007-2021';
             parsed.sourceType = 'onebuilding';
             return parsed;
           }
         }
       } catch {
-        // Try next candidate URL
+        // Fall through to error
       }
     }
 
-    // If all candidate URLs failed for Climate.OneBuilding.org, DO NOT silently fall back to ERA5!
+    // 4. Failed entirely
     throw new Error(
-      `Direct streaming for "${station.city}" from Climate.OneBuilding.org was blocked by browser CORS. Download the official .zip file directly from: ${station.epwUrl} and drop it into the upload box above for 100% fidelity.`
+      `Could not stream "${station.city}" (${oneBuildingPeriod}) from Climate.OneBuilding.org. Download the official .zip file directly from: ${getOneBuildingDownloadUrl(station.epwUrl, oneBuildingPeriod)} and drop it into the upload box above for 100% fidelity.`
     );
   }
 

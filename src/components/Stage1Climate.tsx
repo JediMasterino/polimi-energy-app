@@ -255,6 +255,11 @@ export const Stage1Climate: React.FC<Stage1ClimateProps> = ({
               <span className="text-xs px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-400/40 font-semibold shrink-0">
                 Köppen {climate.koppen}
               </span>
+              {climate.period && (
+                <span className="text-xs px-2 py-0.5 rounded-full bg-sky-500/25 text-sky-200 border border-sky-400/50 font-bold shrink-0">
+                  {climate.period === 'full' ? 'TMYx Full Period' : `TMYx ${climate.period}`}
+                </span>
+              )}
               <span
                 className={`text-xs px-2 py-0.5 rounded-full bg-rose-500/25 text-rose-200 border border-rose-400/50 font-bold shrink-0 transition-opacity duration-150 ${
                   isMorphed ? 'opacity-100' : 'opacity-0 pointer-events-none'

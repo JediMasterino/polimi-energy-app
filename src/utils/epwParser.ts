@@ -396,6 +396,7 @@ export function morphClimateDataset(
     {
       id: base.id,
       name: base.name,
+      period: base.period,
       country: base.country,
       wmo: base.wmo,
       lat: base.lat,
