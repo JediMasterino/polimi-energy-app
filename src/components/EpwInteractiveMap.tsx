@@ -246,19 +246,19 @@ export const EpwInteractiveMap: React.FC<EpwInteractiveMapProps> = ({
           style: () =>
             isVectorOnly
               ? {
-                  fillColor: '#1e293b',
-                  fillOpacity: 0.92,
-                  color: '#38bdf8',
-                  weight: 1.1,
-                  opacity: 0.75
-                }
+                fillColor: '#1e293b',
+                fillOpacity: 0.92,
+                color: '#38bdf8',
+                weight: 1.1,
+                opacity: 0.75
+              }
               : {
-                  fillColor: '#cbd5e1',
-                  fillOpacity: 0.05,
-                  color: '#64748b',
-                  weight: 0.7,
-                  opacity: 0.35
-                }
+                fillColor: '#cbd5e1',
+                fillOpacity: 0.05,
+                color: '#64748b',
+                weight: 0.7,
+                opacity: 0.35
+              }
         }).addTo(vLayer);
       }
     } catch {
@@ -319,8 +319,8 @@ export const EpwInteractiveMap: React.FC<EpwInteractiveMapProps> = ({
 
       marker.bindTooltip(
         `<div style="font-size:11.5px;font-weight:700;color:#f8fafc;">${st.city} (${st.country})</div>` +
-          `<div style="font-size:10px;color:${badgeColor};font-weight:600;margin-top:2px;">${badgeLabel} • ${st.datasetType || 'TMYx'}</div>` +
-          `<div style="font-size:10px;color:#94a3b8;margin-top:1px;">WMO ${st.wmo || '-'} • Lat ${st.lat.toFixed(2)}°, Lon ${st.lon.toFixed(2)}°</div>`,
+        `<div style="font-size:10px;color:${badgeColor};font-weight:600;margin-top:2px;">${badgeLabel} • ${st.datasetType || 'TMYx'}</div>` +
+        `<div style="font-size:10px;color:#94a3b8;margin-top:1px;">WMO ${st.wmo || '-'} • Lat ${st.lat.toFixed(2)}°, Lon ${st.lon.toFixed(2)}°</div>`,
         { direction: 'top', offset: [0, -4] }
       );
 
@@ -668,21 +668,20 @@ export const EpwInteractiveMap: React.FC<EpwInteractiveMapProps> = ({
               key={src}
               type="button"
               onClick={() => onChangeSourceFilter(src)}
-              className={`px-2 py-0.5 rounded font-semibold transition ${
-                sourceFilter === src
+              className={`px-2 py-0.5 rounded font-semibold transition ${sourceFilter === src
                   ? src === 'onebuilding'
                     ? 'bg-sky-600 text-white'
                     : src === 'energyplus'
-                    ? 'bg-amber-500 text-slate-950'
-                    : 'bg-teal-600 text-white'
+                      ? 'bg-amber-500 text-slate-950'
+                      : 'bg-teal-600 text-white'
                   : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
-              }`}
+                }`}
             >
               {src === 'all'
                 ? 'All (23.2k)'
                 : src === 'onebuilding'
-                ? 'OneBuilding.org (20.2k)'
-                : 'DOE EnergyPlus (3.0k)'}
+                  ? 'OneBuilding.org (20.2k)'
+                  : 'DOE EnergyPlus (3.0k)'}
             </button>
           ))}
         </div>
@@ -743,13 +742,11 @@ export const EpwInteractiveMap: React.FC<EpwInteractiveMapProps> = ({
       <div className={expanded ? 'grid grid-cols-1 lg:grid-cols-12 gap-4 flex-1 min-h-0' : 'space-y-2'}>
         {/* Leaflet Canvas Container */}
         <div
-          className={`${
-            expanded
-              ? 'lg:col-span-8 h-full min-h-[380px] rounded-xl'
-              : 'w-full h-72 rounded-lg'
-          } overflow-hidden border border-slate-600 relative ${
-            tileStyle === 'vector_only' ? 'bg-slate-950' : 'bg-slate-200'
-          }`}
+          className={`${expanded
+              ? 'lg:col-span-8 h-full min-h-[500px] rounded-xl'
+              : 'w-full h-[540px] md:h-[600px] xl:h-[660px] rounded-xl'
+            } overflow-hidden border border-slate-600 relative ${tileStyle === 'vector_only' ? 'bg-slate-950' : 'bg-slate-200'
+            }`}
         >
           <div
             ref={mapContainerRef}
@@ -810,11 +807,10 @@ export const EpwInteractiveMap: React.FC<EpwInteractiveMapProps> = ({
                             setStationActivePeriod(p.id);
                             onChangeOneBuildingPeriod(p.id);
                           }}
-                          className={`px-2 py-1 rounded text-[10px] text-left truncate transition ${
-                            isSel
+                          className={`px-2 py-1 rounded text-[10px] text-left truncate transition ${isSel
                               ? 'bg-sky-500 text-slate-950 font-extrabold shadow'
                               : 'bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700'
-                          }`}
+                            }`}
                           title={p.description}
                         >
                           <span className="block truncate font-bold text-xs">{p.label}</span>
@@ -941,18 +937,17 @@ export const EpwInteractiveMap: React.FC<EpwInteractiveMapProps> = ({
                       currentClimate.period === period.id &&
                       Boolean(
                         (currentClimate.wmo && selectedStation.wmo && currentClimate.wmo === selectedStation.wmo) ||
-                          currentClimate.name.includes(selectedStation.city.split(' ')[0])
+                        currentClimate.name.includes(selectedStation.city.split(' ')[0])
                       );
                     return (
                       <div
                         key={period.id}
-                        className={`p-2 rounded-lg border text-xs flex items-center justify-between gap-2 transition ${
-                          isLoadedActive
+                        className={`p-2 rounded-lg border text-xs flex items-center justify-between gap-2 transition ${isLoadedActive
                             ? 'bg-teal-500/20 border-teal-400'
                             : isCurrent
-                            ? 'bg-sky-500/20 border-sky-400'
-                            : 'bg-slate-800/80 border-slate-700/80 hover:bg-slate-800'
-                        }`}
+                              ? 'bg-sky-500/20 border-sky-400'
+                              : 'bg-slate-800/80 border-slate-700/80 hover:bg-slate-800'
+                          }`}
                       >
                         <div className="truncate">
                           <div className="font-bold text-white flex items-center gap-1.5 truncate">
@@ -990,11 +985,10 @@ export const EpwInteractiveMap: React.FC<EpwInteractiveMapProps> = ({
                               onChangeOneBuildingPeriod(period.id);
                               onSelectStation(selectedStation, period.id);
                             }}
-                            className={`px-2.5 py-1 rounded font-bold text-[10px] flex items-center gap-1 transition ${
-                              isCurrent
+                            className={`px-2.5 py-1 rounded font-bold text-[10px] flex items-center gap-1 transition ${isCurrent
                                 ? 'bg-teal-500 hover:bg-teal-400 text-slate-950'
                                 : 'bg-teal-600 hover:bg-teal-500 text-white'
-                            }`}
+                              }`}
                           >
                             {loadingStationId === selectedStation.id && isCurrent ? (
                               <Loader2 className="w-3 h-3 animate-spin" />
@@ -1090,9 +1084,8 @@ export const EpwInteractiveMap: React.FC<EpwInteractiveMapProps> = ({
                   return (
                     <div
                       key={st.id}
-                      className={`py-1.5 flex items-center justify-between gap-2 text-[11px] px-1.5 rounded cursor-pointer transition ${
-                        isSelected ? 'bg-sky-500/20 border border-sky-500/40' : 'hover:bg-slate-800/60'
-                      }`}
+                      className={`py-1.5 flex items-center justify-between gap-2 text-[11px] px-1.5 rounded cursor-pointer transition ${isSelected ? 'bg-sky-500/20 border border-sky-500/40' : 'hover:bg-slate-800/60'
+                        }`}
                       onClick={() => {
                         setSelectedStation(st);
                         mapInstanceRef.current?.flyTo([st.lat, st.lon], 8, { duration: 0.5 });
@@ -1101,9 +1094,8 @@ export const EpwInteractiveMap: React.FC<EpwInteractiveMapProps> = ({
                       <div className="truncate">
                         <div className="flex items-center gap-1.5 truncate">
                           <span
-                            className={`w-2 h-2 rounded-full shrink-0 ${
-                              isOB ? 'bg-sky-400' : 'bg-amber-400'
-                            }`}
+                            className={`w-2 h-2 rounded-full shrink-0 ${isOB ? 'bg-sky-400' : 'bg-amber-400'
+                              }`}
                           />
                           <span className="font-semibold text-slate-200 truncate">{st.city}</span>
                           <span className="text-[10px] text-slate-400">({st.country})</span>

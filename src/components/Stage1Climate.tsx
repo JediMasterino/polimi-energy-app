@@ -514,10 +514,21 @@ export const Stage1Climate: React.FC<Stage1ClimateProps> = ({
          ===================================================================== */}
       {activeSubTab === 'station_map' && (
         <div className="space-y-5">
-          {/* Row 1: Drag-and-Drop .EPW Upload Zone + Active Weather Station Overview */}
-          <div className={`grid grid-cols-1 ${stage1WideMode ? 'xl:grid-cols-12' : ''} gap-5`}>
-            {/* Drag-and-Drop .EPW Upload & Validator Card */}
-            <div className={`${stage1WideMode ? 'xl:col-span-6' : 'w-full'} bg-white rounded-2xl border border-slate-200 shadow-sm p-4 space-y-3 flex flex-col justify-between`}>
+          {/* 1. Primary Global Weather Station Map & Live Search (Displayed First) */}
+          <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-4">
+            <EpwSearchAndUploadWidget
+              currentClimate={climate}
+              customClimates={customClimates}
+              onSelectClimate={(ds) => {
+                setUploadedQuality(validateEpwDataset(ds));
+                addAndSelectClimate(ds);
+              }}
+            />
+          </div>
+
+          {/* 2. Client-Side .EPW / .ZIP Drag-and-Drop Parser & Validator (No Duplicated Cards) */}
+          <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-5 space-y-4">
+            <div className="flex flex-wrap items-center justify-between gap-3">
               <div>
                 <h3 className="text-sm font-bold text-slate-800 flex items-center gap-1.5">
                   <Upload className="w-4 h-4 text-teal-600" />
@@ -526,7 +537,15 @@ export const Stage1Climate: React.FC<Stage1ClimateProps> = ({
                 <p className="text-[11px] text-slate-500 mt-0.5">
                   Reads all 8 EPW header lines (Location, Design Conditions, Ground Temps) & 8,760 hourly rows with automatic quality validation
                 </p>
+              </div>
+              <span className="text-[10px] font-extrabold px-2.5 py-1 rounded-full bg-teal-50 text-teal-800 border border-teal-200">
+                100% Client-Side In-Browser Processing
+              </span>
+            </div>
 
+            <div className={`grid grid-cols-1 ${stage1WideMode ? 'lg:grid-cols-12' : ''} gap-5 items-stretch`}>
+              {/* Drag-and-Drop Dropzone */}
+              <div className={`${stage1WideMode ? 'lg:col-span-8' : 'w-full'} flex flex-col justify-between`}>
                 <div
                   onDragOver={(e) => {
                     e.preventDefault();
@@ -540,18 +559,18 @@ export const Stage1Climate: React.FC<Stage1ClimateProps> = ({
                     if (f) handleEpwOrZipFile(f);
                   }}
                   onClick={() => dropInputRef.current?.click()}
-                  className={`mt-3 border-2 border-dashed rounded-2xl p-6 text-center cursor-pointer transition ${
+                  className={`border-2 border-dashed rounded-2xl p-7 text-center cursor-pointer transition flex flex-col items-center justify-center min-h-[160px] ${
                     isDraggingFile
                       ? 'border-teal-500 bg-teal-50'
                       : 'border-slate-300 bg-slate-50/70 hover:border-teal-500 hover:bg-teal-50/30'
                   }`}
                 >
-                  <Upload className="w-8 h-8 text-teal-600 mx-auto mb-2" />
+                  <Upload className="w-9 h-9 text-teal-600 mb-2" />
                   <p className="text-xs font-bold text-slate-800">
                     Drop any EnergyPlus <code className="text-teal-700">.epw</code> or OneBuilding <code className="text-teal-700">.zip</code> file here
                   </p>
-                  <p className="text-[11px] text-slate-500 mt-0.5">
-                    or click to browse local weather files (100% client-side instant parsing)
+                  <p className="text-[11px] text-slate-500 mt-1">
+                    or click to browse local files from your computer (instant client-side parsing)
                   </p>
                   <input
                     ref={dropInputRef}
@@ -578,116 +597,58 @@ export const Stage1Climate: React.FC<Stage1ClimateProps> = ({
                 )}
               </div>
 
-              {/* Quick Links to Climate.OneBuilding.org, Ladybug EPWMap & NASA POWER */}
-              <div className="bg-slate-50 rounded-xl p-3 border border-slate-200 space-y-1.5 text-[11px]">
-                <span className="font-bold text-slate-700 block">
-                  External Repositories & Satellite TMY Generators:
-                </span>
-                <div className="flex flex-wrap items-center gap-2">
+              {/* Direct External Repositories Card */}
+              <div className={`${stage1WideMode ? 'lg:col-span-4' : 'w-full'} bg-slate-50 rounded-2xl p-4 border border-slate-200 flex flex-col justify-between space-y-3 text-xs`}>
+                <div>
+                  <div className="font-bold text-slate-800 flex items-center gap-1.5">
+                    <ExternalLink className="w-3.5 h-3.5 text-teal-600" />
+                    Direct Climate Repositories
+                  </div>
+                  <p className="text-[11px] text-slate-500 mt-1 leading-relaxed">
+                    Download official TMYx / IWEC2 weather files for thousands of international cities:
+                  </p>
+                </div>
+
+                <div className="space-y-2">
                   <a
                     href="https://climate.onebuilding.org/"
                     target="_blank"
                     rel="noreferrer"
-                    className="px-2.5 py-1 rounded-lg bg-white hover:bg-teal-50 text-teal-700 border border-slate-200 font-bold flex items-center gap-1"
+                    className="p-2.5 rounded-xl bg-white hover:bg-teal-50 text-teal-900 border border-slate-200 font-bold flex items-center justify-between gap-1 transition shadow-2xs hover:border-teal-300"
                   >
-                    Climate.OneBuilding.org <ExternalLink className="w-3 h-3" />
+                    <div>
+                      <div className="text-xs">Climate.OneBuilding.org</div>
+                      <div className="text-[10px] text-slate-400 font-normal">20,200+ global TMYx stations</div>
+                    </div>
+                    <ExternalLink className="w-3.5 h-3.5 text-teal-600 shrink-0" />
                   </a>
                   <a
                     href="https://www.ladybug.tools/epwmap/"
                     target="_blank"
                     rel="noreferrer"
-                    className="px-2.5 py-1 rounded-lg bg-white hover:bg-teal-50 text-teal-700 border border-slate-200 font-bold flex items-center gap-1"
+                    className="p-2.5 rounded-xl bg-white hover:bg-teal-50 text-teal-900 border border-slate-200 font-bold flex items-center justify-between gap-1 transition shadow-2xs hover:border-teal-300"
                   >
-                    Ladybug EPWMap <ExternalLink className="w-3 h-3" />
+                    <div>
+                      <div className="text-xs">Ladybug Tools EPWMap</div>
+                      <div className="text-[10px] text-slate-400 font-normal">Interactive global catalog viewer</div>
+                    </div>
+                    <ExternalLink className="w-3.5 h-3.5 text-teal-600 shrink-0" />
                   </a>
                   <a
                     href="https://power.larc.nasa.gov/data-access-viewer/"
                     target="_blank"
                     rel="noreferrer"
-                    className="px-2.5 py-1 rounded-lg bg-white hover:bg-teal-50 text-teal-700 border border-slate-200 font-bold flex items-center gap-1"
+                    className="p-2.5 rounded-xl bg-white hover:bg-teal-50 text-teal-900 border border-slate-200 font-bold flex items-center justify-between gap-1 transition shadow-2xs hover:border-teal-300"
                   >
-                    NASA POWER Viewer <ExternalLink className="w-3 h-3" />
+                    <div>
+                      <div className="text-xs">NASA POWER Viewer</div>
+                      <div className="text-[10px] text-slate-400 font-normal">Solar & meteorological satellite data</div>
+                    </div>
+                    <ExternalLink className="w-3.5 h-3.5 text-teal-600 shrink-0" />
                   </a>
                 </div>
               </div>
             </div>
-
-            {/* Currently Active Weather Station & EPW Boundary Card */}
-            <div className={`${stage1WideMode ? 'xl:col-span-6' : 'w-full'} bg-white rounded-2xl border border-slate-200 shadow-sm p-4 space-y-3 flex flex-col justify-between`}>
-              <div>
-                <div className="flex items-center justify-between gap-2">
-                  <h3 className="text-sm font-bold text-slate-800 flex items-center gap-1.5">
-                    <Globe className="w-4 h-4 text-teal-600" />
-                    Active Weather Station & EPW Boundary
-                  </h3>
-                  <span className="text-[10px] font-extrabold px-2.5 py-0.5 rounded-full bg-teal-50 text-teal-800 border border-teal-200">
-                    {climate.sourceType === 'energyplus-s3' ? 'DOE EnergyPlus' : climate.sourceType === 'open-meteo' ? 'Open-Meteo ERA5' : 'Active EPW'}
-                  </span>
-                </div>
-                <p className="text-[11px] text-slate-500 mt-0.5">
-                  Currently loaded reference weather dataset applied across all bioclimatic charts and energy calculations
-                </p>
-
-                <div className="mt-3 p-3.5 rounded-xl bg-slate-50 border border-slate-200 space-y-2.5">
-                  <div className="flex items-start justify-between gap-2">
-                    <div>
-                      <div className="text-sm font-extrabold text-slate-900">
-                        {climate.name}
-                      </div>
-                      <div className="text-[11px] text-slate-500 mt-0.5">
-                        {climate.lat.toFixed(2)}°N, {climate.lon.toFixed(2)}°E • Elevation {climate.elev}m • Timezone GMT{climate.tz >= 0 ? `+${climate.tz}` : climate.tz}
-                      </div>
-                    </div>
-                    <div className="text-right shrink-0">
-                      <span className="inline-block px-2 py-0.5 rounded-md text-[11px] font-extrabold bg-slate-900 text-teal-300">
-                        {climate.koppen}
-                      </span>
-                      <span className="block text-[10px] font-semibold text-slate-600 mt-0.5">
-                        {climate.koppenDesc}
-                      </span>
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-1 border-t border-slate-200 text-center">
-                    <div className="bg-white p-2 rounded-lg border border-slate-200">
-                      <span className="block text-[10px] text-slate-400 font-bold uppercase">Heating / Cooling</span>
-                      <span className="text-xs font-black text-slate-800">{climate.hdd} / {climate.cdd}</span>
-                    </div>
-                    <div className="bg-white p-2 rounded-lg border border-slate-200">
-                      <span className="block text-[10px] text-slate-400 font-bold uppercase">Italian Zone</span>
-                      <span className="text-xs font-black text-slate-800">Zone {climate.dpr412Zone}</span>
-                    </div>
-                    <div className="bg-white p-2 rounded-lg border border-slate-200">
-                      <span className="block text-[10px] text-slate-400 font-bold uppercase">Design DB (99.6%/0.4%)</span>
-                      <span className="text-xs font-black text-slate-800">{climate.designHeat996}°C / {climate.designCool004}°C</span>
-                    </div>
-                    <div className="bg-white p-2 rounded-lg border border-slate-200">
-                      <span className="block text-[10px] text-slate-400 font-bold uppercase">Solar Horiz Total</span>
-                      <span className="text-xs font-black text-slate-800">{climate.solarHoriz.reduce((a, b) => a + b, 0)} kWh/m²</span>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              <div className="text-[11px] text-slate-500 bg-teal-50/60 p-2.5 rounded-xl border border-teal-100 flex items-center gap-2">
-                <Globe className="w-4 h-4 text-teal-600 shrink-0" />
-                <span>
-                  Select any weather station worldwide using the interactive map or search bar below, or drop an EnergyPlus <code className="text-teal-800 font-bold">.epw</code> file above.
-                </span>
-              </div>
-            </div>
-          </div>
-
-          {/* Interactive 23,227-Station World Map & Live OneBuilding/DOE/Open-Meteo Loader */}
-          <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-4">
-            <EpwSearchAndUploadWidget
-              currentClimate={climate}
-              customClimates={customClimates}
-              onSelectClimate={(ds) => {
-                setUploadedQuality(validateEpwDataset(ds));
-                addAndSelectClimate(ds);
-              }}
-            />
           </div>
         </div>
       )}
