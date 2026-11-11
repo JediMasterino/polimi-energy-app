@@ -24,7 +24,10 @@ import {
   calcNaturalVentilationPotential,
   UtciScenarioId,
   UTCI_STRESS_BANDS,
+  UTCI_STRESS_CATEGORIES,
+  UTCI_SCENARIOS,
   calcUtciScenarioDataset,
+  calcAllUtciScenariosSummary,
   calcDistributionHistogram,
   exportSvgNodeToFile,
   exportDataToCsvFile,
@@ -1639,61 +1642,236 @@ export const SubTab7NatVent: React.FC<{
 };
 
 // ============================================================================
-// SUB-TAB 8: OUTDOOR COMFORT (UTCI 4-SCENARIO SWITCHER + 10-BAND STRESS)
+// SUB-TAB 8: OUTDOOR COMFORT (UTCI 4-SCENARIO SWITCHER + 10-BAND STRESS + MONTHLY TABLE)
+// Calibrated to CBE Clima & pythermalcomfort (Bröde et al. 2012 + ASHRAE 55 SolarCal)
 // ============================================================================
 export const SubTab8Utci: React.FC<{
   climate: ClimateDataset;
 }> = ({ climate }) => {
   const [scenario, setScenario] = useState<UtciScenarioId>('sun_wind');
+  const [tableMode, setTableMode] = useState<'pct' | 'hours'>('pct');
+  const [barNormalize, setBarNormalize] = useState<boolean>(true);
 
   const utciData = useMemo(
     () => calcUtciScenarioDataset(climate.hourly, scenario),
     [climate.hourly, scenario]
   );
 
-  return (
-    <div className="space-y-5">
-      {/* 4-Scenario Switcher Header */}
-      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-4 flex flex-wrap items-center justify-between gap-4">
-        <div>
-          <h3 className="text-sm font-bold text-slate-800">
-            Universal Thermal Climate Index (UTCI) Microclimate Sheltering Switcher
-          </h3>
-          <p className="text-[11px] text-slate-500">
-            Compare open plazas vs. shaded tree canopies, wind-sheltered courtyards, and semi-outdoor loggias
-          </p>
-        </div>
+  const allScenariosSummary = useMemo(
+    () => calcAllUtciScenariosSummary(climate.hourly),
+    [climate.hourly]
+  );
 
-        <div className="flex flex-wrap items-center gap-2 text-xs">
-          {(
-            [
-              { id: 'sun_wind', label: '(a) Sun & Wind (Open Plaza)' },
-              { id: 'nosun_wind', label: '(b) No Sun & Wind (Tree Canopy / Pergola)' },
-              { id: 'sun_nowind', label: '(c) Sun & No Wind (Sunlit Courtyard)' },
-              { id: 'nosun_nowind', label: '(d) No Sun & No Wind (Shaded Loggia)' }
-            ] as Array<{ id: UtciScenarioId; label: string }>
-          ).map((sc) => (
+  // Group totals for table
+  const tableSummary = useMemo(() => {
+    // Categories 0..4 = Cold Stress (-5 to -1)
+    // Category 5 = No Stress (0)
+    // Categories 6..9 = Heat Stress (1 to 4)
+    const monthlyColdCounts = new Array(12).fill(0);
+    const monthlyComfCounts = new Array(12).fill(0);
+    const monthlyHeatCounts = new Array(12).fill(0);
+
+    for (let m = 0; m < 12; m++) {
+      for (let c = 0; c < 5; c++) monthlyColdCounts[m] += utciData.monthlyCategoryCounts[m][c];
+      monthlyComfCounts[m] = utciData.monthlyCategoryCounts[m][5];
+      for (let c = 6; c < 10; c++) monthlyHeatCounts[m] += utciData.monthlyCategoryCounts[m][c];
+    }
+
+    const monthlyColdPct = monthlyColdCounts.map((v, m) => +((v / Math.max(1, utciData.monthlyTotalHours[m])) * 100).toFixed(1));
+    const monthlyComfPct = monthlyComfCounts.map((v, m) => +((v / Math.max(1, utciData.monthlyTotalHours[m])) * 100).toFixed(1));
+    const monthlyHeatPct = monthlyHeatCounts.map((v, m) => +((v / Math.max(1, utciData.monthlyTotalHours[m])) * 100).toFixed(1));
+
+    let annualCold = 0;
+    const annualComf = utciData.annualCategoryCounts[5];
+    let annualHeat = 0;
+    for (let c = 0; c < 5; c++) annualCold += utciData.annualCategoryCounts[c];
+    for (let c = 6; c < 10; c++) annualHeat += utciData.annualCategoryCounts[c];
+
+    const totH = Math.max(1, utciData.totalHours);
+
+    return {
+      monthlyColdCounts,
+      monthlyComfCounts,
+      monthlyHeatCounts,
+      monthlyColdPct,
+      monthlyComfPct,
+      monthlyHeatPct,
+      annualColdCounts: annualCold,
+      annualComfCounts: annualComf,
+      annualHeatCounts: annualHeat,
+      annualColdPct: +((annualCold / totH) * 100).toFixed(1),
+      annualComfPct: +((annualComf / totH) * 100).toFixed(1),
+      annualHeatPct: +((annualHeat / totH) * 100).toFixed(1)
+    };
+  }, [utciData]);
+
+  // Export table to CSV
+  const handleExportTableCsv = () => {
+    const isPct = tableMode === 'pct';
+    const unitSuffix = isPct ? '%' : 'h';
+    const headers = [
+      'Stress Category ID',
+      'CBE Category Label',
+      'UTCI Range (°C)',
+      ...MONTHS.map((m) => `${m} (${unitSuffix})`),
+      `Annual Total (${unitSuffix})`
+    ];
+
+    const rows: Array<Array<string | number>> = UTCI_STRESS_CATEGORIES.map((cat, c) => [
+      cat.id,
+      cat.label,
+      `${cat.minC === -Infinity ? '<= -40' : cat.maxC === Infinity ? '> +46' : cat.minC + ' to ' + cat.maxC}`,
+      ...MONTHS.map((_, m) => (isPct ? utciData.monthlyCategoryPct[m][c] : utciData.monthlyCategoryCounts[m][c])),
+      isPct ? utciData.annualCategoryPct[c] : utciData.annualCategoryCounts[c]
+    ]);
+
+    // Summary rows
+    rows.push([
+      'total_cold_stress',
+      'TOTAL COLD STRESS (< +9°C)',
+      '<= +9',
+      ...MONTHS.map((_, m) => (isPct ? tableSummary.monthlyColdPct[m] : tableSummary.monthlyColdCounts[m])),
+      isPct ? tableSummary.annualColdPct : tableSummary.annualColdCounts
+    ]);
+    rows.push([
+      'total_comfort_no_stress',
+      'TOTAL NO THERMAL STRESS (+9 to +26°C)',
+      '+9 to +26',
+      ...MONTHS.map((_, m) => (isPct ? tableSummary.monthlyComfPct[m] : tableSummary.monthlyComfCounts[m])),
+      isPct ? tableSummary.annualComfPct : tableSummary.annualComfCounts
+    ]);
+    rows.push([
+      'total_heat_stress',
+      'TOTAL HEAT STRESS (> +26°C)',
+      '> +26',
+      ...MONTHS.map((_, m) => (isPct ? tableSummary.monthlyHeatPct[m] : tableSummary.monthlyHeatCounts[m])),
+      isPct ? tableSummary.annualHeatPct : tableSummary.annualHeatCounts
+    ]);
+    rows.push([
+      'total_hours',
+      'TOTAL HOURS / SHARE',
+      'ALL',
+      ...MONTHS.map((_, m) => (isPct ? 100.0 : utciData.monthlyTotalHours[m])),
+      isPct ? 100.0 : utciData.totalHours
+    ]);
+
+    exportDataToCsvFile(headers, rows, `${climate.id}_utci_breakdown_${scenario}_${tableMode}.csv`);
+  };
+
+  return (
+    <div className="space-y-6">
+      {/* 1. CBE Clima Best Condition Recommendation Banner */}
+      <div className="bg-gradient-to-r from-emerald-50 via-teal-50 to-blue-50 border border-emerald-200/90 rounded-2xl p-4 shadow-sm">
+        <div className="flex flex-wrap items-center justify-between gap-4">
+          <div className="flex items-start gap-3">
+            <div className="w-10 h-10 rounded-xl bg-emerald-600 text-white flex items-center justify-center font-bold text-lg shadow-sm shrink-0 mt-0.5">
+              <CheckCircle2 className="w-5 h-5 text-white" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <span className="text-[10px] font-bold uppercase tracking-wider bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded-full">
+                  CBE Clima Optimal Condition
+                </span>
+                <span className="text-xs text-slate-500 font-medium">
+                  Outdoor UTCI Physiological Comfort Neutrality (+9°C to +26°C)
+                </span>
+              </div>
+              <h3 className="text-sm font-bold text-slate-900 mt-1">
+                {allScenariosSummary.cbeBestHeadline}
+              </h3>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2 text-xs">
+            {UTCI_SCENARIOS.map((sc) => {
+              const res = allScenariosSummary.results[sc.id];
+              const isBest = sc.id === allScenariosSummary.bestScenario;
+              const isCurrent = sc.id === scenario;
+              return (
+                <button
+                  key={sc.id}
+                  type="button"
+                  onClick={() => setScenario(sc.id)}
+                  className={`px-3 py-1.5 rounded-xl text-left border transition ${
+                    isCurrent
+                      ? 'bg-teal-600 text-white border-teal-600 shadow-sm font-bold'
+                      : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'
+                  }`}
+                >
+                  <div className="flex items-center gap-1.5">
+                    <span>{sc.label}</span>
+                    {isBest && (
+                      <span className={`text-[9px] px-1.5 py-0.2 rounded font-bold ${
+                        isCurrent ? 'bg-white text-teal-800' : 'bg-emerald-100 text-emerald-800'
+                      }`}>
+                        Best
+                      </span>
+                    )}
+                  </div>
+                  <div className={`text-[10px] ${isCurrent ? 'text-teal-100' : 'text-slate-500'}`}>
+                    {res.annualComfortPct}% ({res.annualComfortHours.toLocaleString()}h)
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      </div>
+
+      {/* 2. Microclimate Sheltering Scenario Selector Cards */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+        {UTCI_SCENARIOS.map((sc) => {
+          const res = allScenariosSummary.results[sc.id];
+          const isSelected = scenario === sc.id;
+          const isBest = sc.id === allScenariosSummary.bestScenario;
+
+          return (
             <button
               key={sc.id}
               type="button"
               onClick={() => setScenario(sc.id)}
-              className={`px-3 py-1.5 rounded-xl font-bold border transition ${
-                scenario === sc.id
-                  ? 'bg-teal-600 text-white border-teal-600 shadow-sm'
-                  : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'
+              className={`p-3.5 rounded-2xl border text-left transition relative ${
+                isSelected
+                  ? 'bg-teal-50/60 border-teal-500 ring-2 ring-teal-500/20 shadow-sm'
+                  : 'bg-white border-slate-200 hover:border-slate-300 hover:bg-slate-50/50'
               }`}
             >
-              {sc.label}
+              {isBest && (
+                <span className="absolute top-2.5 right-2.5 bg-emerald-600 text-white text-[9px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wider shadow-xs">
+                  Optimal
+                </span>
+              )}
+              <div className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                <span>{sc.label}</span>
+              </div>
+              <p className="text-[10px] text-slate-500 line-clamp-1 mt-0.5">
+                {sc.description}
+              </p>
+
+              <div className="grid grid-cols-3 gap-1.5 mt-3 pt-2.5 border-t border-slate-100 text-center">
+                <div className="bg-slate-50/80 rounded-lg p-1">
+                  <div className="text-[9px] text-slate-400 font-medium">Comfort</div>
+                  <div className="text-xs font-bold text-emerald-600">{res.annualComfortPct}%</div>
+                </div>
+                <div className="bg-slate-50/80 rounded-lg p-1">
+                  <div className="text-[9px] text-slate-400 font-medium">Cold</div>
+                  <div className="text-xs font-bold text-blue-600">{res.annualColdStressPct}%</div>
+                </div>
+                <div className="bg-slate-50/80 rounded-lg p-1">
+                  <div className="text-[9px] text-slate-400 font-medium">Heat</div>
+                  <div className="text-xs font-bold text-amber-600">{res.annualHeatStressPct}%</div>
+                </div>
+              </div>
             </button>
-          ))}
-        </div>
+          );
+        })}
       </div>
 
-      {/* Row 1: Continuous UTCI Temperature Heatmap + Discrete 10-Band UTCI Stress Heatmap */}
+      {/* 3. Row 1: Continuous Heatmap + Discrete 10-Band Stress Heatmap */}
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-5">
         <ClimaChartCard
           title="24h × 365d Continuous UTCI Equivalent Temperature Heatmap (°C)"
-          subtitle={`Scenario: ${scenario.toUpperCase()} — No Thermal Stress (+9°C to +26°C): ${utciData.annualComfortPct}% of year`}
+          subtitle={`Scenario: ${scenario.toUpperCase()} — No Thermal Stress (+9°C to +26°C): ${utciData.annualComfortPct}% (${utciData.annualComfortHours.toLocaleString()} h)`}
           icon={<Thermometer className="w-4 h-4 text-rose-500" />}
           svgFilename={`${climate.id}_utci_temp_${scenario}.svg`}
           csvFilename={`${climate.id}_utci_hourly_${scenario}.csv`}
@@ -1728,10 +1906,10 @@ export const SubTab8Utci: React.FC<{
           svgFilename={`${climate.id}_utci_10band_${scenario}.svg`}
           csvFilename={`${climate.id}_utci_10band_${scenario}.csv`}
           onBuildCsv={() => ({
-            headers: ['Month', ...UTCI_STRESS_BANDS.map((b) => b.shortLabel)],
+            headers: ['Month', ...UTCI_STRESS_CATEGORIES.map((b) => b.shortLabel)],
             rows: MONTHS.map((m, i) => [
               m,
-              ...UTCI_STRESS_BANDS.map((b) => utciData.monthlyBandShares[i][b.id])
+              ...UTCI_STRESS_CATEGORIES.map((b) => utciData.monthlyBandShares[i][b.id])
             ])
           })}
         >
@@ -1742,13 +1920,13 @@ export const SubTab8Utci: React.FC<{
               hourly={climate.hourly}
               getValue={(_, idx) => utciData.hourlyUtci[idx]}
               getColor={(val) => {
-                for (const b of UTCI_STRESS_BANDS) {
-                  if (val >= b.minC && val < b.maxC) return b.color;
+                for (const b of UTCI_STRESS_CATEGORIES) {
+                  if (val <= b.maxC && (b.minC === -Infinity || val > b.minC)) return b.color;
                 }
-                return '#10b981';
+                return '#6EB557';
               }}
-              unitLabel="10-Band UTCI"
-              legendItems={UTCI_STRESS_BANDS.filter((_, i) => i >= 2 && i <= 8).map((b) => ({
+              unitLabel="UTCI Stress Category"
+              legendItems={UTCI_STRESS_CATEGORIES.map((b) => ({
                 label: b.shortLabel,
                 color: b.color
               }))}
@@ -1757,74 +1935,115 @@ export const SubTab8Utci: React.FC<{
         </ClimaChartCard>
       </div>
 
-      {/* Row 2: Monthly Stacked Bar Percentages of 10 UTCI Stress Categories */}
+      {/* 4. Row 2: Monthly Stacked Bar Distribution (Normalized % vs Absolute Hours) */}
       <ClimaChartCard
-        title="Monthly Stacked Distribution of 10 UTCI Thermal Stress Categories (%)"
-        subtitle="Percentage of hours per month in each physiological thermal stress band"
+        title="Monthly Distribution of 10 UTCI Thermal Stress Categories"
+        subtitle={
+          barNormalize
+            ? 'Normalized monthly percentage of hours (%) in each physiological thermal stress band'
+            : 'Total monthly hours (h) in each physiological thermal stress band'
+        }
         icon={<Sparkles className="w-4 h-4 text-teal-600" />}
         svgFilename={`${climate.id}_utci_monthly_bars_${scenario}.svg`}
         csvFilename={`${climate.id}_utci_monthly_bars_${scenario}.csv`}
+        controls={
+          <div className="flex items-center gap-1 bg-slate-100 p-0.5 rounded-lg text-[11px] font-medium">
+            <button
+              type="button"
+              onClick={() => setBarNormalize(true)}
+              className={`px-2.5 py-1 rounded-md transition ${
+                barNormalize ? 'bg-white text-slate-800 shadow-xs font-bold' : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              Normalize (%)
+            </button>
+            <button
+              type="button"
+              onClick={() => setBarNormalize(false)}
+              className={`px-2.5 py-1 rounded-md transition ${
+                !barNormalize ? 'bg-white text-slate-800 shadow-xs font-bold' : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              Hours (h)
+            </button>
+          </div>
+        }
         onBuildCsv={() => ({
-          headers: ['Month', ...UTCI_STRESS_BANDS.map((b) => b.label)],
+          headers: ['Month', ...UTCI_STRESS_CATEGORIES.map((b) => b.label)],
           rows: MONTHS.map((m, i) => [
             m,
-            ...UTCI_STRESS_BANDS.map((b) => utciData.monthlyBandShares[i][b.id])
+            ...UTCI_STRESS_CATEGORIES.map((b) =>
+              barNormalize ? utciData.monthlyCategoryPct[i][b.code + 5] : utciData.monthlyCategoryCounts[i][b.code + 5]
+            )
           ])
         })}
       >
         {(svgRef, tooltipCtx) => {
           const W = 860;
-          const H = 260;
-          const padL = 44;
+          const H = 270;
+          const padL = 48;
           const padR = 20;
-          const padT = 18;
-          const padB = 30;
+          const padT = 20;
+          const padB = 34;
           const plotW = W - padL - padR;
           const plotH = H - padT - padB;
           const xForM = (i: number) => padL + (i + 0.5) * (plotW / 12);
+          const maxMonthH = 744; // Max hours in a month (31 x 24)
+
+          const yTicks = barNormalize
+            ? [0, 25, 50, 75, 100]
+            : [0, 186, 372, 558, 744];
 
           return (
-            <div className="space-y-2">
+            <div className="space-y-3">
               <svg ref={svgRef} viewBox={`0 0 ${W} ${H}`} className="w-full h-auto">
-                {[0, 25, 50, 75, 100].map((pct) => {
-                  const y = padT + plotH - (pct / 100) * plotH;
+                {yTicks.map((tick) => {
+                  const frac = barNormalize ? tick / 100 : tick / maxMonthH;
+                  const y = padT + plotH - frac * plotH;
                   return (
-                    <g key={pct}>
+                    <g key={tick}>
                       <line x1={padL} y1={y} x2={W - padR} y2={y} stroke="#f1f5f9" />
                       <text x={padL - 6} y={y + 3} textAnchor="end" fontSize="9" fill="#64748b">
-                        {pct}%
+                        {tick}{barNormalize ? '%' : 'h'}
                       </text>
                     </g>
                   );
                 })}
 
                 {MONTHS.map((m, i) => {
-                  const shares = utciData.monthlyBandShares[i];
-                  let cumPct = 0;
+                  const mTot = Math.max(1, utciData.monthlyTotalHours[i]);
+                  const mScale = barNormalize ? 100 : maxMonthH;
+                  let cumVal = 0;
                   const x = xForM(i);
+
                   return (
                     <g key={m}>
-                      {UTCI_STRESS_BANDS.map((band) => {
-                        const val = shares[band.id] || 0;
+                      {UTCI_STRESS_CATEGORIES.map((band, catIdx) => {
+                        const count = utciData.monthlyCategoryCounts[i][catIdx];
+                        const pct = utciData.monthlyCategoryPct[i][catIdx];
+                        const val = barNormalize ? pct : count;
                         if (val <= 0) return null;
-                        const hBar = (val / 100) * plotH;
-                        const y = padT + plotH - ((cumPct + val) / 100) * plotH;
-                        cumPct += val;
+
+                        const hBar = (val / mScale) * plotH;
+                        const y = padT + plotH - ((cumVal + val) / mScale) * plotH;
+                        cumVal += val;
+
                         return (
                           <rect
                             key={band.id}
                             x={x - 18}
                             y={y}
                             width={36}
-                            height={Math.max(0.5, hBar)}
+                            height={Math.max(0.6, hBar)}
                             fill={band.color}
                             className="cursor-pointer hover:opacity-90 transition"
                             onMouseEnter={(e) => {
                               tooltipCtx.show(e, `${m} — ${band.label}`, [
                                 { label: 'Stress Category', value: band.label, color: band.color },
-                                { label: 'Monthly Share', value: `${val}%`, color: band.color },
-                                { label: 'Equivalent Temp Range', value: `${band.minC}°C to ${band.maxC}°C` },
-                                { label: 'Shelter Scenario', value: scenario.toUpperCase() }
+                                { label: 'Monthly Share', value: `${pct}%`, color: band.color },
+                                { label: 'Monthly Hours', value: `${count} h / ${mTot} h` },
+                                { label: 'Equivalent Temp Range', value: `${band.minC === -Infinity ? '< -40' : band.maxC === Infinity ? '> +46' : band.minC + '°C to ' + band.maxC + '°C'}` },
+                                { label: 'Microclimate Scenario', value: utciData.meta.label }
                               ]);
                             }}
                             onMouseMove={(e) => tooltipCtx.move(e)}
@@ -1832,7 +2051,7 @@ export const SubTab8Utci: React.FC<{
                           />
                         );
                       })}
-                      <text x={x} y={H - 8} textAnchor="middle" fontSize="9.5" fontWeight="600" fill="#475569">
+                      <text x={x} y={H - 10} textAnchor="middle" fontSize="9.5" fontWeight="600" fill="#475569">
                         {m}
                       </text>
                     </g>
@@ -1840,11 +2059,11 @@ export const SubTab8Utci: React.FC<{
                 })}
               </svg>
 
-              <div className="flex flex-wrap items-center justify-center gap-2 text-[10px]">
-                {UTCI_STRESS_BANDS.map((b) => (
-                  <span key={b.id} className="flex items-center gap-1">
-                    <span className="w-2.5 h-2.5 rounded-sm inline-block" style={{ backgroundColor: b.color }} />
-                    {b.shortLabel}
+              <div className="flex flex-wrap items-center justify-center gap-x-4 gap-y-1.5 text-[10px] pt-1 border-t border-slate-100">
+                {UTCI_STRESS_CATEGORIES.map((b) => (
+                  <span key={b.id} className="flex items-center gap-1.5 text-slate-700">
+                    <span className="w-2.5 h-2.5 rounded-xs inline-block shrink-0 shadow-2xs" style={{ backgroundColor: b.color }} />
+                    <span className="font-medium">{b.shortLabel}</span>
                   </span>
                 ))}
               </div>
@@ -1852,6 +2071,304 @@ export const SubTab8Utci: React.FC<{
           );
         }}
       </ClimaChartCard>
+
+      {/* 5. Row 3: THE MONTHLY & ANNUAL UTCI THERMAL STRESS BREAKDOWN TABLE */}
+      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-5 space-y-4">
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 pb-3">
+          <div>
+            <div className="flex items-center gap-2">
+              <span className="p-1 rounded-lg bg-teal-50 text-teal-600">
+                <FileSpreadsheet className="w-4 h-4" />
+              </span>
+              <h3 className="text-sm font-bold text-slate-800">
+                Monthly & Annual UTCI Thermal Stress Breakdown Table
+              </h3>
+            </div>
+            <p className="text-[11px] text-slate-500 mt-0.5">
+              Exact physiological stress category distribution matching CBE Clima table outputs across all 12 months + Annual total
+            </p>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <div className="flex items-center gap-1 bg-slate-100 p-0.5 rounded-lg text-xs font-medium">
+              <button
+                type="button"
+                onClick={() => setTableMode('pct')}
+                className={`px-3 py-1 rounded-md transition ${
+                  tableMode === 'pct' ? 'bg-white text-slate-800 shadow-xs font-bold' : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                Percentage (%)
+              </button>
+              <button
+                type="button"
+                onClick={() => setTableMode('hours')}
+                className={`px-3 py-1 rounded-md transition ${
+                  tableMode === 'hours' ? 'bg-white text-slate-800 shadow-xs font-bold' : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                Hours (h)
+              </button>
+            </div>
+
+            <button
+              type="button"
+              onClick={handleExportTableCsv}
+              className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-semibold bg-slate-50 text-slate-700 border border-slate-200 hover:bg-slate-100 transition shadow-2xs"
+            >
+              <Download className="w-3.5 h-3.5" />
+              Export Table CSV
+            </button>
+          </div>
+        </div>
+
+        {/* The Scrollable Responsive Table */}
+        <div className="overflow-x-auto rounded-xl border border-slate-200">
+          <table className="w-full text-left text-xs border-collapse min-w-[760px]">
+            <thead>
+              <tr className="bg-slate-50/80 border-b border-slate-200 text-slate-600 text-[11px] font-semibold">
+                <th className="py-2.5 px-3 sticky left-0 bg-slate-50 z-10 w-56">
+                  UTCI Stress Category
+                </th>
+                <th className="py-2.5 px-2 text-center w-24">
+                  Range (°C)
+                </th>
+                {MONTHS.map((m) => (
+                  <th key={m} className="py-2.5 px-1.5 text-center font-semibold">
+                    {m}
+                  </th>
+                ))}
+                <th className="py-2.5 px-3 text-right bg-slate-100/90 font-bold text-slate-900">
+                  Annual Total
+                </th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100 font-mono text-[11px]">
+              {UTCI_STRESS_CATEGORIES.map((cat, c) => {
+                const isComf = cat.code === 0;
+                const annualVal = tableMode === 'pct' ? utciData.annualCategoryPct[c] : utciData.annualCategoryCounts[c];
+
+                return (
+                  <tr
+                    key={cat.id}
+                    className={`hover:bg-slate-50/80 transition ${
+                      isComf ? 'bg-emerald-50/40 font-semibold' : ''
+                    }`}
+                  >
+                    <td className="py-2 px-3 sticky left-0 bg-white font-sans text-slate-800 z-10">
+                      <div className="flex items-center gap-2">
+                        <span
+                          className="w-3 h-3 rounded-xs shrink-0 shadow-2xs"
+                          style={{ backgroundColor: cat.color }}
+                        />
+                        <span className={isComf ? 'font-bold text-emerald-900' : ''}>
+                          {cat.label}
+                        </span>
+                      </div>
+                    </td>
+                    <td className="py-2 px-2 text-center text-slate-500 font-sans text-[10px]">
+                      {cat.minC === -Infinity ? '≤ -40' : cat.maxC === Infinity ? '> +46' : `${cat.minC} to ${cat.maxC}`}
+                    </td>
+                    {MONTHS.map((_, m) => {
+                      const val = tableMode === 'pct' ? utciData.monthlyCategoryPct[m][c] : utciData.monthlyCategoryCounts[m][c];
+                      const hasVal = val > 0;
+                      return (
+                        <td
+                          key={m}
+                          className={`py-2 px-1.5 text-center ${
+                            hasVal ? (isComf ? 'text-emerald-700 font-bold' : 'text-slate-700') : 'text-slate-300'
+                          }`}
+                        >
+                          {hasVal ? (tableMode === 'pct' ? `${val}%` : val) : '—'}
+                        </td>
+                      );
+                    })}
+                    <td className={`py-2 px-3 text-right bg-slate-50/70 font-bold ${
+                      isComf ? 'text-emerald-700 font-extrabold bg-emerald-50/60' : 'text-slate-800'
+                    }`}>
+                      {tableMode === 'pct' ? `${annualVal}%` : annualVal.toLocaleString()}
+                    </td>
+                  </tr>
+                );
+              })}
+
+              {/* Group Summary: Total Cold Stress (< +9°C) */}
+              <tr className="bg-blue-50/50 border-t-2 border-slate-200 font-sans font-bold text-slate-800">
+                <td className="py-2 px-3 sticky left-0 bg-blue-50/90 text-blue-900 z-10">
+                  Total Cold Stress (&lt; +9°C)
+                </td>
+                <td className="py-2 px-2 text-center text-blue-700 text-[10px]">
+                  &le; +9
+                </td>
+                {MONTHS.map((_, m) => {
+                  const val = tableMode === 'pct' ? tableSummary.monthlyColdPct[m] : tableSummary.monthlyColdCounts[m];
+                  return (
+                    <td key={m} className="py-2 px-1.5 text-center text-blue-800 font-mono">
+                      {val > 0 ? (tableMode === 'pct' ? `${val}%` : val) : '—'}
+                    </td>
+                  );
+                })}
+                <td className="py-2 px-3 text-right text-blue-900 font-mono font-bold bg-blue-100/60">
+                  {tableMode === 'pct' ? `${tableSummary.annualColdPct}%` : tableSummary.annualColdCounts.toLocaleString()}
+                </td>
+              </tr>
+
+              {/* Group Summary: Total Comfort / No Thermal Stress (+9 to +26°C) */}
+              <tr className="bg-emerald-100/60 border-t border-b border-emerald-300 font-sans font-bold text-emerald-950">
+                <td className="py-2.5 px-3 sticky left-0 bg-emerald-100/90 text-emerald-900 z-10">
+                  Total No Thermal Stress (+9°C to +26°C)
+                </td>
+                <td className="py-2.5 px-2 text-center text-emerald-800 text-[10px]">
+                  +9 to +26
+                </td>
+                {MONTHS.map((_, m) => {
+                  const val = tableMode === 'pct' ? tableSummary.monthlyComfPct[m] : tableSummary.monthlyComfCounts[m];
+                  return (
+                    <td key={m} className="py-2.5 px-1.5 text-center text-emerald-900 font-mono font-bold">
+                      {val > 0 ? (tableMode === 'pct' ? `${val}%` : val) : '—'}
+                    </td>
+                  );
+                })}
+                <td className="py-2.5 px-3 text-right text-emerald-900 font-mono font-extrabold bg-emerald-200/60">
+                  {tableMode === 'pct' ? `${tableSummary.annualComfPct}%` : tableSummary.annualComfCounts.toLocaleString()}
+                </td>
+              </tr>
+
+              {/* Group Summary: Total Heat Stress (> +26°C) */}
+              <tr className="bg-amber-50/50 font-sans font-bold text-slate-800">
+                <td className="py-2 px-3 sticky left-0 bg-amber-50/90 text-amber-900 z-10">
+                  Total Heat Stress (&gt; +26°C)
+                </td>
+                <td className="py-2 px-2 text-center text-amber-700 text-[10px]">
+                  &gt; +26
+                </td>
+                {MONTHS.map((_, m) => {
+                  const val = tableMode === 'pct' ? tableSummary.monthlyHeatPct[m] : tableSummary.monthlyHeatCounts[m];
+                  return (
+                    <td key={m} className="py-2 px-1.5 text-center text-amber-800 font-mono">
+                      {val > 0 ? (tableMode === 'pct' ? `${val}%` : val) : '—'}
+                    </td>
+                  );
+                })}
+                <td className="py-2 px-3 text-right text-amber-900 font-mono font-bold bg-amber-100/60">
+                  {tableMode === 'pct' ? `${tableSummary.annualHeatPct}%` : tableSummary.annualHeatCounts.toLocaleString()}
+                </td>
+              </tr>
+
+              {/* Grand Total Row */}
+              <tr className="bg-slate-100 font-sans font-bold text-slate-700 border-t border-slate-300">
+                <td className="py-2 px-3 sticky left-0 bg-slate-100 z-10">
+                  Total Hours / Share
+                </td>
+                <td className="py-2 px-2 text-center text-slate-500 text-[10px]">
+                  ALL
+                </td>
+                {MONTHS.map((_, m) => (
+                  <td key={m} className="py-2 px-1.5 text-center text-slate-600 font-mono">
+                    {tableMode === 'pct' ? '100%' : utciData.monthlyTotalHours[m]}
+                  </td>
+                ))}
+                <td className="py-2 px-3 text-right text-slate-900 font-mono font-bold bg-slate-200/80">
+                  {tableMode === 'pct' ? '100.0%' : utciData.totalHours.toLocaleString()}
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {/* 6. Row 4: 4-Scenario Microclimate Cross-Comparison & Architectural Takeaway */}
+      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-5 space-y-4">
+        <div>
+          <h3 className="text-sm font-bold text-slate-800">
+            Microclimate Sheltering Cross-Scenario Comparison
+          </h3>
+          <p className="text-[11px] text-slate-500">
+            Side-by-side performance comparison of all 4 CBE Clima outdoor microclimate configurations
+          </p>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
+          {UTCI_SCENARIOS.map((sc) => {
+            const res = allScenariosSummary.results[sc.id];
+            const isBest = sc.id === allScenariosSummary.bestScenario;
+            const isCurrent = sc.id === scenario;
+
+            let architecturalAction = '';
+            if (sc.id === 'sun_wind') {
+              architecturalAction = 'Baseline open field: maximizes wind dilution in humid summers, but suffers high winter wind chill.';
+            } else if (sc.id === 'nosun_wind') {
+              architecturalAction = 'Deciduous tree canopy / pergola: lowers peak summer operative temp by up to 8.5°C while maintaining breeze.';
+            } else if (sc.id === 'sun_nowind') {
+              architecturalAction = 'Sheltered South courtyard: traps passive solar warmth and shields from cold winter gusts.';
+            } else {
+              architecturalAction = 'Deep loggia / arcade: ideal for hot-dry summer conditions, providing total radiative and convective shelter.';
+            }
+
+            return (
+              <div
+                key={sc.id}
+                className={`p-4 rounded-xl border flex flex-col justify-between transition ${
+                  isCurrent
+                    ? 'bg-teal-50/50 border-teal-500 shadow-sm ring-1 ring-teal-500/20'
+                    : 'bg-slate-50/60 border-slate-200'
+                }`}
+              >
+                <div>
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-xs font-bold text-slate-800">{sc.label}</span>
+                    {isBest && (
+                      <span className="bg-emerald-600 text-white text-[9px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wider">
+                        Best Choice
+                      </span>
+                    )}
+                  </div>
+                  <div className="text-[10px] text-slate-500 font-medium mt-0.5">{sc.tag}</div>
+
+                  <div className="mt-3 space-y-1.5 text-xs">
+                    <div className="flex items-center justify-between">
+                      <span className="text-slate-600 font-medium">No Thermal Stress:</span>
+                      <span className="font-bold text-emerald-700">
+                        {res.annualComfortPct}% ({res.annualComfortHours.toLocaleString()} h)
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between text-[11px]">
+                      <span className="text-slate-500">Cold Stress (&lt;9°C):</span>
+                      <span className="font-semibold text-blue-600">
+                        {res.annualColdStressPct}% ({res.annualColdStressHours.toLocaleString()} h)
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between text-[11px]">
+                      <span className="text-slate-500">Heat Stress (&gt;26°C):</span>
+                      <span className="font-semibold text-amber-600">
+                        {res.annualHeatStressPct}% ({res.annualHeatStressHours.toLocaleString()} h)
+                      </span>
+                    </div>
+                  </div>
+
+                  <p className="text-[11px] text-slate-600 italic bg-white/70 p-2 rounded-lg border border-slate-200/60 mt-3">
+                    {architecturalAction}
+                  </p>
+                </div>
+
+                <div className="mt-3 pt-2 border-t border-slate-200/60">
+                  <button
+                    type="button"
+                    onClick={() => setScenario(sc.id)}
+                    className={`w-full py-1.5 px-3 rounded-lg text-xs font-bold transition text-center ${
+                      isCurrent
+                        ? 'bg-teal-600 text-white shadow-2xs'
+                        : 'bg-white text-slate-700 border border-slate-200 hover:bg-slate-100'
+                    }`}
+                  >
+                    {isCurrent ? 'Active View' : 'Inspect Scenario'}
+                  </button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
     </div>
   );
 };

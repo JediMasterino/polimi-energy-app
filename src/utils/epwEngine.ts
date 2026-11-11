@@ -1,5 +1,6 @@
 // ============================================================================
 // EPW WEATHER ENGINE, SOLAR GEOMETRY, CBE CLIMA & PSYCHROMETRIC PROCESSOR
+import { calcUtciForScenario } from './utciEngine';
 // Supports:
 // 1. Official EnergyPlus Weather (NatLabRockies/EnergyPlus master.geojson + S3)
 // 2. Open-Meteo Global ERA5 8,760-hour TMY Synthesis for any city on Earth
@@ -238,38 +239,17 @@ export function calcSolarPosition(
   return { alt: altDeg, az: azDeg };
 }
 
-// Universal Thermal Climate Index (UTCI °C) calibrated to Bröde et al. (2012) & ASHRAE 55 SolarCal for CBE Clima
+// Universal Thermal Climate Index (UTCI °C) exact implementation calibrated to Bröde et al. (2012) & ASHRAE 55 SolarCal for CBE Clima
 export function calcApproxUtci(
   tAir: number,
   rhPct: number,
   windSpeed: number,
   ghi: number,
-  solarAltDeg = 35
+  solarAltDeg = 35,
+  dni = 0
 ): number {
-  // UTCI valid 10m wind speed domain: 0.5 to 17.0 m/s (reference condition v_ref = 0.5 m/s)
-  const v = Math.max(0.5, Math.min(17.0, windSpeed));
-
-  // ASHRAE 55 SolarCal outdoor Mean Radiant Temperature increment ΔT_mrt from solar radiation
-  const sinAlt = Math.max(0.15, Math.sin((Math.max(5, solarAltDeg) * Math.PI) / 180));
-  const fBes = 0.5; // Fraction of body exposed to sun
-  const aSw = 0.7; // Shortwave absorptivity (standard clothing)
-  // Effective radiant field ERF_solar -> ΔT_mrt (°C)
-  const deltaTmrt = ghi > 0 ? Math.min(28, (aSw * fBes * (ghi / Math.max(0.35, sinAlt * 1.15))) / 26.5) : 0;
-
-  // Radiant offset (Bröde et al., 2012: ~0.27 °C UTCI per 1 °C ΔT_mrt)
-  const radOffset = 0.27 * deltaTmrt;
-
-  // Convective wind offset (zero at reference wind speed v = 0.5 m/s)
-  const vExcess = Math.max(0, v - 0.5);
-  const windOffset = -1.35 * Math.pow(vExcess, 0.58) * ((33 - tAir) / 18);
-
-  // Vapor pressure / humidity offset relative to UTCI reference 50% RH (or 20 hPa above 29°C)
-  const humidOffset =
-    tAir > 20
-      ? ((rhPct - 50) / 50) * (0.8 + 0.14 * Math.max(0, tAir - 20))
-      : ((rhPct - 50) / 50) * 0.25;
-
-  return +(tAir + radOffset + windOffset + humidOffset).toFixed(1);
+  const directRad = dni > 0 ? dni : (ghi > 0 ? ghi * 0.85 : 0);
+  return calcUtciForScenario(tAir, rhPct, windSpeed, directRad, solarAltDeg, 'sun_wind');
 }
 
 // Automatically classify Köppen-Geiger climate code from monthly temperature array
@@ -385,8 +365,8 @@ export function buildClimateFromHourly(
     if (rec.dryBulb >= 12 && rec.dryBulb <= 26 && rec.relHum <= 80) {
       natVentHours++;
     }
-    // UTCI No Thermal Stress (9°C <= UTCI <= 26°C)
-    if (rec.utci >= 9 && rec.utci <= 26) {
+    // UTCI No Thermal Stress (+9°C < UTCI <= +26°C) as defined by Bröde et al. & CBE Clima
+    if (rec.utci > 9 && rec.utci <= 26) {
       utciNoStressHours++;
     }
 
@@ -609,7 +589,7 @@ export function synthesizeHourlyFromPreset(preset: {
         const secondaryAngle = (primaryAngle + 145) % 360;
         const baseAngle = pseudoRand(dayOfYear * 13 + h) < 0.65 ? primaryAngle : secondaryAngle;
         const windDir = windSpeed === 0 ? 0 : Math.round((baseAngle + (pseudoRand(hourOfYear * 7) - 0.5) * 75 + 360) % 360);
-        const utci = calcApproxUtci(dryBulb, relHum, windSpeed, ghi, alt);
+        const utci = calcUtciForScenario(dryBulb, relHum, windSpeed, dni, alt, 'sun_wind');
         const gamma = (17.27 * dryBulb) / (dryBulb + 237.3) + Math.log(Math.max(0.05, relHum / 100));
         const dewPoint = +((237.3 * gamma) / (17.27 - gamma)).toFixed(1);
         const skyCover = Math.round(Math.max(0, Math.min(10, ((relHum - 30) / 70) * 7 + pseudoRand(hourOfYear * 5) * 3)));
@@ -774,7 +754,7 @@ export function parseEpwText(
     // EnergyPlus hour 1..24 represents interval [hour-1, hour], so solar position is evaluated at midpoint (hour + 0.5)
     const { alt, az } = calcSolarPosition(lat, dayOfYear, hour + 0.5, lon, tz);
     const humRatio = +calcHumidityRatio(dryBulb, relHum, pressurePa).toFixed(2);
-    const utci = calcApproxUtci(dryBulb, relHum, windSpeed, ghi, alt);
+    const utci = calcUtciForScenario(dryBulb, relHum, windSpeed, dni, alt, 'sun_wind');
 
     hourly.push({
       hourOfYear: hourly.length + 1,
@@ -1478,7 +1458,7 @@ export async function fetchStationClimateDataset(
 
     const { alt, az } = calcSolarPosition(station.lat, dayOfYear, hour + 0.5, station.lon, 0);
     const humRatio = +calcHumidityRatio(dryBulb, relHum).toFixed(2);
-    const utci = calcApproxUtci(dryBulb, relHum, windSpeed, ghi, alt);
+    const utci = calcUtciForScenario(dryBulb, relHum, windSpeed, dni, alt, 'sun_wind');
 
     hourly.push({
       hourOfYear: i + 1,

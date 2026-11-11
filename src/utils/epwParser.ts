@@ -12,6 +12,19 @@ import {
   buildClimateFromHourly,
   parseEpwText
 } from './epwEngine';
+import {
+  UtciScenarioId,
+  UtciCategoryDef,
+  UTCI_STRESS_CATEGORIES,
+  UTCI_SCENARIOS,
+  calcUtciForScenario,
+  getUtciStressCategory,
+  calcUtciScenarioDataset,
+  calcAllUtciScenariosSummary,
+  calcUtci,
+  calcSolarGainMrtDelta,
+  calcVaporPressureKpa
+} from './utciEngine';
 import { INITIAL_CLIMATE_PRESETS, MONTHS } from '../data/climateAndStrategies';
 
 export { INITIAL_CLIMATE_PRESETS as BUILTIN_CLIMA_PRESETS };
@@ -107,29 +120,8 @@ export interface MonthlyDiurnalProfile {
   };
 }
 
-export type UtciScenarioId = 'sun_wind' | 'nosun_wind' | 'sun_nowind' | 'nosun_nowind';
-
-export interface UtciStressBand {
-  id: string;
-  label: string;
-  shortLabel: string;
-  minC: number;
-  maxC: number;
-  color: string;
-}
-
-export const UTCI_STRESS_BANDS: UtciStressBand[] = [
-  { id: 'ext_cold', label: 'Extreme Cold Stress (<-40°C)', shortLabel: 'Ext Cold', minC: -999, maxC: -40, color: '#1e1b4b' },
-  { id: 'vstrong_cold', label: 'Very Strong Cold (-40 to -27°C)', shortLabel: 'V.Str Cold', minC: -40, maxC: -27, color: '#312e81' },
-  { id: 'strong_cold', label: 'Strong Cold (-27 to -13°C)', shortLabel: 'Str Cold', minC: -27, maxC: -13, color: '#1d4ed8' },
-  { id: 'mod_cold', label: 'Moderate Cold (-13 to 0°C)', shortLabel: 'Mod Cold', minC: -13, maxC: 0, color: '#0284c7' },
-  { id: 'slight_cold', label: 'Slight Cold Stress (0 to +9°C)', shortLabel: 'Slight Cold', minC: 0, maxC: 9, color: '#38bdf8' },
-  { id: 'no_stress', label: 'No Thermal Stress (+9 to +26°C)', shortLabel: 'Comfort', minC: 9, maxC: 26, color: '#10b981' },
-  { id: 'mod_heat', label: 'Moderate Heat Stress (+26 to +32°C)', shortLabel: 'Mod Heat', minC: 26, maxC: 32, color: '#facc15' },
-  { id: 'strong_heat', label: 'Strong Heat Stress (+32 to +38°C)', shortLabel: 'Str Heat', minC: 32, maxC: 38, color: '#f97316' },
-  { id: 'vstrong_heat', label: 'Very Strong Heat (+38 to +46°C)', shortLabel: 'V.Str Heat', minC: 38, maxC: 46, color: '#e11d48' },
-  { id: 'ext_heat', label: 'Extreme Heat Stress (>+46°C)', shortLabel: 'Ext Heat', minC: 46, maxC: 999, color: '#881337' }
-];
+export type UtciStressBand = UtciCategoryDef;
+export const UTCI_STRESS_BANDS: UtciStressBand[] = UTCI_STRESS_CATEGORIES;
 
 export type BioclimaticPolygonId =
   | 'comfort'
@@ -379,7 +371,7 @@ export function morphClimateDataset(
     const pressurePa = h.pressurePa ?? 101325;
     const dewPoint = calcDewPointC(dryBulb, relHum);
     const humRatio = +calcHumidityRatio(dryBulb, relHum, pressurePa).toFixed(2);
-    const utci = calcApproxUtci(dryBulb, relHum, windSpeed, h.ghi, h.solarAlt);
+    const utci = calcUtciForScenario(dryBulb, relHum, windSpeed, h.dni, h.solarAlt, 'sun_wind');
 
     return {
       ...h,
@@ -1217,77 +1209,21 @@ export function calcNaturalVentilationPotential(
 
 // ============================================================================
 // 9. OUTDOOR COMFORT UTCI 4-SCENARIO ENGINE (SUB-TAB 8)
+// Exact implementation of Bröde et al. (2012) & pythermalcomfort / CBE Clima
 // ============================================================================
-export function calcUtciForScenario(
-  tAir: number,
-  rhPct: number,
-  windSpeed: number,
-  ghi: number,
-  scenario: UtciScenarioId,
-  solarAltDeg = 35
-): number {
-  const effectiveGhi = scenario === 'sun_wind' || scenario === 'sun_nowind' ? ghi : 0;
-  const effectiveWind = scenario === 'sun_wind' || scenario === 'nosun_wind' ? windSpeed : 0.5;
-  return calcApproxUtci(tAir, rhPct, effectiveWind, effectiveGhi, solarAltDeg);
-}
-
-export function getUtciStressBand(utciC: number): UtciStressBand {
-  for (const band of UTCI_STRESS_BANDS) {
-    if (utciC >= band.minC && utciC < band.maxC) return band;
-  }
-  return UTCI_STRESS_BANDS[5];
-}
-
-export function calcUtciScenarioDataset(
-  hourly: HourlyWeatherRecord[],
-  scenario: UtciScenarioId
-): {
-  hourlyUtci: number[];
-  annualComfortPct: number;
-  annualColdStressPct: number;
-  annualHeatStressPct: number;
-  monthlyBandShares: Array<Record<string, number>>; // 12 months x band.id %
-} {
-  const monthlyCounts = new Array(12).fill(0);
-  const monthlyBands = MONTHS.map(() =>
-    Object.fromEntries(UTCI_STRESS_BANDS.map((b) => [b.id, 0])) as Record<string, number>
-  );
-
-  let comf = 0;
-  let cold = 0;
-  let heat = 0;
-
-  const hourlyUtci = hourly.map((h) => {
-    const val = calcUtciForScenario(h.dryBulb, h.relHum, h.windSpeed, h.ghi, scenario, h.solarAlt);
-    const band = getUtciStressBand(val);
-    monthlyCounts[h.month]++;
-    monthlyBands[h.month][band.id]++;
-
-    if (val >= 9 && val <= 26) comf++;
-    else if (val < 9) cold++;
-    else heat++;
-
-    return val;
-  });
-
-  const n = Math.max(1, hourly.length);
-  const monthlyBandShares = monthlyBands.map((mb, m) => {
-    const tot = Math.max(1, monthlyCounts[m]);
-    const out: Record<string, number> = {};
-    for (const b of UTCI_STRESS_BANDS) {
-      out[b.id] = +((mb[b.id] / tot) * 100).toFixed(1);
-    }
-    return out;
-  });
-
-  return {
-    hourlyUtci,
-    annualComfortPct: +((comf / n) * 100).toFixed(1),
-    annualColdStressPct: +((cold / n) * 100).toFixed(1),
-    annualHeatStressPct: +((heat / n) * 100).toFixed(1),
-    monthlyBandShares
-  };
-}
+export {
+  calcUtciForScenario,
+  getUtciStressCategory as getUtciStressBand,
+  getUtciStressCategory,
+  calcUtciScenarioDataset,
+  calcAllUtciScenariosSummary,
+  calcUtci,
+  calcSolarGainMrtDelta,
+  calcVaporPressureKpa,
+  UTCI_STRESS_CATEGORIES,
+  UTCI_SCENARIOS
+};
+export type { UtciScenarioId, UtciCategoryDef, UtciScenarioResult, AllUtciScenariosSummary, UtciScenarioMeta } from './utciEngine';
 
 // ============================================================================
 // 10. AUTO-GENERATED ARCHITECTURAL DESIGN TAKEAWAY (IMPROVEMENT #5)
