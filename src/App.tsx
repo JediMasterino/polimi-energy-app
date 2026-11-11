@@ -136,7 +136,7 @@ const StudioWorkspace: React.FC = () => {
         if (epwText) {
           const parsed = parseEpwText(epwText, file.name.replace(/\.zip$/i, ''));
           addAndSelectClimate(parsed);
-          setToastMessage(`Imported ${parsed.name} (${parsed.koppen}) from ZIP archive!`);
+          setToastMessage(`Imported ${parsed.name} (${parsed.koppen} — ${parsed.koppenDesc}) from ZIP archive!`);
           setTimeout(() => setToastMessage(null), 5000);
         } else {
           setToastMessage('Could not find .epw file inside the dropped ZIP.');
@@ -146,7 +146,7 @@ const StudioWorkspace: React.FC = () => {
         const text = await file.text();
         const parsed = parseEpwText(text, file.name.replace(/\.epw$/i, ''));
         addAndSelectClimate(parsed);
-        setToastMessage(`Imported ${parsed.name} (${parsed.koppen}) with 8,760 hours of data!`);
+        setToastMessage(`Imported ${parsed.name} (${parsed.koppen} — ${parsed.koppenDesc}) with 8,760 hours of data!`);
         setTimeout(() => setToastMessage(null), 5000);
       } else {
         setToastMessage('Please drop a valid EnergyPlus .epw or OneBuilding .zip archive.');
@@ -425,7 +425,7 @@ const StudioWorkspace: React.FC = () => {
                   Climate & EPW Boundary
                 </span>
                 <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-teal-50 text-teal-800 border border-teal-200">
-                  Köppen {climate.koppen} • Zone {climate.dpr412Zone}
+                  Köppen {climate.koppen} ({climate.koppenDesc}) • Zone {climate.dpr412Zone}
                 </span>
               </div>
 
@@ -441,7 +441,7 @@ const StudioWorkspace: React.FC = () => {
                   <optgroup label="Academic Reference Presets (8,760h)">
                     {Object.values(INITIAL_CLIMATE_PRESETS).map((c) => (
                       <option key={c.id} value={c.id}>
-                        {c.name} [{c.koppen} • HDD {c.hdd}]
+                        {c.name} [{c.koppen} — {c.koppenDesc} • HDD {c.hdd}]
                       </option>
                     ))}
                   </optgroup>
@@ -449,7 +449,7 @@ const StudioWorkspace: React.FC = () => {
                     <optgroup label="Loaded EPW Weather Stations (8,760h)">
                       {Object.values(customClimates).map((c) => (
                         <option key={c.id} value={c.id}>
-                          ★ {c.name} [{c.koppen} • HDD {c.hdd}]
+                          ★ {c.name} [{c.koppen} — {c.koppenDesc} • HDD {c.hdd}]
                         </option>
                       ))}
                     </optgroup>

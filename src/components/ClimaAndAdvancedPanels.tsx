@@ -92,7 +92,7 @@ export const EpwSearchAndUploadWidget: React.FC<EpwWidgetProps> = ({
     try {
       const ds = await fetchStationClimateDataset(st, activePeriod);
       onSelectClimate(ds);
-      setStatusMsg(`Loaded ${ds.name} (${ds.koppen}, HDD ${ds.hdd}, CDD ${ds.cdd}) — 8,760h active!`);
+      setStatusMsg(`Loaded ${ds.name} (${ds.koppen} — ${ds.koppenDesc}, HDD ${ds.hdd}, CDD ${ds.cdd}) — 8,760h active!`);
       setResults([]);
     } catch (err: any) {
       setErrorMsg(err?.message || 'Failed to load remote weather station');

@@ -268,8 +268,8 @@ export const Stage1Climate: React.FC<Stage1ClimateProps> = ({
               <h2 className="text-lg font-bold text-white truncate max-w-sm xl:max-w-md" title={climate.name}>
                 {climate.name}
               </h2>
-              <span className="text-xs px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-400/40 font-semibold shrink-0">
-                Köppen {climate.koppen}
+              <span className="text-xs px-2.5 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-400/40 font-semibold shrink-0" title={climate.koppenDesc}>
+                Köppen {climate.koppen} — {climate.koppenDesc}
               </span>
               {climate.period && (
                 <span className="text-xs px-2 py-0.5 rounded-full bg-sky-500/25 text-sky-200 border border-sky-400/50 font-bold shrink-0">
@@ -284,7 +284,9 @@ export const Stage1Climate: React.FC<Stage1ClimateProps> = ({
                 Morphed ({morphTempOffsetC >= 0 ? `+${morphTempOffsetC.toFixed(1)}` : morphTempOffsetC.toFixed(1)}°C, ×{morphWindMult.toFixed(1)} Wind)
               </span>
             </div>
-            <p className="text-xs text-slate-300 mt-0.5">{climate.koppenDesc}</p>
+            <p className="text-xs text-slate-300 mt-0.5">
+              Classification: {climate.koppen} ({climate.koppenDesc}) • Italian Statutory Zone {climate.dpr412Zone} ({climate.dpr412Schedule})
+            </p>
           </div>
 
           <div className="flex flex-wrap items-center gap-2 text-xs">
@@ -644,8 +646,8 @@ export const Stage1Climate: React.FC<Stage1ClimateProps> = ({
                           {preset.lat.toFixed(2)}°N, {preset.lon.toFixed(2)}°E • Elev {preset.elev}m • HDD {preset.hdd} / CDD {preset.cdd}
                         </div>
                       </div>
-                      <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-slate-900 text-teal-300 shrink-0">
-                        {preset.koppen}
+                      <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-slate-900 text-teal-300 shrink-0" title={preset.koppenDesc}>
+                        {preset.koppen} — {preset.koppenDesc}
                       </span>
                     </button>
                   );
@@ -700,8 +702,11 @@ export const Stage1Climate: React.FC<Stage1ClimateProps> = ({
               </div>
               <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-200">
                 <span className="text-[10px] text-slate-400 font-bold uppercase block">Köppen Class</span>
-                <span className="font-extrabold text-teal-700">
-                  {climate.koppen} ({climate.ashraeZone.split(' ')[0]})
+                <span className="font-extrabold text-teal-700 block truncate" title={`${climate.koppen} — ${climate.koppenDesc}`}>
+                  {climate.koppen} — {climate.koppenDesc}
+                </span>
+                <span className="text-[10px] text-slate-400 block font-medium">
+                  ASHRAE Zone {climate.ashraeZone.split(' ')[0]}
                 </span>
               </div>
               <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-200">

@@ -252,25 +252,25 @@ export function calcApproxUtci(
   return calcUtciForScenario(tAir, rhPct, windSpeed, directRad, solarAltDeg, 'sun_wind');
 }
 
-// Automatically classify Köppen-Geiger climate code from monthly temperature array
+// Automatically classify Köppen-Geiger climate code from monthly temperature array (CBE Clima standard)
 export function classifyKoppen(monthlyTemp: number[], lat: number): { code: string; desc: string } {
   const tMax = Math.max(...monthlyTemp);
   const tMin = Math.min(...monthlyTemp);
   const tMean = monthlyTemp.reduce((a, b) => a + b, 0) / 12;
 
-  if (tMax < 10) return { code: 'ET', desc: 'Alpine / Polar Tundra' };
-  if (tMean > 21 && tMin > 12) return { code: 'BWh', desc: 'Hot Arid / Subtropical Desert' };
+  if (tMax < 10) return { code: 'ET', desc: 'Tundra' };
+  if (tMean > 21 && tMin > 12) return { code: 'BWh', desc: 'Hot desert' };
   if (tMin < -1.5) {
     return tMax > 22
-      ? { code: 'Dfa', desc: 'Hot-Summer Humid Continental' }
-      : { code: 'Dfb', desc: 'Warm-Summer Humid Continental' };
+      ? { code: 'Dfa', desc: 'Hot-summer humid continental' }
+      : { code: 'Dfb', desc: 'Warm-summer humid continental' };
   }
   if (tMax >= 22) {
     return Math.abs(lat) < 43.5
-      ? { code: 'Csa', desc: 'Mediterranean Hot Summer' }
-      : { code: 'Cfa', desc: 'Humid Subtropical' };
+      ? { code: 'Csa', desc: 'Hot-summer Mediterranean' }
+      : { code: 'Cfa', desc: 'Humid subtropical' };
   }
-  return { code: 'Cfb', desc: 'Temperate Oceanic / Continental Foothills' };
+  return { code: 'Cfb', desc: 'Temperate oceanic' };
 }
 
 // Compute directional vertical facade irradiance (Wh/m2) from GHI, DNI, DHI and Solar Position

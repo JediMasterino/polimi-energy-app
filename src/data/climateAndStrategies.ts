@@ -3,6 +3,58 @@ import { ClimateDataset, synthesizeHourlyFromPreset } from '../utils/epwEngine';
 export const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
 // ============================================================================
+// OFFICIAL KÖPPEN-GEIGER CLIMATE CLASSIFICATION DESCRIPTIONS (CBE CLIMA STANDARD)
+// ============================================================================
+export const KOPPEN_DESCRIPTIONS: Record<string, string> = {
+  Af: 'Tropical rainforest',
+  Am: 'Tropical monsoon',
+  Aw: 'Tropical savanna, dry winter',
+  As: 'Tropical savanna, dry summer',
+  BWh: 'Hot desert',
+  BWk: 'Cold desert',
+  BSh: 'Hot semi-arid steppe',
+  BSk: 'Cold semi-arid steppe',
+  Csa: 'Hot-summer Mediterranean',
+  Csb: 'Warm-summer Mediterranean',
+  Csc: 'Cold-summer Mediterranean',
+  Cwa: 'Monsoon-influenced humid subtropical',
+  Cwb: 'Subtropical highland',
+  Cwc: 'Cold subtropical highland',
+  Cfa: 'Humid subtropical',
+  Cfb: 'Temperate oceanic',
+  Cfc: 'Subpolar oceanic',
+  Dsa: 'Hot-summer continental',
+  Dsb: 'Warm-summer continental',
+  Dsc: 'Subarctic',
+  Dsd: 'Extremely cold subarctic',
+  Dwa: 'Monsoon-influenced hot-summer continental',
+  Dwb: 'Monsoon-influenced warm-summer continental',
+  Dwc: 'Monsoon-influenced subarctic',
+  Dwd: 'Monsoon-influenced extremely cold subarctic',
+  Dfa: 'Hot-summer humid continental',
+  Dfb: 'Warm-summer humid continental',
+  Dfc: 'Subarctic boreal',
+  Dfd: 'Extremely cold subarctic boreal',
+  ET: 'Tundra',
+  EF: 'Ice cap'
+};
+
+export function getKoppenDescription(code: string): string {
+  const clean = (code || '').trim();
+  if (KOPPEN_DESCRIPTIONS[clean]) return KOPPEN_DESCRIPTIONS[clean];
+  const upper = clean.toUpperCase();
+  for (const [k, v] of Object.entries(KOPPEN_DESCRIPTIONS)) {
+    if (k.toUpperCase() === upper) return v;
+  }
+  return 'Temperate oceanic';
+}
+
+export function formatKoppen(code: string, customDesc?: string): string {
+  const desc = customDesc || getKoppenDescription(code);
+  return `${code} — ${desc}`;
+}
+
+// ============================================================================
 // 1. MACRO-CLIMATE PRESETS (Milan/Mantova Cfa, Rome Csa, Stockholm Dfb, Cairo BWh, etc.)
 // ============================================================================
 const RAW_CLIMATE_PRESETS = {
@@ -10,7 +62,7 @@ const RAW_CLIMATE_PRESETS = {
     id: 'milan',
     name: 'Milano / Mantova, IT (Po Valley)',
     koppen: 'Cfa',
-    koppenDesc: 'Humid Subtropical — Cold foggy winters, hot humid summers',
+    koppenDesc: 'Humid subtropical',
     hdd: 1966,
     cdd: 732,
     lat: 45.45,
@@ -28,7 +80,7 @@ const RAW_CLIMATE_PRESETS = {
     id: 'vevey',
     name: 'Vevey / Lausanne, CH (Lake Geneva)',
     koppen: 'Cfb',
-    koppenDesc: 'Temperate Oceanic / Alpine Foothills — Cool winters, mild temperate summers',
+    koppenDesc: 'Temperate oceanic',
     hdd: 2808,
     cdd: 259,
     lat: 46.25,
@@ -46,7 +98,7 @@ const RAW_CLIMATE_PRESETS = {
     id: 'rome',
     name: 'Roma / Central Italy, IT',
     koppen: 'Csa',
-    koppenDesc: 'Hot-Summer Mediterranean — Mild winters, sunny warm summers',
+    koppenDesc: 'Hot-summer Mediterranean',
     hdd: 1075,
     cdd: 722,
     lat: 41.80,
@@ -64,7 +116,7 @@ const RAW_CLIMATE_PRESETS = {
     id: 'stockholm',
     name: 'Stockholm, SE (Nordic)',
     koppen: 'Dfb',
-    koppenDesc: 'Warm-Summer Hemiboreal — Long cold winters, mild bright summers',
+    koppenDesc: 'Warm-summer humid continental',
     hdd: 3905,
     cdd: 45,
     lat: 59.63,
@@ -82,7 +134,7 @@ const RAW_CLIMATE_PRESETS = {
     id: 'cairo',
     name: 'Cairo, EG (Hot Arid)',
     koppen: 'BWh',
-    koppenDesc: 'Hot Desert Climate — Extremely high solar load & cooling demand',
+    koppenDesc: 'Hot desert',
     hdd: 244,
     cdd: 2138,
     lat: 30.12,
@@ -100,7 +152,7 @@ const RAW_CLIMATE_PRESETS = {
     id: 'palermo',
     name: 'Palermo, IT (Southern Med)',
     koppen: 'Csa',
-    koppenDesc: 'Southern Mediterranean — Very mild winters, cooling-dominated summers',
+    koppenDesc: 'Hot-summer Mediterranean',
     hdd: 650,
     cdd: 1038,
     lat: 38.18,
@@ -118,7 +170,7 @@ const RAW_CLIMATE_PRESETS = {
     id: 'bormio',
     name: 'Bormio, IT (Alpine Zone F)',
     koppen: 'Cfb',
-    koppenDesc: 'Alpine Continental / Valley — High heating load, strong winter solar potential',
+    koppenDesc: 'Temperate oceanic',
     hdd: 3214,
     cdd: 162,
     lat: 46.46,

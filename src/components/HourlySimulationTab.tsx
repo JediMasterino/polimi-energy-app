@@ -203,7 +203,7 @@ export const HourlySimulationTab: React.FC = () => {
               Dynamic 2R1C Lumped Simulation • 8,760 Hours
             </span>
             <span className="text-xs text-slate-500">
-              Weather: {climate.name} ({climate.koppen})
+              Weather: {climate.name} ({climate.koppen} — {climate.koppenDesc})
             </span>
           </div>
           <h3 className="text-base font-bold text-slate-900 mt-1 flex items-center gap-2">

@@ -1348,7 +1348,7 @@ export const SubTab6Psychrometric: React.FC<{
               ClimateScout Passive Design Strategy Cards (Coupled to Stages 2–6)
             </h3>
             <p className="text-[11px] text-slate-500">
-              Ranked by bioclimatic relevance to <strong>{climate.name} ({climate.koppen})</strong>. Toggling updates downstream BEM modifiers.
+              Ranked by bioclimatic relevance to <strong>{climate.name} ({climate.koppen} — {climate.koppenDesc})</strong>. Toggling updates downstream BEM modifiers.
             </p>
           </div>
           <div className="text-[11px] bg-teal-50 border border-teal-200 text-teal-800 px-2.5 py-1 rounded-lg font-semibold">

@@ -494,7 +494,7 @@ export const EpwInteractiveMap: React.FC<EpwInteractiveMapProps> = ({
     }).addTo(activeLayer);
 
     centerPin.bindTooltip(
-      `<div style="font-size:11px;font-weight:700;color:#0f766e;">★ Active Station: ${currentClimate.name}</div><div style="font-size:10px;">${currentClimate.lat.toFixed(2)}°N, ${currentClimate.lon.toFixed(2)}°E • Köppen ${currentClimate.koppen}</div>`,
+      `<div style="font-size:11px;font-weight:700;color:#0f766e;">★ Active Station: ${currentClimate.name}</div><div style="font-size:10px;">${currentClimate.lat.toFixed(2)}°N, ${currentClimate.lon.toFixed(2)}°E • Köppen ${currentClimate.koppen} (${currentClimate.koppenDesc})</div>`,
       { permanent: false, direction: 'top' }
     );
 
@@ -506,7 +506,7 @@ export const EpwInteractiveMap: React.FC<EpwInteractiveMapProps> = ({
     findNearestEpwStations(currentClimate.lat, currentClimate.lon, 8, sourceFilter).then((nearest) => {
       setNearestStations(nearest);
     });
-  }, [currentClimate.id, currentClimate.lat, currentClimate.lon, currentClimate.name, currentClimate.koppen, sourceFilter]);
+  }, [currentClimate.id, currentClimate.lat, currentClimate.lon, currentClimate.name, currentClimate.koppen, currentClimate.koppenDesc, sourceFilter]);
 
   // 8. Render clicked arbitrary map coordinate pin
   useEffect(() => {

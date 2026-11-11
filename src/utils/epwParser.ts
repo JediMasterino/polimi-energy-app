@@ -1265,11 +1265,11 @@ export function generateBoardReadyCommentary(
     case 'station_map':
     case 'summary':
       return {
-        headline: `${climate.name} (${climate.koppen}) — ${
+        headline: `${climate.name} (${climate.koppen}${climate.koppenDesc ? ` — ${climate.koppenDesc}` : ''}) — ${
           isHeatingDom ? 'Heating-Dominated Continental/Subtropical Regime' : 'Cooling & Solar-Load Dominated Regime'
         }`,
         sentences: [
-          `${climate.name} (${climate.lat.toFixed(2)}°N, ${climate.lon.toFixed(2)}°E, Elev ${climate.elev}m) exhibits ${climate.hdd} HDD₁₈ versus ${climate.cdd} CDD₁₈ (HDD/CDD ratio ${hddCddRatio}:1), classifying the site under Köppen ${climate.koppen} and Italian statutory Zone ${climate.dpr412Zone}.`,
+          `${climate.name} (${climate.lat.toFixed(2)}°N, ${climate.lon.toFixed(2)}°E, Elev ${climate.elev}m) exhibits ${climate.hdd} HDD₁₈ versus ${climate.cdd} CDD₁₈ (HDD/CDD ratio ${hddCddRatio}:1), classifying the site under Köppen ${climate.koppen}${climate.koppenDesc ? ` (${climate.koppenDesc})` : ''} and Italian statutory Zone ${climate.dpr412Zone}.`,
           `ASHRAE 99.6% heating (${quality.designHeat996}°C) and 0.4% cooling (${quality.designCool004}°C) design conditions span ${(quality.designCool004 - quality.designHeat996).toFixed(1)} K, while annual horizontal irradiation reaches ${quality.annualGhiKwhM2} kWh/m²yr (${quality.diffuseFractionPct}% diffuse sky component).`,
           isHeatingDom
             ? `Architectural Priority: Minimize form factor S/V (<0.45 m⁻¹), specify U_wall ≤ 0.22 W/m²K with ≥75% HRV heat recovery, and harvest winter South solar gains (${southAnnualSolar} kWh/m²yr).`
