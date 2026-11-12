@@ -372,6 +372,12 @@ export function morphClimateDataset(
     const dewPoint = calcDewPointC(dryBulb, relHum);
     const humRatio = +calcHumidityRatio(dryBulb, relHum, pressurePa).toFixed(2);
     const utci = calcUtciForScenario(dryBulb, relHum, windSpeed, h.dni, h.solarAlt, 'sun_wind');
+    let horizInfrared = h.horizInfrared;
+    if (horizInfrared !== undefined && horizInfrared > 0) {
+      const oldTk = h.dryBulb + 273.15;
+      const newTk = dryBulb + 273.15;
+      horizInfrared = Math.round(horizInfrared * Math.pow(newTk / Math.max(200, oldTk), 4));
+    }
 
     return {
       ...h,
@@ -380,6 +386,7 @@ export function morphClimateDataset(
       relHum,
       humRatio,
       windSpeed,
+      horizInfrared,
       utci
     };
   });
@@ -769,7 +776,6 @@ export function calcSolarBoxplotsAndFacadeRose(hourly: HourlyWeatherRecord[]): {
     { dir: 'NW', azDeg: 315 }
   ];
 
-  const deg2rad = Math.PI / 180;
   const facadeRose8: FacadeRadiationRoseItem[] = dirs.map((d) => {
     let annualWh = 0;
     let summerWh = 0;
@@ -777,10 +783,18 @@ export function calcSolarBoxplotsAndFacadeRose(hourly: HourlyWeatherRecord[]): {
 
     for (const h of hourly) {
       if (h.ghi <= 0 || h.solarAlt <= 0) continue;
-      const altRad = h.solarAlt * deg2rad;
-      const deltaAzRad = (h.solarAz - d.azDeg) * deg2rad;
-      const cosTheta = Math.max(0, Math.cos(altRad) * Math.cos(deltaAzRad));
-      const totalVertWh = h.dni * cosTheta + 0.5 * h.dhi + 0.1 * h.ghi;
+      // Perez 1990 Anisotropic Sky Diffuse Model with ground reflectance rho_g = 0.20
+      const totalVertWh = calcTotalTiltedIrradiance(
+        h.ghi,
+        h.dni,
+        h.dhi,
+        h.solarAlt,
+        h.solarAz,
+        90,
+        d.azDeg,
+        h.dayOfYear,
+        0.20
+      ).total;
       annualWh += totalVertWh;
       if (h.month >= 5 && h.month <= 7) summerWh += totalVertWh;
       if (h.month === 11 || h.month <= 1) winterWh += totalVertWh;
@@ -796,6 +810,231 @@ export function calcSolarBoxplotsAndFacadeRose(hourly: HourlyWeatherRecord[]): {
   });
 
   return { monthlySolar, facadeRose8 };
+}
+
+// ============================================================================
+// 5B. PEREZ 1990 ANISOTROPIC SKY DIFFUSE & NOCTURNAL RADIATIVE COOLING ENGINE
+// ============================================================================
+
+export interface PerezCoefficients {
+  f11: number; f12: number; f13: number;
+  f21: number; f22: number; f23: number;
+}
+
+const PEREZ_1990_TABLE: PerezCoefficients[] = [
+  { f11: -0.008, f12:  0.588, f13: -0.062, f21: -0.060, f22:  0.072, f23: -0.022 }, // 1: 1.000 - 1.065
+  { f11:  0.130, f12:  0.683, f13: -0.151, f21: -0.019, f22:  0.066, f23: -0.029 }, // 2: 1.065 - 1.230
+  { f11:  0.330, f12:  0.487, f13: -0.221, f21:  0.055, f22: -0.060, f23: -0.026 }, // 3: 1.230 - 1.500
+  { f11:  0.568, f12:  0.224, f13: -0.295, f21:  0.109, f22: -0.060, f23: -0.025 }, // 4: 1.500 - 1.950
+  { f11:  0.873, f12: -0.392, f13: -0.362, f21:  0.226, f22: -0.173, f23: -0.002 }, // 5: 1.950 - 2.800
+  { f11:  1.132, f12: -1.237, f13: -0.412, f21:  0.288, f22: -0.446, f23:  0.056 }, // 6: 2.800 - 4.500
+  { f11:  1.060, f12: -1.600, f13: -0.359, f21:  0.264, f22: -0.519, f23:  0.110 }, // 7: 4.500 - 6.200
+  { f11:  0.678, f12: -0.327, f13: -0.250, f21:  0.156, f22: -0.399, f23:  0.083 }  // 8: > 6.200
+];
+
+/**
+ * Computes diffuse solar irradiance on a tilted surface using the Perez (1990)
+ * Anisotropic Sky Model with circumsolar brightening and horizon band factors.
+ */
+export function calcPerezDiffuseTilted(
+  dhi: number,
+  dni: number,
+  solarAltDeg: number,
+  solarAzDeg: number,
+  tiltDeg: number,
+  surfaceAzDeg: number,
+  dayOfYear: number
+): number {
+  if (dhi <= 0 || solarAltDeg <= 0) return 0;
+
+  const deg2rad = Math.PI / 180;
+  const altRad = solarAltDeg * deg2rad;
+  const thetaZ = Math.max(0.001, (90 - solarAltDeg) * deg2rad);
+  const thetaZDeg = 90 - solarAltDeg;
+  const tiltRad = tiltDeg * deg2rad;
+
+  // Extraterrestrial normal solar irradiance I0 (Wh/m²)
+  const I0 = 1367 * (1 + 0.033 * Math.cos((2 * Math.PI * (dayOfYear || 180)) / 365));
+
+  // Optical air mass m (Kasten-Young 1989 formulation)
+  const airMass = 1 / (Math.cos(thetaZ) + 0.15 * Math.pow(Math.max(0, 93.885 - thetaZDeg), -1.253));
+  const m = Math.max(1, Math.min(20, airMass));
+
+  // Sky brightness parameter Delta
+  const delta = (m * dhi) / Math.max(1, I0);
+
+  // Sky clearness parameter epsilon
+  const eps = ((dhi + dni) / Math.max(1, dhi) + 1.041 * Math.pow(thetaZ, 3)) / (1 + 1.041 * Math.pow(thetaZ, 3));
+
+  // Select Perez bin (0 to 7)
+  let bin = 0;
+  if (eps < 1.065) bin = 0;
+  else if (eps < 1.230) bin = 1;
+  else if (eps < 1.500) bin = 2;
+  else if (eps < 1.950) bin = 3;
+  else if (eps < 2.800) bin = 4;
+  else if (eps < 4.500) bin = 5;
+  else if (eps < 6.200) bin = 6;
+  else bin = 7;
+
+  const c = PEREZ_1990_TABLE[bin];
+  const f1 = Math.max(0, c.f11 + c.f12 * delta + c.f13 * thetaZ);
+  const f2 = c.f21 + c.f22 * delta + c.f23 * thetaZ;
+
+  // Incident angle theta on tilted plane
+  const deltaAzRad = (solarAzDeg - surfaceAzDeg) * deg2rad;
+  const cosIncidence = Math.cos(altRad) * Math.sin(tiltRad) * Math.cos(deltaAzRad) + Math.sin(altRad) * Math.cos(tiltRad);
+  const a = Math.max(0, cosIncidence);
+  const b = Math.max(Math.cos(85 * deg2rad), Math.cos(thetaZ));
+
+  // Perez anisotropic diffuse flux
+  const diffTilt = dhi * ((1 - f1) * ((1 + Math.cos(tiltRad)) / 2) + f1 * (a / b) + f2 * Math.sin(tiltRad));
+  return Math.max(0, diffTilt);
+}
+
+/**
+ * Calculates total incident solar irradiance (Beam + Perez Anisotropic Diffuse + Ground Albedo)
+ * on an arbitrary inclined and oriented surface.
+ */
+export function calcTotalTiltedIrradiance(
+  ghi: number,
+  dni: number,
+  dhi: number,
+  solarAltDeg: number,
+  solarAzDeg: number,
+  tiltDeg: number,
+  surfaceAzDeg: number,
+  dayOfYear: number,
+  groundReflectance: number = 0.20 // rho_g (e.g. asphalt: 0.15, standard: 0.20, grass: 0.22, concrete: 0.35, snow: 0.75)
+): {
+  total: number;
+  beam: number;
+  diffuse: number;
+  ground: number;
+  cosTheta: number;
+} {
+  if (solarAltDeg <= 0 || (ghi <= 0 && dni <= 0 && dhi <= 0)) {
+    return { total: 0, beam: 0, diffuse: 0, ground: 0, cosTheta: 0 };
+  }
+
+  const deg2rad = Math.PI / 180;
+  const altRad = Math.max(0, solarAltDeg) * deg2rad;
+  const tiltRad = tiltDeg * deg2rad;
+  const deltaAzRad = (solarAzDeg - surfaceAzDeg) * deg2rad;
+
+  const cosTheta = Math.max(
+    0,
+    Math.cos(altRad) * Math.sin(tiltRad) * Math.cos(deltaAzRad) + Math.sin(altRad) * Math.cos(tiltRad)
+  );
+
+  const beam = dni * cosTheta;
+  const diffuse = calcPerezDiffuseTilted(dhi, dni, solarAltDeg, solarAzDeg, tiltDeg, surfaceAzDeg, dayOfYear);
+  const ground = ghi * groundReflectance * ((1 - Math.cos(tiltRad)) / 2);
+  const total = beam + diffuse + ground;
+
+  return {
+    total: Math.max(0, total),
+    beam: Math.max(0, beam),
+    diffuse: Math.max(0, diffuse),
+    ground: Math.max(0, ground),
+    cosTheta
+  };
+}
+
+/**
+ * Net Nocturnal Radiative Longwave Cooling Flux to Sky Vault
+ * q_net,rad = epsilon_surf * sigma * (T_sky^4 - T_surf^4)
+ */
+export interface NocturnalCoolingResult {
+  qNetRadWm2: number;       // Net radiative exchange (W/m²), negative = surface losing heat to sky (cooling)
+  coolingPowerWm2: number;  // Net nocturnal cooling potential (W/m² >= 0)
+  skyTempC: number;         // Sky equivalent blackbody temperature (°C)
+  surfTempC: number;        // Surface temperature (°C)
+  isNocturnal: boolean;
+}
+
+export function calcNocturnalRadiativeCooling(
+  dryBulbC: number,
+  dewPointC: number,
+  horizInfraredWhM2?: number,
+  hour: number = 0,
+  surfaceEmissivity: number = 0.90,
+  surfTempC?: number
+): NocturnalCoolingResult {
+  const sigma = 5.670374e-8; // Stefan-Boltzmann constant (W/m²K⁴)
+  const tSurfK = (surfTempC !== undefined ? surfTempC : dryBulbC) + 273.15;
+
+  let tSkyK: number;
+  if (horizInfraredWhM2 && horizInfraredWhM2 > 50 && horizInfraredWhM2 < 800) {
+    // Exact physical sky temperature from EPW Field 13 (Column 12)
+    tSkyK = Math.pow(horizInfraredWhM2 / sigma, 0.25);
+  } else {
+    // Berdahl & Martin (1984) clear-sky emissivity correlation with dew point
+    const dp = Math.max(-40, Math.min(40, dewPointC));
+    const epsSky = 0.711 + 0.56 * (dp / 100) + 0.73 * Math.pow(dp / 100, 2) + 0.013 * Math.cos((2 * Math.PI * hour) / 24);
+    tSkyK = Math.pow(Math.max(0.65, Math.min(0.98, epsSky)), 0.25) * (dryBulbC + 273.15);
+  }
+
+  const skyTempC = +(tSkyK - 273.15).toFixed(1);
+  const currentSurfTempC = +(tSurfK - 273.15).toFixed(1);
+
+  // Net radiative flux: q = epsilon * sigma * (T_sky^4 - T_surf^4)
+  const qNetRadWm2 = +(surfaceEmissivity * sigma * (Math.pow(tSkyK, 4) - Math.pow(tSurfK, 4))).toFixed(1);
+  const coolingPowerWm2 = Math.max(0, -qNetRadWm2);
+
+  return {
+    qNetRadWm2,
+    coolingPowerWm2,
+    skyTempC,
+    surfTempC: currentSurfTempC,
+    isNocturnal: true
+  };
+}
+
+export interface AnnualNocturnalCoolingSummary {
+  annualCoolingPotentialKwhM2: number;
+  meanNightCoolingFluxWm2: number;
+  peakNightCoolingFluxWm2: number;
+  monthlyCoolingPotentialKwhM2: number[];
+  effectiveNightFlushHours: number;
+}
+
+export function calcAnnualNocturnalCoolingSummary(
+  hourly: HourlyWeatherRecord[],
+  surfaceEmissivity: number = 0.90
+): AnnualNocturnalCoolingSummary {
+  let annualWh = 0;
+  let nightHoursCount = 0;
+  let maxFlux = 0;
+  let effectiveFlushHours = 0;
+  const monthlyWh = new Array(12).fill(0);
+
+  for (const h of hourly) {
+    if (h.solarAlt <= 0) {
+      const res = calcNocturnalRadiativeCooling(
+        h.dryBulb,
+        h.dewPoint ?? calcDewPointC(h.dryBulb, h.relHum),
+        h.horizInfrared,
+        h.hour,
+        surfaceEmissivity
+      );
+      annualWh += res.coolingPowerWm2;
+      monthlyWh[h.month] += res.coolingPowerWm2;
+      nightHoursCount++;
+      if (res.coolingPowerWm2 > maxFlux) maxFlux = res.coolingPowerWm2;
+      if (res.coolingPowerWm2 >= 35 && h.dryBulb <= 24 && h.dryBulb >= 12) {
+        effectiveFlushHours++;
+      }
+    }
+  }
+
+  return {
+    annualCoolingPotentialKwhM2: Math.round(annualWh / 1000),
+    meanNightCoolingFluxWm2: nightHoursCount > 0 ? +(annualWh / nightHoursCount).toFixed(1) : 55,
+    peakNightCoolingFluxWm2: +maxFlux.toFixed(1),
+    monthlyCoolingPotentialKwhM2: monthlyWh.map((wh) => +(wh / 1000).toFixed(1)),
+    effectiveNightFlushHours: effectiveFlushHours
+  };
 }
 
 // ============================================================================

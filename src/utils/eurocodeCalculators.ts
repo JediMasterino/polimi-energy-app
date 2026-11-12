@@ -2251,4 +2251,476 @@ export function optimizeMemberSection(
   };
 }
 
+// ============================================================================
+// 17. EUROCODE 8 (EN 1998-1 / ITALIAN NTC 2018) SEISMIC ACTIONS ENGINE
+// ============================================================================
+
+export type SeismicGroundType = 'A' | 'B' | 'C' | 'D' | 'E';
+export type BuildingImportanceClass = 'I' | 'II' | 'III' | 'IV';
+export type DuctilityClass = 'DCL' | 'DCM' | 'DCH';
+
+export interface GroundTypeParameters {
+  S: number;
+  TB: number; // s
+  TC: number; // s
+  TD: number; // s
+  description: string;
+}
+
+export const GROUND_TYPE_TABLE: Record<SeismicGroundType, GroundTypeParameters> = {
+  A: { S: 1.00, TB: 0.15, TC: 0.40, TD: 2.00, description: 'Rock or rock-like geological formation (vs,30 > 800 m/s)' },
+  B: { S: 1.20, TB: 0.15, TC: 0.50, TD: 2.00, description: 'Very dense sand, gravel, or very stiff clay (vs,30 360–800 m/s)' },
+  C: { S: 1.15, TB: 0.20, TC: 0.60, TD: 2.00, description: 'Deep deposits of dense or medium-dense sand/gravel (vs,30 180–360 m/s)' },
+  D: { S: 1.35, TB: 0.20, TC: 0.80, TD: 2.00, description: 'Deposits of loose-to-medium cohesionless soil (vs,30 < 180 m/s)' },
+  E: { S: 1.40, TB: 0.15, TC: 0.50, TD: 2.00, description: 'Alluvial surface layer (5–20m) over stiffer substrate (vs,30 > 800 m/s)' }
+};
+
+export const IMPORTANCE_FACTORS: Record<BuildingImportanceClass, { gamma_I: number; description: string }> = {
+  I: { gamma_I: 0.80, description: 'Class I: Agricultural sheds, temporary storage, low human occupancy' },
+  II: { gamma_I: 1.00, description: 'Class II: Standard residential, commercial offices, ordinary buildings' },
+  III: { gamma_I: 1.20, description: 'Class III: Schools, large public halls, assembly (>200 persons)' },
+  IV: { gamma_I: 1.40, description: 'Class IV: Hospitals, fire stations, civil protection, emergency infrastructure' }
+};
+
+export interface Eurocode8SeismicParams {
+  ag_g: number; // Reference peak ground acceleration in g (0.05 to 0.35)
+  groundType: SeismicGroundType;
+  importanceClass: BuildingImportanceClass;
+  ductilityClass: DuctilityClass;
+  q_behaviorFactor?: number;
+  totalHeightH: number; // Building total height (m)
+  totalWeightWk: number; // Total seismic gravity weight (kN) = sum Gk + psi2 * Qk
+  numberOfStoreys: number;
+  structuralType?: 'rc_frame' | 'steel_frame' | 'shear_wall_timber_other';
+}
+
+export interface StoreySeismicForce {
+  storeyIndex: number; // 1 (lowest) to N (roof)
+  heightZ: number; // m
+  storeyWeightKn: number;
+  Fi_lateralForceKn: number; // kN applied lateral force
+  Vi_storeyShearKn: number; // kN cumulative shear below storey
+  theta_driftSensitivity: number; // Interstorey drift sensitivity coefficient theta
+  pDeltaCheck: 'PASS' | 'SECOND_ORDER_AMPLIFICATION' | 'UNACCEPTABLE';
+}
+
+export interface Eurocode8SeismicResults {
+  ag_reference_g: number;
+  ag_design_g: number;
+  ag_design_ms2: number;
+  gamma_I: number;
+  groundType: SeismicGroundType;
+  groundDescription: string;
+  S_soilFactor: number;
+  TB_s: number;
+  TC_s: number;
+  TD_s: number;
+  ductilityClass: DuctilityClass;
+  q_behaviorFactor: number;
+  Ct_periodFactor: number;
+  T1_fundamentalPeriod_s: number;
+  Sd_T1_ms2: number;
+  Sd_T1_g: number;
+  lambda_correction: number;
+  Fb_baseShearKn: number;
+  baseShearRatioPct: number; // Fb / W_seismic * 100
+  totalSeismicWeightKn: number;
+  storeys: StoreySeismicForce[];
+  spectrumCurve: Array<{ T: number; Sd: number; S_elastic: number }>;
+  governingTheta: number;
+  pDeltaStatus: 'PASS' | 'WARNING' | 'FAIL';
+  summaryDescription: string;
+}
+
+export function calcDesignSpectrumSd(
+  T: number,
+  ag_design_ms2: number,
+  S: number,
+  TB: number,
+  TC: number,
+  TD: number,
+  q: number,
+  beta_lower_bound: number = 0.20
+): number {
+  if (T < 0) return 0;
+  if (T <= TB) {
+    const val = ag_design_ms2 * S * (2 / 3 + (T / TB) * (2.5 / q - 2 / 3));
+    return Math.max(beta_lower_bound * ag_design_ms2, val);
+  } else if (T <= TC) {
+    const val = ag_design_ms2 * S * (2.5 / q);
+    return Math.max(beta_lower_bound * ag_design_ms2, val);
+  } else if (T <= TD) {
+    const val = ag_design_ms2 * S * (2.5 / q) * (TC / T);
+    return Math.max(beta_lower_bound * ag_design_ms2, val);
+  } else {
+    const val = ag_design_ms2 * S * (2.5 / q) * ((TC * TD) / Math.pow(T, 2));
+    return Math.max(beta_lower_bound * ag_design_ms2, val);
+  }
+}
+
+/**
+ * Eurocode 8 §3.2.2.2 Elastic Response Spectrum Se(T) for 5% damping (eta = 1.0)
+ */
+export function calcElasticSpectrumSe(
+  T: number,
+  ag_design_ms2: number,
+  S: number,
+  TB: number,
+  TC: number,
+  TD: number,
+  eta: number = 1.0
+): number {
+  if (T < 0) return 0;
+  if (T <= TB) {
+    return ag_design_ms2 * S * (1.0 + (T / TB) * (eta * 2.5 - 1.0));
+  } else if (T <= TC) {
+    return ag_design_ms2 * S * eta * 2.5;
+  } else if (T <= TD) {
+    return ag_design_ms2 * S * eta * 2.5 * (TC / T);
+  } else {
+    return ag_design_ms2 * S * eta * 2.5 * ((TC * TD) / Math.pow(T, 2));
+  }
+}
+
+export function computeEurocode8SeismicActions(params: Eurocode8SeismicParams): Eurocode8SeismicResults {
+  const ag_ref = Math.max(0.04, Math.min(0.40, params.ag_g || 0.15));
+  const groundInfo = GROUND_TYPE_TABLE[params.groundType] || GROUND_TYPE_TABLE['C'];
+  const impInfo = IMPORTANCE_FACTORS[params.importanceClass] || IMPORTANCE_FACTORS['II'];
+
+  const gamma_I = impInfo.gamma_I;
+  const ag_design_g = +(ag_ref * gamma_I).toFixed(3);
+  const ag_design_ms2 = +(ag_design_g * 9.80665).toFixed(2);
+
+  // Ductility & behavior factor q
+  let q = params.q_behaviorFactor;
+  if (!q || q <= 0) {
+    if (params.ductilityClass === 'DCL') q = 1.5;
+    else if (params.ductilityClass === 'DCH') q = 4.5;
+    else {
+      q = params.structuralType === 'shear_wall_timber_other' ? 3.0 : 3.6;
+    }
+  }
+
+  // Building height & empirical fundamental period T1 (EN 1998-1 §4.3.3.2.2)
+  const H = Math.max(3.0, params.totalHeightH);
+  const structType = params.structuralType || 'rc_frame';
+  const Ct = structType === 'steel_frame' ? 0.085 : structType === 'rc_frame' ? 0.075 : 0.050;
+  const T1 = +(Ct * Math.pow(H, 0.75)).toFixed(3);
+
+  const { S, TB, TC, TD } = groundInfo;
+
+  // Design spectral acceleration at T1
+  const Sd_T1_ms2 = +calcDesignSpectrumSd(T1, ag_design_ms2, S, TB, TC, TD, q).toFixed(3);
+  const Sd_T1_g = +(Sd_T1_ms2 / 9.80665).toFixed(3);
+
+  // Correction factor lambda (EN 1998-1 §4.3.3.2.2 (1)P)
+  const nStoreys = Math.max(1, Math.round(params.numberOfStoreys || 1));
+  const lambda = T1 <= 2 * TC && nStoreys > 2 ? 0.85 : 1.00;
+
+  // Total seismic weight & base shear Fb
+  const W_seismic = Math.max(10, params.totalWeightWk);
+  const Fb = +((Sd_T1_ms2 / 9.80665) * lambda * W_seismic).toFixed(1);
+  const baseShearRatioPct = +((Fb / W_seismic) * 100).toFixed(1);
+
+  // Storey forces and shear cascade (EN 1998-1 §4.3.3.2.3)
+  const hStorey = H / nStoreys;
+  const storeyW = W_seismic / nStoreys;
+  const storeys: StoreySeismicForce[] = [];
+
+  // Denominator: sum(z_j * w_j)
+  let sumZ_W = 0;
+  for (let i = 1; i <= nStoreys; i++) {
+    const zi = i * hStorey;
+    const wi = i === nStoreys ? storeyW * 0.85 : storeyW;
+    sumZ_W += zi * wi;
+  }
+
+  let governingTheta = 0;
+
+  // Compute storey forces Fi from roof (nStoreys) down to level 1
+  const rawFi: number[] = [];
+  for (let i = 1; i <= nStoreys; i++) {
+    const zi = i * hStorey;
+    const wi = i === nStoreys ? storeyW * 0.85 : storeyW;
+    const fi = Fb * ((zi * wi) / Math.max(1, sumZ_W));
+    rawFi.push(fi);
+  }
+
+  // Cumulative storey shears Vi
+  for (let i = 1; i <= nStoreys; i++) {
+    const zi = +(i * hStorey).toFixed(1);
+    const wi = i === nStoreys ? storeyW * 0.85 : storeyW;
+    const fi = +rawFi[i - 1].toFixed(1);
+    let vi = 0;
+    for (let k = i; k <= nStoreys; k++) {
+      vi += rawFi[k - 1];
+    }
+    vi = +vi.toFixed(1);
+
+    // Gravity load P_tot supported above storey i
+    const pTot = (nStoreys - i + 1) * storeyW;
+
+    // Design interstorey drift dr = q * de (estimated per EC8 allowable drift threshold 0.0075h)
+    const driftRatio = Math.min(0.009, 0.0045 * (q / 3.0) * (vi / Math.max(1, Fb)));
+    const dr = driftRatio * hStorey;
+
+    // Interstorey drift sensitivity coefficient theta = (P_tot * dr) / (V_tot * h)
+    const theta = +((pTot * dr) / Math.max(1, vi * hStorey)).toFixed(3);
+    if (theta > governingTheta) governingTheta = theta;
+
+    let pDeltaCheck: StoreySeismicForce['pDeltaCheck'] = 'PASS';
+    if (theta > 0.20) pDeltaCheck = 'UNACCEPTABLE';
+    else if (theta > 0.10) pDeltaCheck = 'SECOND_ORDER_AMPLIFICATION';
+
+    storeys.push({
+      storeyIndex: i,
+      heightZ: zi,
+      storeyWeightKn: Math.round(wi),
+      Fi_lateralForceKn: fi,
+      Vi_storeyShearKn: vi,
+      theta_driftSensitivity: theta,
+      pDeltaCheck
+    });
+  }
+
+  // Generate 40-point response spectrum curve for period 0..3.5 s
+  const spectrumCurve: Array<{ T: number; Sd: number; S_elastic: number }> = [];
+  const maxT = 3.5;
+  const steps = 40;
+  for (let s = 0; s <= steps; s++) {
+    const tVal = +(s * (maxT / steps)).toFixed(2);
+    const sdVal = +calcDesignSpectrumSd(tVal, ag_design_ms2, S, TB, TC, TD, q).toFixed(3);
+    const seVal = +calcElasticSpectrumSe(tVal, ag_design_ms2, S, TB, TC, TD, 1.0).toFixed(3);
+    spectrumCurve.push({ T: tVal, Sd: sdVal, S_elastic: seVal });
+  }
+
+  const pDeltaStatus = governingTheta <= 0.10 ? 'PASS' : governingTheta <= 0.20 ? 'WARNING' : 'FAIL';
+  const summaryDescription = `EN 1998-1 / NTC 2018: ag=${ag_ref}g (${params.groundType}) → T1=${T1}s, Sd=${Sd_T1_g}g. Base shear Fb=${Fb} kN (${baseShearRatioPct}% Wseis). P-Δ theta_max=${governingTheta} (${pDeltaStatus}).`;
+
+  return {
+    ag_reference_g: ag_ref,
+    ag_design_g,
+    ag_design_ms2,
+    gamma_I,
+    groundType: params.groundType,
+    groundDescription: groundInfo.description,
+    S_soilFactor: S,
+    TB_s: TB,
+    TC_s: TC,
+    TD_s: TD,
+    ductilityClass: params.ductilityClass,
+    q_behaviorFactor: q,
+    Ct_periodFactor: Ct,
+    T1_fundamentalPeriod_s: T1,
+    Sd_T1_ms2,
+    Sd_T1_g,
+    lambda_correction: lambda,
+    Fb_baseShearKn: Fb,
+    baseShearRatioPct,
+    totalSeismicWeightKn: Math.round(W_seismic),
+    storeys,
+    spectrumCurve,
+    governingTheta,
+    pDeltaStatus,
+    summaryDescription
+  };
+}
+
+// ============================================================================
+// 18. STRUCTURAL BILL OF QUANTITIES (BoQ) & EMBODIED CARBON BRIDGE
+// ============================================================================
+
+export interface StructuralBoQParams {
+  footprintArea: number; // m²
+  floors: number;
+  floorHeight: number; // m
+  spanL: number; // m
+  tributaryWidthBtr: number; // m
+  materialSystem: 'RC' | 'Steel' | 'Timber' | 'Masonry';
+  lowCarbonConcrete?: boolean;
+  recycledSteel?: boolean;
+  biogenicTimber?: boolean;
+  slabThicknessMm?: number; // e.g. 220 mm RC or 160 mm CLT
+  beamWidthMm?: number;
+  beamDepthMm?: number;
+  columnWidthMm?: number;
+  columnDepthMm?: number;
+  steelBeamProfile?: string; // e.g. 'IPE 300'
+  steelColProfile?: string; // e.g. 'HE 240 B'
+}
+
+export interface StructuralBoQResult {
+  materialSystem: 'RC' | 'Steel' | 'Timber' | 'Masonry';
+  gfa: number; // m²
+  concreteVolumeM3: number; // m³
+  rebarMassKg: number; // kg
+  rebarMassTonnes: number; // t
+  steelMassKg: number; // kg
+  steelMassTonnes: number; // t
+  timberVolumeM3: number; // m³
+  timberBiogenicCarbonKgCo2e: number; // Negative carbon storage
+  gwpStructureA1A3: number; // kgCO2e/m² GFA
+  totalStructureCo2Tonnes: number; // tCO2e
+  breakdown: {
+    slabsCo2KgM2: number;
+    beamsCo2KgM2: number;
+    columnsCo2KgM2: number;
+    foundationsCo2KgM2: number;
+  };
+  materialTakeoff: {
+    slabConcreteM3: number;
+    slabRebarKg: number;
+    beamConcreteM3: number;
+    beamRebarKg: number;
+    columnConcreteM3: number;
+    columnRebarKg: number;
+    footingConcreteM3: number;
+    footingRebarKg: number;
+    steelBeamsKg: number;
+    steelColumnsKg: number;
+    timberSlabM3: number;
+    timberBeamsM3: number;
+    timberColumnsM3: number;
+  };
+}
+
+export function computeStructuralBoQ(params: StructuralBoQParams): StructuralBoQResult {
+  const footprintArea = Math.max(20, params.footprintArea);
+  const floors = Math.max(1, params.floors);
+  const floorHeight = Math.max(2.5, params.floorHeight);
+  const gfa = Math.round(footprintArea * floors);
+
+  const spanL = Math.max(3.0, params.spanL || 6.0);
+  const tribW = Math.max(2.5, params.tributaryWidthBtr || 5.0);
+  const bayArea = spanL * tribW;
+  const numColumnsPerFloor = Math.max(4, Math.round(footprintArea / bayArea) + Math.round(Math.sqrt(footprintArea / bayArea) * 2));
+  const totalColumnsCount = numColumnsPerFloor * floors;
+  const totalColumnLengthM = totalColumnsCount * floorHeight;
+  const totalBeamLengthM = Math.round((gfa / tribW) * 1.15);
+
+  let slabConcreteM3 = 0;
+  let slabRebarKg = 0;
+  let beamConcreteM3 = 0;
+  let beamRebarKg = 0;
+  let columnConcreteM3 = 0;
+  let columnRebarKg = 0;
+  let footingConcreteM3 = 0;
+  let footingRebarKg = 0;
+  let steelBeamsKg = 0;
+  let steelColumnsKg = 0;
+  let timberSlabM3 = 0;
+  let timberBeamsM3 = 0;
+  let timberColumnsM3 = 0;
+
+  // Concrete pad footings (per column)
+  const footingSide = params.materialSystem === 'Timber' ? 1.4 : params.materialSystem === 'Steel' ? 1.6 : 1.8;
+  const footingDepth = 0.6;
+  footingConcreteM3 = +(numColumnsPerFloor * Math.pow(footingSide, 2) * footingDepth).toFixed(1);
+  footingRebarKg = +(footingConcreteM3 * 75).toFixed(0);
+
+  if (params.materialSystem === 'RC') {
+    const hSlab = (params.slabThicknessMm ?? 220) / 1000;
+    slabConcreteM3 = +(gfa * hSlab).toFixed(1);
+    slabRebarKg = +(slabConcreteM3 * 95).toFixed(0);
+
+    const bBeam = (params.beamWidthMm ?? 300) / 1000;
+    const hBeam = ((params.beamDepthMm ?? 550) - (params.slabThicknessMm ?? 220)) / 1000;
+    beamConcreteM3 = +(totalBeamLengthM * bBeam * Math.max(0.15, hBeam)).toFixed(1);
+    beamRebarKg = +(beamConcreteM3 * 160).toFixed(0);
+
+    const bCol = (params.columnWidthMm ?? 400) / 1000;
+    const hCol = (params.columnDepthMm ?? 400) / 1000;
+    columnConcreteM3 = +(totalColumnLengthM * bCol * hCol).toFixed(1);
+    columnRebarKg = +(columnConcreteM3 * 175).toFixed(0);
+  } else if (params.materialSystem === 'Steel') {
+    // Composite slab: metal deck + concrete topping
+    slabConcreteM3 = +(gfa * 0.12).toFixed(1);
+    slabRebarKg = +(gfa * 14).toFixed(0);
+
+    const beamMassPerM = STEEL_PROFILES[params.steelBeamProfile || 'IPE 300']?.mass || 42.2;
+    steelBeamsKg = +(totalBeamLengthM * beamMassPerM).toFixed(0);
+
+    const colMassPerM = STEEL_PROFILES[params.steelColProfile || 'HE 240 B']?.mass || 83.2;
+    steelColumnsKg = +(totalColumnLengthM * colMassPerM).toFixed(0);
+  } else if (params.materialSystem === 'Timber') {
+    const hClt = (params.slabThicknessMm ?? 160) / 1000;
+    timberSlabM3 = +(gfa * hClt).toFixed(1);
+
+    const bBeam = (params.beamWidthMm ?? 120) / 1000;
+    const hBeam = (params.beamDepthMm ?? 320) / 1000;
+    timberBeamsM3 = +(totalBeamLengthM * bBeam * hBeam).toFixed(1);
+
+    const bCol = (params.columnWidthMm ?? 200) / 1000;
+    const hCol = (params.columnDepthMm ?? 240) / 1000;
+    timberColumnsM3 = +(totalColumnLengthM * bCol * hCol).toFixed(1);
+
+    steelBeamsKg = +(gfa * 3.2).toFixed(0);
+  } else if (params.materialSystem === 'Masonry') {
+    slabConcreteM3 = +(gfa * 0.20).toFixed(1);
+    slabRebarKg = +(slabConcreteM3 * 85).toFixed(0);
+    beamConcreteM3 = +(gfa * 0.08).toFixed(1);
+    beamRebarKg = +(beamConcreteM3 * 40).toFixed(0);
+  }
+
+  const concreteVolumeM3 = +(slabConcreteM3 + beamConcreteM3 + columnConcreteM3 + footingConcreteM3).toFixed(1);
+  const rebarMassKg = Math.round(Number(slabRebarKg) + Number(beamRebarKg) + Number(columnRebarKg) + Number(footingRebarKg));
+  const steelMassKg = Math.round(Number(steelBeamsKg) + Number(steelColumnsKg));
+  const timberVolumeM3 = +(timberSlabM3 + timberBeamsM3 + timberColumnsM3).toFixed(1);
+
+  // Carbon Emission Factors
+  const efConcrete = params.lowCarbonConcrete ? 165 : 315; // kgCO2e / m³
+  const efRebar = 1.05; // kgCO2e / kg
+  const efSteel = params.recycledSteel ? 0.85 : 1.55; // kgCO2e / kg
+  const efTimberFossil = 120; // kgCO2e / m³
+  const efBiogenicStorage = -820; // kgCO2e / m³ sequestered
+
+  const slabsCo2 = slabConcreteM3 * efConcrete + slabRebarKg * efRebar;
+  const beamsCo2 = beamConcreteM3 * efConcrete + beamRebarKg * efRebar + steelBeamsKg * efSteel + timberBeamsM3 * efTimberFossil;
+  const colsCo2 = columnConcreteM3 * efConcrete + columnRebarKg * efRebar + steelColumnsKg * efSteel + timberColumnsM3 * efTimberFossil;
+  const footCo2 = footingConcreteM3 * efConcrete + footingRebarKg * efRebar;
+
+  let totalCo2Kg = slabsCo2 + beamsCo2 + colsCo2 + footCo2;
+  if (params.materialSystem === 'Timber') {
+    totalCo2Kg += timberSlabM3 * efTimberFossil;
+  }
+
+  const gwpStructureA1A3 = Math.round(totalCo2Kg / Math.max(1, gfa));
+  const totalStructureCo2Tonnes = +(totalCo2Kg / 1000).toFixed(1);
+
+  return {
+    materialSystem: params.materialSystem,
+    gfa,
+    concreteVolumeM3,
+    rebarMassKg,
+    rebarMassTonnes: +(rebarMassKg / 1000).toFixed(1),
+    steelMassKg,
+    steelMassTonnes: +(steelMassKg / 1000).toFixed(1),
+    timberVolumeM3,
+    timberBiogenicCarbonKgCo2e: Math.round(timberVolumeM3 * efBiogenicStorage),
+    gwpStructureA1A3,
+    totalStructureCo2Tonnes,
+    breakdown: {
+      slabsCo2KgM2: Math.round(slabsCo2 / Math.max(1, gfa)),
+      beamsCo2KgM2: Math.round(beamsCo2 / Math.max(1, gfa)),
+      columnsCo2KgM2: Math.round(colsCo2 / Math.max(1, gfa)),
+      foundationsCo2KgM2: Math.round(footCo2 / Math.max(1, gfa))
+    },
+    materialTakeoff: {
+      slabConcreteM3,
+      slabRebarKg: Number(slabRebarKg),
+      beamConcreteM3,
+      beamRebarKg: Number(beamRebarKg),
+      columnConcreteM3,
+      columnRebarKg: Number(columnRebarKg),
+      footingConcreteM3,
+      footingRebarKg: Number(footingRebarKg),
+      steelBeamsKg: Number(steelBeamsKg),
+      steelColumnsKg: Number(steelColumnsKg),
+      timberSlabM3,
+      timberBeamsM3,
+      timberColumnsM3
+    }
+  };
+}
+
 

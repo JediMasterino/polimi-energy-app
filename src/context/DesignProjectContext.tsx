@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useState, useMemo, useEffect } from 'react';
 import { ClimateDataset, parseEpwText } from '../utils/epwEngine';
 import { morphClimateDataset } from '../utils/epwParser';
+import { computeStructuralBoQ, StructuralBoQResult } from '../utils/eurocodeCalculators';
 import {
   DEFAULT_CLIMATE_DATASET,
   CLIMATE_SCOUT_STRATEGIES,
@@ -16,6 +17,171 @@ export type BuildingTypologyType = 'shallow_linear' | 'deep_plan' | 'courtyard' 
 export type ThermalZoneName = 'South' | 'North' | 'East' | 'West' | 'Core';
 export type HvacSystemType = 'ashp' | 'gshp' | 'district_network' | 'gas_chiller';
 export type StructureSystemType = 'rc_standard' | 'clt_hybrid' | 'steel_composite' | 'low_carbon_rc';
+
+// ============================================================================
+// ISO 13786 EXACT COMPLEX TRANSMISSION MATRIX SOLVER
+// ============================================================================
+interface ComplexNumber {
+  re: number;
+  im: number;
+}
+
+type ComplexMatrix2x2 = [
+  [ComplexNumber, ComplexNumber],
+  [ComplexNumber, ComplexNumber]
+];
+
+function cMul(a: ComplexNumber, b: ComplexNumber): ComplexNumber {
+  return {
+    re: a.re * b.re - a.im * b.im,
+    im: a.re * b.im + a.im * b.re
+  };
+}
+
+function cAdd(a: ComplexNumber, b: ComplexNumber): ComplexNumber {
+  return { re: a.re + b.re, im: a.im + b.im };
+}
+
+function mat2x2Mul(A: ComplexMatrix2x2, B: ComplexMatrix2x2): ComplexMatrix2x2 {
+  return [
+    [
+      cAdd(cMul(A[0][0], B[0][0]), cMul(A[0][1], B[1][0])),
+      cAdd(cMul(A[0][0], B[0][1]), cMul(A[0][1], B[1][1]))
+    ],
+    [
+      cAdd(cMul(A[1][0], B[0][0]), cMul(A[1][1], B[1][0])),
+      cAdd(cMul(A[1][0], B[0][1]), cMul(A[1][1], B[1][1]))
+    ]
+  ];
+}
+
+export interface Iso13786Result {
+  uWall: number;             // Thermal transmittance U (W/m²K)
+  yIe: number;               // Periodic thermal transmittance Y_ie (W/m²K)
+  decrementFactor: number;   // f = Y_ie / U (dimensionless, 0..1)
+  timeShiftHours: number;    // Time shift Delta t (hours, 0..24)
+  kappaI: number;            // Internal areal heat capacity kappa_i (kJ/m²K)
+  kappaE: number;            // External areal heat capacity kappa_e (kJ/m²K)
+}
+
+/**
+ * Solves the exact ISO 13786 transmission matrix for multi-layer building envelopes.
+ * Layers are passed from Exterior (index 0) to Interior (index N-1),
+ * with boundary surface resistances R_si and R_se.
+ */
+export function solveIso13786Matrix(
+  layers: Array<{ thicknessMm: number; lambda: number; rho: number; cp: number }>,
+  R_si: number = 0.13,
+  R_se: number = 0.04
+): Iso13786Result {
+  const T0 = 86400; // 24-hour period (seconds)
+  const omega = (2 * Math.PI) / T0;
+
+  // Internal boundary matrix: M_Rsi = [[1, -R_si], [0, 1]]
+  let totalMatrix: ComplexMatrix2x2 = [
+    [{ re: 1, im: 0 }, { re: -R_si, im: 0 }],
+    [{ re: 0, im: 0 }, { re: 1, im: 0 }]
+  ];
+
+  let totalR = R_si + R_se;
+
+  // Traverse from Interior (last element) to Exterior (first element) per ISO 13786 Annex C
+  for (let j = layers.length - 1; j >= 0; j--) {
+    const layer = layers[j];
+    const d = Math.max(0.0001, layer.thicknessMm / 1000); // m
+    const lambda = Math.max(0.005, layer.lambda); // W/mK
+    const rho = Math.max(10, layer.rho); // kg/m³
+    const cp = Math.max(200, layer.cp); // J/kgK
+
+    const rLayer = d / lambda;
+    totalR += rLayer;
+
+    // Periodic penetration depth delta_j = sqrt((2 * lambda) / (omega * rho * cp))
+    const delta = Math.sqrt((2 * lambda) / (omega * rho * cp));
+    const xi = d / delta;
+
+    const ch = Math.cosh(xi);
+    const sh = Math.sinh(xi);
+    const co = Math.cos(xi);
+    const si = Math.sin(xi);
+
+    const Z11: ComplexNumber = {
+      re: ch * co,
+      im: sh * si
+    };
+
+    const Z22: ComplexNumber = {
+      re: ch * co,
+      im: sh * si
+    };
+
+    const factor12 = -delta / (2 * lambda);
+    const Z12: ComplexNumber = {
+      re: factor12 * (sh * co + ch * si),
+      im: factor12 * (ch * si - sh * co)
+    };
+
+    const factor21 = -lambda / delta;
+    const Z21: ComplexNumber = {
+      re: factor21 * (sh * co - ch * si),
+      im: factor21 * (sh * co + ch * si)
+    };
+
+    const layerMatrix: ComplexMatrix2x2 = [
+      [Z11, Z12],
+      [Z21, Z22]
+    ];
+
+    totalMatrix = mat2x2Mul(totalMatrix, layerMatrix);
+  }
+
+  // Multiply by exterior boundary layer R_se
+  const RseMatrix: ComplexMatrix2x2 = [
+    [{ re: 1, im: 0 }, { re: -R_se, im: 0 }],
+    [{ re: 0, im: 0 }, { re: 1, im: 0 }]
+  ];
+  totalMatrix = mat2x2Mul(totalMatrix, RseMatrix);
+
+  // Steady-state thermal transmittance U
+  const uWall = +(1 / Math.max(0.1, totalR)).toFixed(3);
+
+  // Periodic thermal transmittance Y_ie = 1 / |Z12|
+  const z12 = totalMatrix[0][1];
+  const absZ12 = Math.sqrt(z12.re * z12.re + z12.im * z12.im);
+  const yIe = +(1 / Math.max(0.001, absZ12)).toFixed(3);
+
+  // Decrement factor f = Y_ie / U
+  const decrementFactor = Math.min(1.0, +(yIe / Math.max(0.01, uWall)).toFixed(3));
+
+  // Time shift Delta t = -(12 / pi) * arg(- 1 / Z12) per ISO 13786 (phase lag of Y12)
+  const phiRad = Math.atan2(z12.im, -z12.re);
+  let timeShiftHours = +(-(12 / Math.PI) * phiRad).toFixed(1);
+  while (timeShiftHours < 0) timeShiftHours += 24;
+  while (timeShiftHours >= 24) timeShiftHours -= 24;
+
+  // Internal areal heat capacity kappa_i (kJ/m²K)
+  // Per ISO 13786: internal admittance is Y11 = Z22 / Z12, so kappa1 = (T0 / 2pi) * |Z22 - 1| / |Z12|
+  const z22 = totalMatrix[1][1];
+  const z22Minus1: ComplexNumber = { re: z22.re - 1, im: z22.im };
+  const absZ22Minus1 = Math.sqrt(z22Minus1.re * z22Minus1.re + z22Minus1.im * z22Minus1.im);
+  const kappaI = +((T0 / (2 * Math.PI * 1000)) * (absZ22Minus1 / Math.max(0.001, absZ12))).toFixed(1);
+
+  // External areal heat capacity kappa_e (kJ/m²K)
+  // Per ISO 13786: external admittance is Y22 = Z11 / Z12, so kappa2 = (T0 / 2pi) * |Z11 - 1| / |Z12|
+  const z11 = totalMatrix[0][0];
+  const z11Minus1: ComplexNumber = { re: z11.re - 1, im: z11.im };
+  const absZ11Minus1 = Math.sqrt(z11Minus1.re * z11Minus1.re + z11Minus1.im * z11Minus1.im);
+  const kappaE = +((T0 / (2 * Math.PI * 1000)) * (absZ11Minus1 / Math.max(0.001, absZ12))).toFixed(1);
+
+  return {
+    uWall,
+    yIe,
+    decrementFactor,
+    timeShiftHours,
+    kappaI,
+    kappaE
+  };
+}
 
 export interface WallLayerItem {
   id: string;
@@ -184,7 +350,7 @@ export interface DesignProjectContextValue {
   saveCurrentToScenarioSlot: (slotIndex: number) => void;
   applyOptimizationPreset: (preset: 'baseline' | 'passive' | 'nzeb_district') => void;
 
-  // Stage 6: Whole-Life Carbon LCA
+  // Stage 6: Whole-Life Carbon LCA & Structural Bridge
   structureSystem: StructureSystemType;
   setStructureSystem: (s: StructureSystemType) => void;
   circularityIndex: number;
@@ -193,6 +359,23 @@ export interface DesignProjectContextValue {
   setGridDecarbonizationRate: (v: number) => void;
   studyPeriodYears: number;
   setStudyPeriodYears: (v: number) => void;
+  structuralBoQOverride: StructuralBoQResult | null;
+  setStructuralBoQOverride: (boq: StructuralBoQResult | null) => void;
+  syncMassingToStructure: () => {
+    lengthX: number;
+    widthY: number;
+    floors: number;
+    floorHeight: number;
+    buildingProgram: BuildingProgramType;
+    structureSystem: StructureSystemType;
+  };
+  syncStructureToMassing: (params: {
+    floors?: number;
+    floorHeight?: number;
+    structureSystem?: StructureSystemType;
+    lengthX?: number;
+    widthY?: number;
+  }) => void;
 
   // Coupled Multi-Scale Derived Simulation Results
   sim: {
@@ -292,7 +475,8 @@ export interface DesignProjectContextValue {
     operationalCo2KgM2Yr: number;
     discomfortHours: number;
     comfortHoursPct: number;
-    // Stage 6 Whole-Life Carbon EN 15978 (50-year)
+    // Stage 6 Whole-Life Carbon EN 15978 (50-year) & BoQ
+    structuralBoQ: StructuralBoQResult;
     lca: {
       a1a3Structure: number;
       a1a3Envelope: number;
@@ -523,11 +707,47 @@ export const DesignProjectProvider: React.FC<{ children: React.ReactNode }> = ({
     }
   };
 
-  // Stage 6: Whole-Life Carbon LCA
+  // Stage 6: Whole-Life Carbon LCA & Structural Studio Synchronizer
   const [structureSystem, setStructureSystem] = useState<StructureSystemType>('clt_hybrid');
   const [circularityIndex, setCircularityIndex] = useState<number>(35);
   const [gridDecarbonizationRate, setGridDecarbonizationRate] = useState<number>(2.5);
   const [studyPeriodYears, setStudyPeriodYears] = useState<number>(50);
+  const [structuralBoQOverride, setStructuralBoQOverride] = useState<StructuralBoQResult | null>(null);
+
+  const syncMassingToStructure = () => {
+    return {
+      lengthX,
+      widthY,
+      floors,
+      floorHeight,
+      buildingProgram,
+      structureSystem
+    };
+  };
+
+  const syncStructureToMassing = (params: {
+    floors?: number;
+    floorHeight?: number;
+    structureSystem?: StructureSystemType;
+    lengthX?: number;
+    widthY?: number;
+  }) => {
+    if (params.floors !== undefined && params.floors > 0) {
+      setFloors(params.floors);
+    }
+    if (params.floorHeight !== undefined && params.floorHeight > 0) {
+      setFloorHeight(params.floorHeight);
+    }
+    if (params.lengthX !== undefined && params.lengthX > 0) {
+      setLengthX(params.lengthX);
+    }
+    if (params.widthY !== undefined && params.widthY > 0) {
+      setWidthY(params.widthY);
+    }
+    if (params.structureSystem) {
+      setStructureSystem(params.structureSystem);
+    }
+  };
 
   // ==========================================================================
   // COUPLED MULTI-SCALE PHYSICS & DOWNSCALING ENGINE
@@ -608,40 +828,32 @@ export const DesignProjectProvider: React.FC<{ children: React.ReactNode }> = ({
       areaN * shadeN + areaS * shadeS + areaE * shadeE + areaW * shadeW
     );
 
-    // 4. Stage 4 Opaque Multi-Layer Envelope Physics (ISO 13786 / UNI EN ISO 6946)
+    // 4. Stage 4 Opaque Multi-Layer Envelope Physics (Exact ISO 13786 & UNI EN ISO 6946)
     const R_si = 0.13;
     const R_se = 0.04;
-    let rLayers = 0;
     let totalThickMm = 0;
-    let totalHeatCapKjM2K = 0;
-    let innerMassCapKjM2K = 0;
     let wallEmbodiedCo2PerM2Facade = 0;
 
-    wallLayers.forEach((layer, idx) => {
+    const layerPhysics = wallLayers.map((layer) => {
       const mat = ENVELOPE_MATERIALS.find((m) => m.id === layer.materialId) || ENVELOPE_MATERIALS[0];
       const dMeters = layer.thicknessMm / 1000;
       totalThickMm += layer.thicknessMm;
-      rLayers += dMeters / mat.lambda;
-      const layerCapKj = (dMeters * mat.rho * mat.cp) / 1000;
-      totalHeatCapKjM2K += layerCapKj;
-      // Inner layers contribute most strongly to internal areal heat capacity kappa_i (ISO 13786)
-      const weightFactor = idx >= Math.floor(wallLayers.length / 2) ? 0.72 : 0.22;
-      innerMassCapKjM2K += layerCapKj * weightFactor;
       wallEmbodiedCo2PerM2Facade += dMeters * mat.rho * mat.gwpPerKg;
+      return {
+        thicknessMm: layer.thicknessMm,
+        lambda: mat.lambda,
+        rho: mat.rho,
+        cp: mat.cp
+      };
     });
 
-    const rTotal = R_si + rLayers + R_se;
-    const uWall = +(1 / Math.max(0.2, rTotal)).toFixed(3);
-    const kappaI = +Math.min(115, Math.max(18, innerMassCapKjM2K)).toFixed(1);
-    const timeShiftHours = +Math.min(
-      18.5,
-      Math.max(3.2, 2.2 + Math.sqrt(rLayers * (totalHeatCapKjM2K / 18)))
-    ).toFixed(1);
-    const attenuationFactor = +Math.max(
-      0.06,
-      Math.min(0.85, Math.exp(-0.185 * timeShiftHours))
-    ).toFixed(3);
-    const yIe = +(uWall * attenuationFactor).toFixed(3);
+    // Exact ISO 13786 Complex Transmission Matrix Solution
+    const iso13786 = solveIso13786Matrix(layerPhysics, R_si, R_se);
+    const uWall = iso13786.uWall;
+    const kappaI = iso13786.kappaI;
+    const timeShiftHours = iso13786.timeShiftHours;
+    const attenuationFactor = iso13786.decrementFactor;
+    const yIe = iso13786.yIe;
 
     const wwrAvg = +(
       (wwrN * areaN + wwrS * areaS + wwrE * areaE + wwrW * areaW) /
@@ -1003,13 +1215,31 @@ export const DesignProjectProvider: React.FC<{ children: React.ReactNode }> = ({
     };
 
     // 8. Stage 6 Whole-Life Carbon LCA (EN 15978 Modules A1–A3, B4, B6, C1–C4, Module D)
-    const structGwpMap: Record<StructureSystemType, number> = {
-      rc_standard: 245,
-      low_carbon_rc: 175,
-      clt_hybrid: 115,
-      steel_composite: 265
-    };
-    const a1a3Structure = structGwpMap[structureSystem];
+    // Dynamic Bill of Quantities (BoQ) calculation or structural studio override
+    const structBaySpan = Math.max(3.0, +(lengthX / Math.max(1, Math.round(lengthX / 6))).toFixed(2));
+    const structBayTrib = Math.max(2.5, +(widthY / Math.max(1, Math.round(widthY / 6))).toFixed(2));
+    const structMatSystem: 'RC' | 'Steel' | 'Timber' | 'Masonry' =
+      structureSystem === 'clt_hybrid' ? 'Timber' : structureSystem === 'steel_composite' ? 'Steel' : 'RC';
+
+    const isOverrideMatching =
+      structuralBoQOverride &&
+      (!structuralBoQOverride.materialSystem || structuralBoQOverride.materialSystem === structMatSystem);
+
+    const structuralBoQ: StructuralBoQResult = isOverrideMatching
+      ? structuralBoQOverride!
+      : computeStructuralBoQ({
+          footprintArea,
+          floors,
+          floorHeight,
+          spanL: structBaySpan,
+          tributaryWidthBtr: structBayTrib,
+          materialSystem: structMatSystem,
+          lowCarbonConcrete: structureSystem === 'low_carbon_rc',
+          recycledSteel: true,
+          biogenicTimber: true
+        });
+
+    const a1a3Structure = structuralBoQ.gwpStructureA1A3;
     const a1a3Envelope = Math.round(
       ((opaqueWallAreaTotal * wallEmbodiedCo2PerM2Facade + winAreaTotal * 95 + footprintArea * 48) /
         Math.max(1, gfa))
@@ -1125,6 +1355,7 @@ export const DesignProjectProvider: React.FC<{ children: React.ReactNode }> = ({
       operationalCo2KgM2Yr,
       discomfortHours,
       comfortHoursPct,
+      structuralBoQ,
       lca: {
         a1a3Structure,
         a1a3Envelope,
@@ -1144,6 +1375,7 @@ export const DesignProjectProvider: React.FC<{ children: React.ReactNode }> = ({
     climate,
     activeStrategies,
     buildingProgram,
+    structuralBoQOverride,
     internalLoadsWm2,
     neighborHeightN,
     neighborHeightS,
@@ -1449,6 +1681,10 @@ export const DesignProjectProvider: React.FC<{ children: React.ReactNode }> = ({
         setGridDecarbonizationRate,
         studyPeriodYears,
         setStudyPeriodYears,
+        structuralBoQOverride,
+        setStructuralBoQOverride,
+        syncMassingToStructure,
+        syncStructureToMassing,
         sim
       }}
     >

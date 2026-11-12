@@ -6,7 +6,7 @@
 // © Politecnico di Milano - Prof. Salvatore Viscuso & Prof. Massimiliano Manfren
 // ============================================================================
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import {
   Building2,
   Layers,
@@ -18,6 +18,7 @@ import {
   AlertTriangle,
   RotateCcw,
   Download,
+  Upload,
   Info,
   ChevronRight,
   Database,
@@ -46,6 +47,11 @@ import {
   NationalAnnexId,
   TimberLoadDuration
 } from '../data/eurocodeDataset';
+
+import {
+  useDesignProject,
+  StructureSystemType
+} from '../context/DesignProjectContext';
 
 import {
   SharedDesignBasis,
@@ -79,7 +85,17 @@ import {
   CalculationRow,
   deriveEnvironmentalLoadsFromClimate,
   optimizeMemberSection,
-  OptimizationResult
+  OptimizationResult,
+  computeEurocode8SeismicActions,
+  Eurocode8SeismicParams,
+  Eurocode8SeismicResults,
+  SeismicGroundType,
+  BuildingImportanceClass,
+  DuctilityClass,
+  GROUND_TYPE_TABLE,
+  IMPORTANCE_FACTORS,
+  computeStructuralBoQ,
+  StructuralBoQResult
 } from '../utils/eurocodeCalculators';
 
 import { StructuralBay3DViewer, SelectedMemberType } from './StructuralBay3DViewer';
@@ -172,6 +188,9 @@ export interface StructuralEurocodeStudioProps {
 }
 
 export const StructuralEurocodeStudio: React.FC<StructuralEurocodeStudioProps> = ({ climate }) => {
+  // Connect to PoliMi Design Project Context (Stage 1 - Stage 6)
+  const projectCtx = useDesignProject();
+
   // --------------------------------------------------------------------------
   // WORKFLOW STEPS (1: Project Basis, 2: 3D Bay & Loads, 3: Members & Solver, 4: Comparison & Report)
   // --------------------------------------------------------------------------
@@ -180,6 +199,16 @@ export const StructuralEurocodeStudio: React.FC<StructuralEurocodeStudioProps> =
   const [showEtaModal, setShowEtaModal] = useState(false);
   const [showGuideModal, setShowGuideModal] = useState(false);
   const [showScopeBanner, setShowScopeBanner] = useState(true);
+
+  // Stage 3 Massing Synchronizer Feedback
+  const [syncNotification, setSyncNotification] = useState<string | null>(null);
+
+  // Eurocode 8 (EN 1998-1 / Italian NTC 2018) Seismic Actions State
+  const [seismicPga, setSeismicPga] = useState<number>(0.15); // reference ag (0.05g to 0.35g)
+  const [seismicGroundType, setSeismicGroundType] = useState<SeismicGroundType>('C');
+  const [seismicImportanceClass, setSeismicImportanceClass] = useState<BuildingImportanceClass>('II');
+  const [seismicDuctilityClass, setSeismicDuctilityClass] = useState<DuctilityClass>('DCM');
+  const [seismicQOverride, setSeismicQOverride] = useState<number | undefined>(undefined);
 
   // Pillar 4: Climate & Environmental Actions
   const [terrainCategory, setTerrainCategory] = useState<'0' | 'I' | 'II' | 'III' | 'IV'>('III');
@@ -542,6 +571,200 @@ export const StructuralEurocodeStudio: React.FC<StructuralEurocodeStudioProps> =
     return activeSys;
   }, [optioneeringMatrix, bayConfig.materialSystem]);
 
+  // --------------------------------------------------------------------------
+  // ITEM 1.2: DYNAMIC BILL OF QUANTITIES (BoQ) & EMBODIED CARBON BRIDGE
+  // --------------------------------------------------------------------------
+  const liveBoQ: StructuralBoQResult = useMemo(() => {
+    const footprint = projectCtx?.sim?.footprintArea || 512;
+    return computeStructuralBoQ({
+      footprintArea: footprint,
+      floors: bayConfig.numberOfStoreys,
+      floorHeight: bayConfig.storeyHeightH,
+      spanL: bayConfig.spanL,
+      tributaryWidthBtr: bayConfig.tributaryWidthBtr,
+      materialSystem: bayConfig.materialSystem,
+      lowCarbonConcrete,
+      recycledSteel,
+      biogenicTimber,
+      slabThicknessMm: bayConfig.materialSystem === 'RC' ? rcSlabInputs.h : bayConfig.materialSystem === 'Timber' ? cltSlabInputs.t : 120,
+      beamWidthMm: bayConfig.materialSystem === 'RC' ? rcBeamInputs.b : bayConfig.materialSystem === 'Timber' ? woodBeamInputs.b : undefined,
+      beamDepthMm: bayConfig.materialSystem === 'RC' ? rcBeamInputs.h : bayConfig.materialSystem === 'Timber' ? woodBeamInputs.h : undefined,
+      columnWidthMm: bayConfig.materialSystem === 'RC' ? rcColInputs.b : bayConfig.materialSystem === 'Timber' ? woodColInputs.b : undefined,
+      columnDepthMm: bayConfig.materialSystem === 'RC' ? rcColInputs.h : bayConfig.materialSystem === 'Timber' ? woodColInputs.h : undefined,
+      steelBeamProfile: steelBeamInputs.profileName,
+      steelColProfile: steelColInputs.profileName
+    });
+  }, [
+    bayConfig,
+    projectCtx?.sim?.footprintArea,
+    lowCarbonConcrete,
+    recycledSteel,
+    biogenicTimber,
+    rcSlabInputs.h,
+    rcBeamInputs.b,
+    rcBeamInputs.h,
+    rcColInputs.b,
+    rcColInputs.h,
+    cltSlabInputs.t,
+    woodBeamInputs.b,
+    woodBeamInputs.h,
+    woodColInputs.b,
+    woodColInputs.h,
+    steelBeamInputs.profileName,
+    steelColInputs.profileName
+  ]);
+
+  // Synchronize dynamic BoQ into Project Context for Stage 6 LCA
+  useEffect(() => {
+    if (projectCtx?.setStructuralBoQOverride) {
+      projectCtx.setStructuralBoQOverride(liveBoQ);
+    }
+  }, [liveBoQ, projectCtx]);
+
+  // --------------------------------------------------------------------------
+  // ITEM 1.3: EUROCODE 8 / NTC 2018 SEISMIC ACTIONS CALCULATION
+  // --------------------------------------------------------------------------
+  const seismicResults: Eurocode8SeismicResults = useMemo(() => {
+    const totalFootprintArea = projectCtx?.sim?.footprintArea || 500;
+    const bayArea = Math.max(9, bayConfig.spanL * bayConfig.tributaryWidthBtr);
+    const bayCount = Math.max(4, Math.round(totalFootprintArea / bayArea));
+
+    // Seismic weight combination: W_seismic = sum Gk + psi2 * sum Qk
+    const deadWeightPerFloorKn = (basis.gk_add + takedown.slab_gk_self) * totalFootprintArea + (takedown.beam_gk_self * bayCount * bayConfig.spanL);
+    const liveWeightPerFloorKn = basis.qk * totalFootprintArea;
+    const psi2 = basis.psi2 ?? 0.30;
+    const totalSeismicWeightKn = (deadWeightPerFloorKn + psi2 * liveWeightPerFloorKn) * bayConfig.numberOfStoreys;
+
+    const structType =
+      bayConfig.materialSystem === 'Steel'
+        ? 'steel_frame'
+        : bayConfig.materialSystem === 'RC'
+        ? 'rc_frame'
+        : 'shear_wall_timber_other';
+
+    return computeEurocode8SeismicActions({
+      ag_g: seismicPga,
+      groundType: seismicGroundType,
+      importanceClass: seismicImportanceClass,
+      ductilityClass: seismicDuctilityClass,
+      q_behaviorFactor: seismicQOverride,
+      totalHeightH: bayConfig.numberOfStoreys * bayConfig.storeyHeightH,
+      totalWeightWk: totalSeismicWeightKn,
+      numberOfStoreys: bayConfig.numberOfStoreys,
+      structuralType: structType
+    });
+  }, [
+    seismicPga,
+    seismicGroundType,
+    seismicImportanceClass,
+    seismicDuctilityClass,
+    seismicQOverride,
+    bayConfig.spanL,
+    bayConfig.tributaryWidthBtr,
+    bayConfig.numberOfStoreys,
+    bayConfig.storeyHeightH,
+    bayConfig.materialSystem,
+    basis.gk_add,
+    basis.qk,
+    basis.psi2,
+    takedown.slab_gk_self,
+    takedown.beam_gk_self,
+    projectCtx?.sim?.footprintArea
+  ]);
+
+  // --------------------------------------------------------------------------
+  // ITEM 1.1: TWO-WAY MASSING & STRUCTURAL BAY SYNCHRONIZER
+  // --------------------------------------------------------------------------
+  const massingData = {
+    lengthX: projectCtx?.lengthX ?? 32,
+    widthY: projectCtx?.widthY ?? 16,
+    floors: projectCtx?.floors ?? 5,
+    floorHeight: projectCtx?.floorHeight ?? 3.4,
+    footprintArea: projectCtx?.sim?.footprintArea ?? 512,
+    buildingHeight: projectCtx?.sim?.buildingHeight ?? 17.0,
+    buildingProgram: projectCtx?.buildingProgram ?? 'office',
+    structureSystem: projectCtx?.structureSystem ?? 'rc_standard'
+  };
+
+  let mappedCurrentSystem: StructureSystemType = 'rc_standard';
+  if (bayConfig.materialSystem === 'Steel') mappedCurrentSystem = 'steel_composite';
+  else if (bayConfig.materialSystem === 'Timber') mappedCurrentSystem = 'clt_hybrid';
+  else if (bayConfig.materialSystem === 'RC') mappedCurrentSystem = lowCarbonConcrete ? 'low_carbon_rc' : 'rc_standard';
+
+  const isMaterialSynced = massingData.structureSystem === mappedCurrentSystem;
+  const isGeometrySynced =
+    massingData.floors === bayConfig.numberOfStoreys &&
+    Math.abs(massingData.floorHeight - bayConfig.storeyHeightH) < 0.05;
+  const isSynced = isMaterialSynced && isGeometrySynced;
+
+  const handleSyncMassingToStructure = () => {
+    if (!projectCtx) return;
+    const { lengthX, widthY, floors, floorHeight, buildingProgram, structureSystem } = projectCtx;
+
+    // Subdivide footprint into modular structural bays (typically 5-7 m)
+    const baysX = Math.max(1, Math.round(lengthX / 6));
+    const spanL = +(lengthX / baysX).toFixed(2);
+    const baysY = Math.max(1, Math.round(widthY / 6));
+    const tribW = +(widthY / baysY).toFixed(2);
+
+    let matSys: 'RC' | 'Steel' | 'Timber' | 'Masonry' = 'RC';
+    if (structureSystem === 'steel_composite') matSys = 'Steel';
+    else if (structureSystem === 'clt_hybrid') matSys = 'Timber';
+    else if (structureSystem === 'low_carbon_rc') {
+      matSys = 'RC';
+      setLowCarbonConcrete(true);
+    } else {
+      matSys = 'RC';
+      setLowCarbonConcrete(false);
+    }
+
+    let occCat = 'Cat_B_Office';
+    if (buildingProgram === 'residential' || buildingProgram === 'hospitality') occCat = 'Cat_A_Residential';
+    else if (buildingProgram === 'educational') occCat = 'Cat_C_Assembly';
+    else if (buildingProgram === 'office') occCat = 'Cat_B_Office';
+
+    setBayConfig((prev) => ({
+      ...prev,
+      spanL,
+      tributaryWidthBtr: tribW,
+      storeyHeightH: floorHeight,
+      numberOfStoreys: floors,
+      materialSystem: matSys,
+      occupancyCategory: occCat,
+      autoLoadTakedown: true
+    }));
+
+    handleOccupancyPresetChange(occCat);
+
+    setSyncNotification(
+      `Synced from Stage 3 Massing: Footprint ${lengthX}×${widthY}m → Bay ${spanL}×${tribW}m, ${floors} storeys @ ${floorHeight}m, Program ${buildingProgram} → ${occCat}, System → ${matSys}.`
+    );
+  };
+
+  const handleSyncStructureToMassing = () => {
+    if (!projectCtx) return;
+
+    let mappedSystem: StructureSystemType = 'rc_standard';
+    if (bayConfig.materialSystem === 'Steel') mappedSystem = 'steel_composite';
+    else if (bayConfig.materialSystem === 'Timber') mappedSystem = 'clt_hybrid';
+    else if (bayConfig.materialSystem === 'RC') mappedSystem = lowCarbonConcrete ? 'low_carbon_rc' : 'rc_standard';
+    else mappedSystem = 'rc_standard';
+
+    projectCtx.syncStructureToMassing({
+      floors: bayConfig.numberOfStoreys,
+      floorHeight: bayConfig.storeyHeightH,
+      structureSystem: mappedSystem
+    });
+
+    if (projectCtx.setStructuralBoQOverride) {
+      projectCtx.setStructuralBoQOverride(liveBoQ);
+    }
+
+    setSyncNotification(
+      `Pushed to Stage 3 & Stage 6: ${bayConfig.numberOfStoreys} storeys @ ${bayConfig.storeyHeightH}m, Material ${mappedSystem}, BoQ GWP = ${liveBoQ.gwpStructureA1A3} kgCO₂e/m² (${liveBoQ.totalStructureCo2Tonnes} tCO₂e).`
+    );
+  };
+
   // Pillar 4: Handle Weather Station Climate Sync
   const handleSyncClimate = () => {
     const sourceClimate = climate || {
@@ -764,6 +987,141 @@ export const StructuralEurocodeStudio: React.FC<StructuralEurocodeStudioProps> =
             Masonry Housing 4.5×3m
           </button>
         </div>
+      </div>
+
+      {/* =====================================================================
+          ITEM 1.1 & 1.2: TWO-WAY MASSING & STRUCTURAL BAY SYNCHRONIZER BANNER
+         ===================================================================== */}
+      <div className="bg-slate-950/80 border border-indigo-900/60 rounded-2xl p-4 shadow-lg space-y-3">
+        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-800/80 pb-2.5">
+          <div className="flex items-center gap-2">
+            <span className="p-1.5 rounded-lg bg-indigo-500/20 text-indigo-400">
+              <RefreshCw className="w-4 h-4" />
+            </span>
+            <div>
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-extrabold uppercase tracking-wider text-indigo-300">
+                  Two-Way Massing & Structural Bay Synchronizer
+                </span>
+                {isSynced ? (
+                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-950/80 text-emerald-300 border border-emerald-800 flex items-center gap-1">
+                    <CheckCircle2 className="w-3 h-3" />
+                    In Sync with Stage 3
+                  </span>
+                ) : (
+                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-950/80 text-amber-300 border border-amber-800 flex items-center gap-1">
+                    <AlertTriangle className="w-3 h-3" />
+                    Parameters Differ from Stage 3
+                  </span>
+                )}
+              </div>
+              <p className="text-[11px] text-slate-400">
+                Manual bidirectional bridge linking Stage 3 Massing footprint, storeys, and floor height with Eurocode Structural Framing and Stage 6 LCA BoQ.
+              </p>
+            </div>
+          </div>
+
+          {/* Sync Buttons */}
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={handleSyncMassingToStructure}
+              className="px-3.5 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs flex items-center gap-1.5 transition shadow"
+              title="Import footprint length, width, floor height, storey count, and occupancy category from Stage 3 Massing"
+            >
+              <Download className="w-3.5 h-3.5" />
+              Sync Massing to Structure
+            </button>
+
+            <button
+              type="button"
+              onClick={handleSyncStructureToMassing}
+              className="px-3.5 py-1.5 rounded-xl bg-sky-600 hover:bg-sky-500 text-white font-bold text-xs flex items-center gap-1.5 transition shadow"
+              title="Export structural storey height, storey count, material system, and BoQ to Stage 3 and Stage 6 LCA"
+            >
+              <Upload className="w-3.5 h-3.5" />
+              Sync Structure to Massing
+            </button>
+          </div>
+        </div>
+
+        {/* 4 Parameter Comparison Cards */}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3 text-xs">
+          {/* Card 1: Stage 3 Massing Geometry */}
+          <div className="bg-slate-900/90 p-2.5 rounded-xl border border-slate-800">
+            <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1 flex items-center gap-1">
+              <Box className="w-3 h-3 text-teal-400" />
+              Stage 3 Massing
+            </div>
+            <div className="space-y-0.5 text-slate-200">
+              <div>Footprint: <span className="font-mono font-bold text-white">{massingData.lengthX}m × {massingData.widthY}m</span> ({massingData.footprintArea} m²)</div>
+              <div>Storeys: <span className="font-mono font-bold text-white">{massingData.floors} fl</span> @ {massingData.floorHeight}m (H={massingData.buildingHeight}m)</div>
+              <div>Program: <span className="font-semibold text-teal-300 capitalize">{massingData.buildingProgram}</span></div>
+            </div>
+          </div>
+
+          {/* Card 2: Structural Bay Configuration */}
+          <div className="bg-slate-900/90 p-2.5 rounded-xl border border-slate-800">
+            <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1 flex items-center gap-1">
+              <Building2 className="w-3 h-3 text-sky-400" />
+              Structural Bay Framing
+            </div>
+            <div className="space-y-0.5 text-slate-200">
+              <div>Bay Span: <span className="font-mono font-bold text-white">{bayConfig.spanL}m × {bayConfig.tributaryWidthBtr}m</span></div>
+              <div>Framing: <span className="font-mono font-bold text-white">{bayConfig.numberOfStoreys} fl</span> @ {bayConfig.storeyHeightH}m (H={(bayConfig.numberOfStoreys * bayConfig.storeyHeightH).toFixed(1)}m)</div>
+              <div>System: <span className="font-semibold text-sky-300">{bayConfig.materialSystem}</span> • {bayConfig.occupancyCategory}</div>
+            </div>
+          </div>
+
+          {/* Card 3: Dynamic Structural BoQ */}
+          <div className="bg-slate-900/90 p-2.5 rounded-xl border border-slate-800">
+            <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1 flex items-center gap-1">
+              <Database className="w-3 h-3 text-amber-400" />
+              Live Material Takeoff (BoQ)
+            </div>
+            <div className="space-y-0.5 text-slate-200">
+              <div>Concrete: <span className="font-mono font-bold text-white">{liveBoQ.concreteVolumeM3} m³</span></div>
+              <div>Rebar: <span className="font-mono font-bold text-white">{liveBoQ.rebarMassTonnes} t</span> • Steel: <span className="font-mono font-bold text-white">{liveBoQ.steelMassTonnes} t</span></div>
+              <div>Timber: <span className="font-mono font-bold text-white">{liveBoQ.timberVolumeM3} m³</span></div>
+            </div>
+          </div>
+
+          {/* Card 4: Upfront Embodied Carbon Feedback */}
+          <div className="bg-slate-900/90 p-2.5 rounded-xl border border-slate-800">
+            <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1 flex items-center gap-1">
+              <Leaf className="w-3 h-3 text-emerald-400" />
+              Live GWP (Structure A1–A3)
+            </div>
+            <div className="space-y-0.5 text-slate-200">
+              <div className="text-base font-extrabold text-white font-mono">
+                {liveBoQ.gwpStructureA1A3} <span className="text-xs font-normal text-slate-400">kgCO₂e/m²</span>
+              </div>
+              <div className="text-[10.5px] text-slate-400">
+                Total: <span className="font-mono font-bold text-emerald-300">{liveBoQ.totalStructureCo2Tonnes} tCO₂e</span> ({liveBoQ.gfa} m² GFA)
+              </div>
+              <div className="text-[10px] text-slate-500">
+                Auto-linked to Stage 6 Whole-Life LCA
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Sync Notification Banner */}
+        {syncNotification && (
+          <div className="p-2.5 rounded-xl bg-indigo-950/90 border border-indigo-700/80 text-indigo-200 text-xs flex items-center justify-between shadow">
+            <div className="flex items-center gap-1.5">
+              <Check className="w-4 h-4 text-emerald-400 shrink-0" />
+              <span>{syncNotification}</span>
+            </div>
+            <button
+              type="button"
+              onClick={() => setSyncNotification(null)}
+              className="text-slate-400 hover:text-white p-0.5 rounded"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        )}
       </div>
 
       {/* =====================================================================
@@ -1306,6 +1664,366 @@ export const StructuralEurocodeStudio: React.FC<StructuralEurocodeStudioProps> =
                 <p className="text-[10.5px] text-slate-400 leading-snug">
                   {syncedClimateInfo ? `Tmin = ${syncedClimateInfo.tempMin}°C, Tmax = ${syncedClimateInfo.tempMax}°C (ΔT = ${syncedClimateInfo.deltaT} K)` : 'EN 1991-1-5: Tmax - Tmin used for structural expansion joints and shrinkage checks.'}
                 </p>
+              </div>
+            </div>
+          </div>
+
+          {/* Section 4: Eurocode 8 (EN 1998-1 / Italian NTC 2018) Seismic Actions Engine */}
+          <div className="bg-slate-950/60 border border-slate-800 rounded-xl p-4 space-y-4">
+            <div className="flex flex-wrap items-center justify-between border-b border-slate-800 pb-2.5 gap-2">
+              <div className="flex items-center gap-2">
+                <span className="p-1 rounded bg-rose-500/20 text-rose-400">
+                  <Activity className="w-4 h-4" />
+                </span>
+                <div>
+                  <span className="text-xs font-extrabold uppercase tracking-wider text-rose-300">
+                    Eurocode 8 / Italian NTC 2018 Seismic Actions Engine (EN 1998-1 §3 &amp; §4)
+                  </span>
+                  <p className="text-[11px] text-slate-400">
+                    Calculates lateral base shear Fb, design response spectrum Sd(T), storey force cascade, and interstorey drift sensitivity θ ≤ 0.10.
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <span className="text-[10px] text-slate-400">Seismic Standard:</span>
+                <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-rose-950 text-rose-300 border border-rose-800 font-mono">
+                  EN 1998-1 Type 1 / NTC 2018
+                </span>
+              </div>
+            </div>
+
+            {/* Seismic Hazard & Ductility Controls */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 text-xs">
+              {/* PGA ag */}
+              <div className="bg-slate-900/80 p-3 rounded-xl border border-slate-800 space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] font-bold text-rose-400 uppercase tracking-wider">
+                    1. Reference PGA (ag)
+                  </span>
+                  <span className="font-mono font-extrabold text-white text-sm bg-slate-950 px-2 py-0.5 rounded border border-slate-700">
+                    {seismicPga.toFixed(2)} g
+                  </span>
+                </div>
+                <div className="space-y-1">
+                  <label className="text-slate-400 block text-[11px] font-semibold">Peak Ground Acceleration ag [g]:</label>
+                  <input
+                    type="range"
+                    min="0.05"
+                    max="0.35"
+                    step="0.01"
+                    value={seismicPga}
+                    onChange={(e) => setSeismicPga(parseFloat(e.target.value))}
+                    className="w-full accent-rose-500 cursor-pointer"
+                  />
+                  <div className="flex justify-between text-[10px] text-slate-500 font-mono">
+                    <span>0.05g (Low)</span>
+                    <span>0.15g (Milan)</span>
+                    <span>0.35g (High)</span>
+                  </div>
+                </div>
+                <p className="text-[10px] text-slate-400 leading-snug">
+                  Design ground acceleration: <span className="font-mono font-bold text-white">{seismicResults.ag_design_g}g</span> ({seismicResults.ag_design_ms2} m/s²) with γI = {seismicResults.gamma_I}.
+                </p>
+              </div>
+
+              {/* Ground Type (A to E) */}
+              <div className="bg-slate-900/80 p-3 rounded-xl border border-slate-800 space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] font-bold text-rose-400 uppercase tracking-wider">
+                    2. Ground Type (EN 1998-1)
+                  </span>
+                  <span className="font-mono font-extrabold text-white text-sm bg-slate-950 px-2 py-0.5 rounded border border-slate-700">
+                    Type {seismicGroundType} (S={seismicResults.S_soilFactor})
+                  </span>
+                </div>
+                <div className="space-y-1">
+                  <label className="text-slate-400 block text-[11px] font-semibold">Stratigraphic Soil Class:</label>
+                  <select
+                    value={seismicGroundType}
+                    onChange={(e) => setSeismicGroundType(e.target.value as SeismicGroundType)}
+                    className="w-full bg-slate-800 border border-slate-700 rounded p-1.5 text-white font-semibold text-xs"
+                  >
+                    <option value="A">Ground A: Rock / Stiff (vs,30 &gt; 800 m/s, S=1.0)</option>
+                    <option value="B">Ground B: Very dense sand/gravel (vs,30 360–800, S=1.20)</option>
+                    <option value="C">Ground C: Deep dense sand/gravel (vs,30 180–360, S=1.15)</option>
+                    <option value="D">Ground D: Loose cohesionless soil (vs,30 &lt; 180, S=1.35)</option>
+                    <option value="E">Ground E: Alluvial surface 5–20m (S=1.40)</option>
+                  </select>
+                </div>
+                <p className="text-[10px] text-slate-400 leading-snug">
+                  Periods: TB={seismicResults.TB_s}s, TC={seismicResults.TC_s}s, TD={seismicResults.TD_s}s.
+                </p>
+              </div>
+
+              {/* Building Importance Class */}
+              <div className="bg-slate-900/80 p-3 rounded-xl border border-slate-800 space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] font-bold text-rose-400 uppercase tracking-wider">
+                    3. Importance Class
+                  </span>
+                  <span className="font-mono font-extrabold text-white text-sm bg-slate-950 px-2 py-0.5 rounded border border-slate-700">
+                    Class {seismicImportanceClass} (γI={seismicResults.gamma_I})
+                  </span>
+                </div>
+                <div className="space-y-1">
+                  <label className="text-slate-400 block text-[11px] font-semibold">Consequence / Building Use:</label>
+                  <select
+                    value={seismicImportanceClass}
+                    onChange={(e) => setSeismicImportanceClass(e.target.value as BuildingImportanceClass)}
+                    className="w-full bg-slate-800 border border-slate-700 rounded p-1.5 text-white font-semibold text-xs"
+                  >
+                    <option value="I">Class I: Agricultural / Low Occupancy (γI=0.8)</option>
+                    <option value="II">Class II: Standard Residential &amp; Office (γI=1.0)</option>
+                    <option value="III">Class III: Schools &amp; Assembly Halls (γI=1.2)</option>
+                    <option value="IV">Class IV: Hospitals &amp; Emergency Hubs (γI=1.4)</option>
+                  </select>
+                </div>
+                <p className="text-[10px] text-slate-400 leading-snug">
+                  EN 1998-1 §4.2.5: Multiplier on reference ground acceleration ag.
+                </p>
+              </div>
+
+              {/* Ductility Class & q */}
+              <div className="bg-slate-900/80 p-3 rounded-xl border border-slate-800 space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] font-bold text-rose-400 uppercase tracking-wider">
+                    4. Ductility Class &amp; q
+                  </span>
+                  <span className="font-mono font-extrabold text-white text-sm bg-slate-950 px-2 py-0.5 rounded border border-slate-700">
+                    {seismicDuctilityClass} (q={seismicResults.q_behaviorFactor.toFixed(1)})
+                  </span>
+                </div>
+                <div className="space-y-1">
+                  <div className="flex items-center justify-between text-[11px]">
+                    <label className="text-slate-400 font-semibold">Energy Dissipation Capacity:</label>
+                    <span className="font-mono text-rose-300 text-[10px]">q = {seismicResults.q_behaviorFactor.toFixed(1)}</span>
+                  </div>
+                  <select
+                    value={seismicDuctilityClass}
+                    onChange={(e) => {
+                      const dc = e.target.value as DuctilityClass;
+                      setSeismicDuctilityClass(dc);
+                      setSeismicQOverride(dc === 'DCL' ? 1.5 : dc === 'DCH' ? 4.5 : 3.6);
+                    }}
+                    className="w-full bg-slate-800 border border-slate-700 rounded p-1.5 text-white font-semibold text-xs"
+                  >
+                    <option value="DCL">DCL: Ductility Class Low (q = 1.5, Elastic Sizing)</option>
+                    <option value="DCM">DCM: Ductility Class Medium (q = 3.0–3.9, Standard)</option>
+                    <option value="DCH">DCH: Ductility Class High (q ≥ 4.5, Capacity Design)</option>
+                  </select>
+                </div>
+                <p className="text-[10px] text-slate-400 leading-snug">
+                  Fundamental Period: <span className="font-mono font-bold text-rose-300">T1 = {seismicResults.T1_fundamentalPeriod_s} s</span> (Ct={seismicResults.Ct_periodFactor}).
+                </p>
+              </div>
+            </div>
+
+            {/* Response Spectrum Graph & Base Shear Results */}
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 items-center">
+              {/* SVG Design Response Spectrum Chart */}
+              <div className="lg:col-span-7 bg-slate-900/90 p-3 rounded-xl border border-slate-800 space-y-1.5">
+                <div className="flex items-center justify-between text-xs">
+                  <span className="font-bold text-slate-300 flex items-center gap-1.5">
+                    <Activity className="w-3.5 h-3.5 text-rose-400" />
+                    EN 1998-1 Elastic Se(T) vs Design Spectrum Sd(T)
+                  </span>
+                  <span className="text-[10px] text-slate-400 font-mono">
+                    T1 = {seismicResults.T1_fundamentalPeriod_s}s • Sd = {seismicResults.Sd_T1_g}g ({seismicResults.Sd_T1_ms2} m/s²)
+                  </span>
+                </div>
+
+                <div className="relative w-full h-[150px] bg-slate-950 rounded-lg border border-slate-800 overflow-hidden flex items-center justify-center p-2">
+                  <svg viewBox="0 0 380 140" className="w-full h-full">
+                    {/* Grid lines */}
+                    <line x1="35" y1="120" x2="365" y2="120" stroke="#334155" strokeWidth="1" />
+                    <line x1="35" y1="20" x2="35" y2="120" stroke="#334155" strokeWidth="1" />
+                    <line x1="35" y1="70" x2="365" y2="70" stroke="#1e293b" strokeDasharray="3 3" />
+                    <line x1="35" y1="20" x2="365" y2="20" stroke="#1e293b" strokeDasharray="3 3" />
+
+                    {/* Corner periods markers */}
+                    {(() => {
+                      const maxT = 3.5;
+                      const maxSd = Math.max(
+                        0.01,
+                        ...seismicResults.spectrumCurve.map((p) => p.S_elastic)
+                      );
+                      const xTB = 35 + (seismicResults.TB_s / maxT) * 330;
+                      const xTC = 35 + (seismicResults.TC_s / maxT) * 330;
+                      const xTD = 35 + (seismicResults.TD_s / maxT) * 330;
+
+                      // Curves
+                      const ptsElastic = seismicResults.spectrumCurve
+                        .map((p) => {
+                          const x = 35 + (p.T / maxT) * 330;
+                          const y = 120 - (p.S_elastic / maxSd) * 98;
+                          return `${x.toFixed(1)},${y.toFixed(1)}`;
+                        })
+                        .join(' ');
+
+                      const ptsDesign = seismicResults.spectrumCurve
+                        .map((p) => {
+                          const x = 35 + (p.T / maxT) * 330;
+                          const y = 120 - (p.Sd / maxSd) * 98;
+                          return `${x.toFixed(1)},${y.toFixed(1)}`;
+                        })
+                        .join(' ');
+
+                      const xT1 = 35 + (Math.min(maxT, seismicResults.T1_fundamentalPeriod_s) / maxT) * 330;
+                      const yT1 = 120 - (seismicResults.Sd_T1_ms2 / maxSd) * 98;
+
+                      return (
+                        <>
+                          {/* Corner periods vertical lines */}
+                          <line x1={xTB} y1="20" x2={xTB} y2="120" stroke="#64748b" strokeDasharray="2 2" strokeWidth="0.8" />
+                          <text x={xTB} y="132" fontSize="8" fill="#64748b" textAnchor="middle">TB</text>
+
+                          <line x1={xTC} y1="20" x2={xTC} y2="120" stroke="#64748b" strokeDasharray="2 2" strokeWidth="0.8" />
+                          <text x={xTC} y="132" fontSize="8" fill="#64748b" textAnchor="middle">TC</text>
+
+                          <line x1={xTD} y1="20" x2={xTD} y2="120" stroke="#64748b" strokeDasharray="2 2" strokeWidth="0.8" />
+                          <text x={xTD} y="132" fontSize="8" fill="#64748b" textAnchor="middle">TD</text>
+
+                          {/* Elastic spectrum (dashed) */}
+                          <polyline fill="none" stroke="#64748b" strokeWidth="1.2" strokeDasharray="3 3" points={ptsElastic} />
+
+                          {/* Design spectrum (rose) */}
+                          <polyline fill="none" stroke="#f43f5e" strokeWidth="2.2" points={ptsDesign} />
+
+                          {/* Operating Fundamental Period T1 Marker */}
+                          <line x1={xT1} y1={yT1} x2={xT1} y2="120" stroke="#f43f5e" strokeDasharray="2 2" strokeWidth="1" />
+                          <circle cx={xT1} cy={yT1} r="5" fill="#f43f5e" stroke="#fff" strokeWidth="1.5" />
+                          <text x={xT1 + 6} y={Math.max(25, yT1 - 5)} fontSize="9" fontWeight="bold" fill="#f43f5e">
+                            T1={seismicResults.T1_fundamentalPeriod_s}s ({seismicResults.Sd_T1_g}g)
+                          </text>
+
+                          {/* Y-axis labels */}
+                          <text x="30" y="24" fontSize="8" fill="#94a3b8" textAnchor="end">
+                            {(maxSd / 9.80665).toFixed(2)}g
+                          </text>
+                          <text x="30" y="73" fontSize="8" fill="#94a3b8" textAnchor="end">
+                            {(maxSd / (2 * 9.80665)).toFixed(2)}g
+                          </text>
+                          <text x="30" y="122" fontSize="8" fill="#94a3b8" textAnchor="end">
+                            0g
+                          </text>
+                          <text x="365" y="132" fontSize="8" fill="#94a3b8" textAnchor="end">
+                            T (s)
+                          </text>
+                        </>
+                      );
+                    })()}
+                  </svg>
+                </div>
+                <div className="flex items-center justify-between text-[10px] text-slate-400">
+                  <span className="flex items-center gap-1.5">
+                    <span className="w-3 h-0.5 bg-rose-500 inline-block" /> Design Spectrum Sd(T) [q={seismicResults.q_behaviorFactor.toFixed(1)}]
+                  </span>
+                  <span className="flex items-center gap-1.5">
+                    <span className="w-3 h-0.5 border-t border-dashed border-slate-400 inline-block" /> Elastic Spectrum Se(T) [q=1.0]
+                  </span>
+                </div>
+              </div>
+
+              {/* Seismic Base Shear & Drift Summary Cards */}
+              <div className="lg:col-span-5 grid grid-cols-2 gap-2 text-xs">
+                <div className="bg-slate-900/90 p-2.5 rounded-xl border border-slate-800">
+                  <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Lateral Base Shear (Fb)</div>
+                  <div className="text-base font-extrabold text-white font-mono mt-0.5">
+                    {seismicResults.Fb_baseShearKn.toLocaleString()} <span className="text-xs font-normal text-slate-400">kN</span>
+                  </div>
+                  <div className="text-[10.5px] text-rose-300 font-semibold">
+                    {seismicResults.baseShearRatioPct}% of Seismic Weight
+                  </div>
+                </div>
+
+                <div className="bg-slate-900/90 p-2.5 rounded-xl border border-slate-800">
+                  <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Seismic Gravity (Wseis)</div>
+                  <div className="text-base font-extrabold text-white font-mono mt-0.5">
+                    {seismicResults.totalSeismicWeightKn.toLocaleString()} <span className="text-xs font-normal text-slate-400">kN</span>
+                  </div>
+                  <div className="text-[10.5px] text-slate-400">
+                    λ = {seismicResults.lambda_correction} • ψ2 = {basis.psi2}
+                  </div>
+                </div>
+
+                <div className="bg-slate-900/90 p-2.5 rounded-xl border border-slate-800">
+                  <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Spectral Accel. Sd(T1)</div>
+                  <div className="text-base font-extrabold text-rose-400 font-mono mt-0.5">
+                    {seismicResults.Sd_T1_g} g
+                  </div>
+                  <div className="text-[10.5px] text-slate-400">
+                    {seismicResults.Sd_T1_ms2} m/s² @ T1={seismicResults.T1_fundamentalPeriod_s}s
+                  </div>
+                </div>
+
+                <div className="bg-slate-900/90 p-2.5 rounded-xl border border-slate-800">
+                  <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">P-Δ Drift Sensitivity</div>
+                  <div className="flex items-center gap-1.5 mt-0.5">
+                    <span className={`text-base font-extrabold font-mono ${
+                      seismicResults.pDeltaStatus === 'PASS' ? 'text-emerald-400' : 'text-amber-400'
+                    }`}>
+                      θ = {seismicResults.governingTheta}
+                    </span>
+                  </div>
+                  <div className="text-[10.5px]">
+                    <span className={`font-bold ${
+                      seismicResults.pDeltaStatus === 'PASS' ? 'text-emerald-400' : 'text-amber-400'
+                    }`}>
+                      {seismicResults.pDeltaStatus === 'PASS' ? 'θ ≤ 0.10 (PASS)' : 'θ > 0.10 (WARNING)'}
+                    </span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Storey Force Distribution & Cumulative Shear Cascade */}
+            <div className="bg-slate-900/80 p-3 rounded-xl border border-slate-800 space-y-2">
+              <div className="flex items-center justify-between text-xs font-bold text-slate-300">
+                <span className="flex items-center gap-1.5">
+                  <TrendingDown className="w-3.5 h-3.5 text-rose-400" />
+                  Storey Lateral Force Distribution Fi &amp; Cumulative Shear Vi (EN 1998-1 §4.3.3.2.3)
+                </span>
+                <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                  seismicResults.pDeltaStatus === 'PASS' ? 'bg-emerald-950 text-emerald-300 border border-emerald-800' : 'bg-amber-950 text-amber-300 border border-amber-800'
+                }`}>
+                  {seismicResults.pDeltaStatus === 'PASS' ? 'θ ≤ 0.10: 2nd Order Effects Negligible' : 'θ > 0.10: Amplification Required'}
+                </span>
+              </div>
+
+              <div className="overflow-x-auto">
+                <table className="w-full text-[11px] text-left">
+                  <thead className="text-[10px] uppercase text-slate-400 border-b border-slate-800 font-bold">
+                    <tr>
+                      <th className="py-1">Storey Level</th>
+                      <th className="py-1">Height (z)</th>
+                      <th className="py-1">Storey Weight W</th>
+                      <th className="py-1">Lateral Force Fi</th>
+                      <th className="py-1">Storey Shear Vi</th>
+                      <th className="py-1">Drift Sens. θ</th>
+                      <th className="py-1">EC8 Verification</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-800/60 font-mono">
+                    {seismicResults.storeys.slice().reverse().map((st) => (
+                      <tr key={st.storeyIndex} className="hover:bg-slate-800/40">
+                        <td className="py-1 text-slate-300 font-sans font-semibold">Storey {st.storeyIndex}</td>
+                        <td className="py-1 text-slate-400">{st.heightZ} m</td>
+                        <td className="py-1 text-slate-300">{st.storeyWeightKn} kN</td>
+                        <td className="py-1 text-rose-300 font-bold">{st.Fi_lateralForceKn} kN</td>
+                        <td className="py-1 text-sky-300 font-bold">{st.Vi_storeyShearKn} kN</td>
+                        <td className="py-1 text-slate-200">{st.theta_driftSensitivity}</td>
+                        <td className="py-1">
+                          <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${
+                            st.pDeltaCheck === 'PASS' ? 'bg-emerald-900/60 text-emerald-300 border border-emerald-700/50' : 'bg-amber-900/60 text-amber-300 border border-amber-700/50'
+                          }`}>
+                            {st.pDeltaCheck}
+                          </span>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               </div>
             </div>
           </div>

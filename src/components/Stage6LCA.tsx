@@ -1,16 +1,20 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import {
   Recycle,
   Layers,
   TrendingDown,
   Award,
   Sparkles,
-  CheckCircle2
+  CheckCircle2,
+  Database,
+  Building2,
+  Box
 } from 'lucide-react';
 import {
   useDesignProject,
   StructureSystemType
 } from '../context/DesignProjectContext';
+import { computeStructuralBoQ } from '../utils/eurocodeCalculators';
 
 export const Stage6LCA: React.FC = () => {
   const {
@@ -23,10 +27,59 @@ export const Stage6LCA: React.FC = () => {
     studyPeriodYears,
     setStudyPeriodYears,
     applyOptimizationPreset,
+    lengthX,
+    widthY,
+    floors,
+    floorHeight,
     sim
   } = useDesignProject();
 
   const { lca } = sim;
+
+  const previewBoQ = useMemo(() => {
+    const footprintArea = sim.footprintArea;
+    const structBaySpan = Math.max(3.0, +(lengthX / Math.max(1, Math.round(lengthX / 6))).toFixed(2));
+    const structBayTrib = Math.max(2.5, +(widthY / Math.max(1, Math.round(widthY / 6))).toFixed(2));
+
+    return {
+      rc_standard: computeStructuralBoQ({
+        footprintArea,
+        floors,
+        floorHeight,
+        spanL: structBaySpan,
+        tributaryWidthBtr: structBayTrib,
+        materialSystem: 'RC',
+        lowCarbonConcrete: false
+      }).gwpStructureA1A3,
+      low_carbon_rc: computeStructuralBoQ({
+        footprintArea,
+        floors,
+        floorHeight,
+        spanL: structBaySpan,
+        tributaryWidthBtr: structBayTrib,
+        materialSystem: 'RC',
+        lowCarbonConcrete: true
+      }).gwpStructureA1A3,
+      clt_hybrid: computeStructuralBoQ({
+        footprintArea,
+        floors,
+        floorHeight,
+        spanL: structBaySpan,
+        tributaryWidthBtr: structBayTrib,
+        materialSystem: 'Timber',
+        biogenicTimber: true
+      }).gwpStructureA1A3,
+      steel_composite: computeStructuralBoQ({
+        footprintArea,
+        floors,
+        floorHeight,
+        spanL: structBaySpan,
+        tributaryWidthBtr: structBayTrib,
+        materialSystem: 'Steel',
+        recycledSteel: true
+      }).gwpStructureA1A3
+    };
+  }, [sim.footprintArea, floors, floorHeight, lengthX, widthY]);
 
   return (
     <div className="space-y-5">
@@ -370,12 +423,84 @@ export const Stage6LCA: React.FC = () => {
                   />
                 </div>
                 <span className="text-[11px] font-mono font-bold text-emerald-700 block mt-1">
-                  A1–A3: {item.gwp}
+                  A1–A3: {active ? `${sim.structuralBoQ.gwpStructureA1A3} kgCO₂e/m² (Live BoQ)` : `${previewBoQ[item.id]} kgCO₂e/m² (BoQ)`}
                 </span>
                 <p className="text-[10px] text-slate-500 mt-0.5">{item.desc}</p>
               </div>
             );
           })}
+        </div>
+
+        {/* Dynamic Structural Bill of Quantities (BoQ) Takeoff Card */}
+        <div className="bg-slate-900 text-white p-4 rounded-xl border border-slate-800 space-y-3 shadow-md">
+          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-800 pb-2">
+            <div className="flex items-center gap-2">
+              <span className="p-1 rounded bg-teal-500/20 text-teal-400">
+                <Database className="w-3.5 h-3.5" />
+              </span>
+              <span className="text-xs font-extrabold uppercase tracking-wider text-teal-300">
+                Dynamic Structural Bill of Quantities (BoQ) &amp; Live Material Takeoff
+              </span>
+            </div>
+            <div className="flex items-center gap-2 text-[10.5px]">
+              <span className="text-slate-400">Sized Scope:</span>
+              <span className="font-mono font-bold px-2 py-0.5 rounded bg-slate-800 text-teal-300 border border-slate-700">
+                GFA {sim.structuralBoQ.gfa} m² • Upfront GWP {sim.structuralBoQ.gwpStructureA1A3} kgCO₂e/m² ({sim.structuralBoQ.totalStructureCo2Tonnes} tCO₂e)
+              </span>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-xs">
+            <div className="bg-slate-950 p-2.5 rounded-lg border border-slate-800 space-y-0.5">
+              <span className="text-[10px] font-bold uppercase text-slate-400 block">Total Concrete Volume (V_conc)</span>
+              <span className="text-base font-extrabold font-mono text-white block">
+                {sim.structuralBoQ.concreteVolumeM3} <span className="text-xs font-normal text-slate-400">m³</span>
+              </span>
+              <div className="text-[10px] text-slate-400">
+                Slab: {sim.structuralBoQ.materialTakeoff.slabConcreteM3}m³ • Col: {sim.structuralBoQ.materialTakeoff.columnConcreteM3}m³ • Fnd: {sim.structuralBoQ.materialTakeoff.footingConcreteM3}m³
+              </div>
+            </div>
+
+            <div className="bg-slate-950 p-2.5 rounded-lg border border-slate-800 space-y-0.5">
+              <span className="text-[10px] font-bold uppercase text-slate-400 block">Reinforcing Steel (M_rebar)</span>
+              <span className="text-base font-extrabold font-mono text-sky-400 block">
+                {sim.structuralBoQ.rebarMassTonnes} <span className="text-xs font-normal text-slate-400">tonnes</span>
+              </span>
+              <div className="text-[10px] text-slate-400">
+                Mass: {sim.structuralBoQ.rebarMassKg.toLocaleString()} kg (slab, beam, column, footing links)
+              </div>
+            </div>
+
+            <div className="bg-slate-950 p-2.5 rounded-lg border border-slate-800 space-y-0.5">
+              <span className="text-[10px] font-bold uppercase text-slate-400 block">Structural Steel (M_steel)</span>
+              <span className="text-base font-extrabold font-mono text-amber-400 block">
+                {sim.structuralBoQ.steelMassTonnes} <span className="text-xs font-normal text-slate-400">tonnes</span>
+              </span>
+              <div className="text-[10px] text-slate-400">
+                Profiles: {sim.structuralBoQ.steelMassKg.toLocaleString()} kg (beams &amp; column profiles)
+              </div>
+            </div>
+
+            <div className="bg-slate-950 p-2.5 rounded-lg border border-slate-800 space-y-0.5">
+              <span className="text-[10px] font-bold uppercase text-slate-400 block">Mass Timber Volume (V_timber)</span>
+              <span className="text-base font-extrabold font-mono text-emerald-400 block">
+                {sim.structuralBoQ.timberVolumeM3} <span className="text-xs font-normal text-slate-400">m³</span>
+              </span>
+              <div className="text-[10px] text-slate-400">
+                Biogenic Storage: {sim.structuralBoQ.timberBiogenicCarbonKgCo2e.toLocaleString()} kgCO₂e
+              </div>
+            </div>
+          </div>
+
+          <div className="flex flex-wrap items-center justify-between text-[11px] pt-1 border-t border-slate-800 text-slate-400 gap-2">
+            <span>Element Carbon:</span>
+            <div className="flex flex-wrap items-center gap-3 font-mono text-xs">
+              <span className="text-slate-300">Slabs: <strong className="text-white">{sim.structuralBoQ.breakdown.slabsCo2KgM2}</strong> kg/m²</span>
+              <span className="text-slate-300">Beams: <strong className="text-white">{sim.structuralBoQ.breakdown.beamsCo2KgM2}</strong> kg/m²</span>
+              <span className="text-slate-300">Columns: <strong className="text-white">{sim.structuralBoQ.breakdown.columnsCo2KgM2}</strong> kg/m²</span>
+              <span className="text-slate-300">Foundations: <strong className="text-white">{sim.structuralBoQ.breakdown.foundationsCo2KgM2}</strong> kg/m²</span>
+            </div>
+          </div>
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 bg-slate-50 p-3.5 rounded-xl border border-slate-200 text-xs">

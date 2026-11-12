@@ -22,6 +22,7 @@ export interface HourlyWeatherRecord {
   ghi: number;        // Global Horizontal Irradiance (Wh/m2)
   dni: number;        // Direct Normal Irradiance (Wh/m2)
   dhi: number;        // Diffuse Horizontal Irradiance (Wh/m2)
+  horizInfrared?: number; // Horizontal Infrared Sky Radiation (Wh/m2) [EPW Column 12]
   windSpeed: number;  // m/s
   windDir: number;    // deg (0 = N, 90 = E, 180 = S, 270 = W)
   skyCover?: number;  // tenths (0 - 10)
@@ -606,6 +607,9 @@ export function synthesizeHourlyFromPreset(preset: {
         const utci = calcUtciForScenario(dryBulb, relHum, windSpeed, dni, alt, 'sun_wind');
         const gamma = (17.27 * dryBulb) / (dryBulb + 237.3) + Math.log(Math.max(0.05, relHum / 100));
         const dewPoint = +((237.3 * gamma) / (17.27 - gamma)).toFixed(1);
+        const dpClamped = Math.max(-40, Math.min(40, dewPoint));
+        const epsSky = Math.max(0.65, Math.min(0.98, 0.711 + 0.56 * (dpClamped / 100) + 0.73 * Math.pow(dpClamped / 100, 2)));
+        const horizInfrared = Math.round(epsSky * 5.670374e-8 * Math.pow(dryBulb + 273.15, 4));
         const skyCover = Math.round(Math.max(0, Math.min(10, ((relHum - 30) / 70) * 7 + pseudoRand(hourOfYear * 5) * 3)));
 
         hourly.push({
@@ -622,6 +626,7 @@ export function synthesizeHourlyFromPreset(preset: {
           ghi,
           dni,
           dhi,
+          horizInfrared,
           windSpeed,
           windDir,
           skyCover,
@@ -758,6 +763,21 @@ export function parseEpwText(
     const rawDhi = parseFloat(cols[15]);
     const dhi = !isNaN(rawDhi) && rawDhi < 2000 && rawDhi >= 0 ? rawDhi : 0;
 
+    // EPW Column 12 (Field 13): Horizontal Infrared Radiation Intensity from Sky (Wh/m2)
+    const rawInfrared = parseFloat(cols[12]);
+    const dpClamped = Math.max(-40, Math.min(40, dewPoint));
+    const horizInfrared =
+      !isNaN(rawInfrared) && rawInfrared >= 50 && rawInfrared < 800
+        ? Math.round(rawInfrared)
+        : Math.round(
+            Math.max(
+              0.65,
+              Math.min(0.98, 0.711 + 0.56 * (dpClamped / 100) + 0.73 * Math.pow(dpClamped / 100, 2))
+            ) *
+              5.670374e-8 *
+              Math.pow(dryBulb + 273.15, 4)
+          );
+
     const rawWindDir = parseFloat(cols[20]);
     const windDir = !isNaN(rawWindDir) && rawWindDir <= 360 && rawWindDir >= 0 ? rawWindDir : 0;
     const rawWindSpd = parseFloat(cols[21]);
@@ -785,6 +805,7 @@ export function parseEpwText(
       ghi: Math.round(ghi),
       dni: Math.round(dni),
       dhi: Math.round(dhi),
+      horizInfrared,
       windSpeed: +windSpeed.toFixed(1),
       windDir: Math.round(windDir),
       skyCover,
@@ -1473,6 +1494,11 @@ export async function fetchStationClimateDataset(
 
     const { alt, az } = calcSolarPosition(station.lat, dayOfYear, hour + 0.5, station.lon, 0);
     const humRatio = +calcHumidityRatio(dryBulb, relHum).toFixed(2);
+    const gamma = (17.27 * dryBulb) / (dryBulb + 237.3) + Math.log(Math.max(0.05, relHum / 100));
+    const dewPoint = +((237.3 * gamma) / (17.27 - gamma)).toFixed(1);
+    const dpClamped = Math.max(-40, Math.min(40, dewPoint));
+    const epsSky = Math.max(0.65, Math.min(0.98, 0.711 + 0.56 * (dpClamped / 100) + 0.73 * Math.pow(dpClamped / 100, 2)));
+    const horizInfrared = Math.round(epsSky * 5.670374e-8 * Math.pow(dryBulb + 273.15, 4));
     const utci = calcUtciForScenario(dryBulb, relHum, windSpeed, dni, alt, 'sun_wind');
 
     hourly.push({
@@ -1482,11 +1508,13 @@ export async function fetchStationClimateDataset(
       dayOfYear,
       hour,
       dryBulb: +dryBulb.toFixed(1),
+      dewPoint,
       relHum: Math.round(relHum),
       humRatio,
       ghi: Math.round(ghi),
       dni: Math.round(dni),
       dhi: Math.round(dhi),
+      horizInfrared,
       windSpeed: +windSpeed.toFixed(1),
       windDir: Math.round(windDir),
       utci,
