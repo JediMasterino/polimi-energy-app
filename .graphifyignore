@@ -1,0 +1,16 @@
+# Dependencies & build artifacts
+node_modules/
+dist/
+dist-ssr/
+.vite/
+*.tsbuildinfo
+package-lock.json
+
+# Large static climate/geo datasets (no source AST or prose structure)
+public/weather/
+public/epwmap-catalog.json
+public/world-countries.geojson
+
+# Graphify generated outputs
+graphify-out/
+.graphify*

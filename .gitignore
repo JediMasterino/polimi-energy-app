@@ -16,3 +16,7 @@ Thumbs.db
 .env
 .env.*
 
+# Graphify generated knowledge graph outputs
+graphify-out/
+.graphify_*
+
