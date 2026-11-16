@@ -1,0 +1,363 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>/ — graphify tree viewer</title>
+  <style>
+    body {
+      font-family: 'Segoe UI', sans-serif;
+      margin: 0;
+      padding: 0;
+      background: #f9f9f9;
+      color: #333;
+    }
+    h1 {
+      margin: 20px 0 0 24px;
+      font-size: 2.2rem;
+      font-weight: bold;
+      color: #1e3a56;
+    }
+    .controls {
+      margin: 20px 0 15px 24px;
+    }
+    button {
+      margin-right: 10px;
+      padding: 8px 18px;
+      background: #007bff;
+      color: #fff;
+      border: none;
+      border-radius: 5px;
+      font-size: 0.95rem;
+      cursor: pointer;
+      transition: background 0.2s ease-in-out;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+    button:hover {
+      background: #0056b3;
+    }
+    button:active {
+      background: #004085;
+    }
+    #tree-container {
+      width: calc(100vw - 48px); /* Adjust for body margin/padding */
+      height: 85vh;
+      overflow: auto;
+      border-radius: 8px;
+      background: #fff;
+      margin-left: 24px;
+      margin-right: 24px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+      border: 1px solid #ddd;
+    }
+    svg {
+      background: #fff;
+      border-radius: 8px;
+      display: block; /* Important for D3 */
+    }
+    .node circle {
+      stroke-width: 2.5px;
+    }
+    .node text { /* Base style for the <text> container */
+      font: 13px 'Segoe UI', sans-serif;
+      paint-order: stroke fill; /* Ensures text is readable over lines */
+      stroke: #fff; /* White halo */
+      stroke-width: 3px; /* Halo thickness */
+      stroke-linejoin: round;
+      stroke-opacity: 0.85; /* Halo opacity */
+    }
+    .link {
+      fill: none;
+      stroke-opacity: 0.7;
+      stroke-width: 2px;
+    }
+  </style>
+</head>
+<body>
+  <h1>/ — Knowledge Graph</h1>
+  <div class="controls">
+    <button onclick="expandAll()">Expand All</button>
+    <button onclick="collapseAll()">Collapse All</button>
+    <button onclick="resetView()">Reset View</button>
+  </div>
+  <div id="tree-container">
+    <svg id="tree-svg" width="6000" height="8000"></svg>
+  </div>
+
+  <script src="https://d3js.org/d3.v7.min.js"></script>
+  <script>
+    const initialJsonData = {"name":"/","total_count":409,"children":[{"name":"docs","total_count":12,"children":[{"name":"architecture-overview.md","total_count":1,"children":[{"name":"Architecture Overview (docs/architecture-overview.md)","total_count":1,"children":[]}]},{"name":"README.md","total_count":1,"children":[{"name":"Graphify Knowledge Graph & Docs Workflow","total_count":1,"children":[]}]},{"name":"references","total_count":1,"children":[{"name":"README.md","total_count":1,"children":[{"name":"Research Papers & Reference Spreadsheets Corpus","total_count":1,"children":[]}]}]},{"name":"standards-traceability.md","total_count":9,"children":[{"name":"ASHRAE 55-2023 & EN 16798-1:2019 Adaptive Comfort","total_count":1,"children":[]},{"name":"ASHRAE Standard 209 Thermal Zoning & Cycles","total_count":1,"children":[]},{"name":"Belcher-Hakimian-Powell Climate Morphing & DPR 412/93","total_count":1,"children":[]},{"name":"EN 15978:2011 & EU Level(s) Whole-Life Carbon LCA","total_count":1,"children":[]},{"name":"EnergyPlus IDF (v24.1) & gbXML Interoperability","total_count":1,"children":[]},{"name":"ISO 52000-1 / UNI/TS 11300 / DM 26/06/2015 NZEB Energy Balance","total_count":1,"children":[]},{"name":"ISO 6946, ISO 13786 & ISO 13788 Envelope Physics","total_count":1,"children":[]},{"name":"Structural Eurocodes (EN 1990-1998) & PoliMI Predimensioning Workbook","total_count":1,"children":[]},{"name":"UTCI (Broede et al., 2012) & CBE Clima Scenarios","total_count":1,"children":[]}]}]},{"name":"index.html","total_count":1,"children":[{"name":"index.html Browser Entry Point","total_count":1,"children":[]}]},{"name":"package.json","total_count":46,"children":[{"name":"@types/leaflet","total_count":1,"children":[]},{"name":"@types/leaflet@^1.9.22","total_count":1,"children":[]},{"name":"@types/react","total_count":1,"children":[]},{"name":"@types/react-dom","total_count":1,"children":[]},{"name":"@types/react-dom@^18.3.5","total_count":1,"children":[]},{"name":"@types/react@^18.3.18","total_count":1,"children":[]},{"name":"@types/three","total_count":1,"children":[]},{"name":"@types/three@^0.187.0","total_count":1,"children":[]},{"name":"@vercel/analytics","total_count":1,"children":[]},{"name":"@vercel/analytics@^2.0.1","total_count":1,"children":[]},{"name":"@vercel/speed-insights","total_count":1,"children":[]},{"name":"@vercel/speed-insights@^2.1.0","total_count":1,"children":[]},{"name":"@vitejs/plugin-react","total_count":1,"children":[]},{"name":"@vitejs/plugin-react@^4.3.4","total_count":1,"children":[]},{"name":"author","total_count":1,"children":[]},{"name":"autoprefixer","total_count":1,"children":[]},{"name":"autoprefixer@^10.4.20","total_count":1,"children":[]},{"name":"build","total_count":1,"children":[]},{"name":"contributors","total_count":1,"children":[]},{"name":"dependencies","total_count":1,"children":[]},{"name":"dev","total_count":1,"children":[]},{"name":"devDependencies","total_count":1,"children":[]},{"name":"leaflet","total_count":1,"children":[]},{"name":"leaflet@^1.9.4","total_count":1,"children":[]},{"name":"license","total_count":1,"children":[]},{"name":"lucide-react","total_count":1,"children":[]},{"name":"lucide-react@^0.475.0","total_count":1,"children":[]},{"name":"name","total_count":1,"children":[]},{"name":"postcss","total_count":1,"children":[]},{"name":"postcss@^8.4.49","total_count":1,"children":[]},{"name":"preview","total_count":1,"children":[]},{"name":"react","total_count":1,"children":[]},{"name":"react-dom","total_count":1,"children":[]},{"name":"react-dom@^18.3.1","total_count":1,"children":[]},{"name":"react@^18.3.1","total_count":1,"children":[]},{"name":"scripts","total_count":1,"children":[]},{"name":"tailwindcss","total_count":1,"children":[]},{"name":"tailwindcss@^3.4.17","total_count":1,"children":[]},{"name":"three","total_count":1,"children":[]},{"name":"three@^0.187.0","total_count":1,"children":[]},{"name":"type","total_count":1,"children":[]},{"name":"typescript","total_count":1,"children":[]},{"name":"typescript@^5.7.3","total_count":1,"children":[]},{"name":"version","total_count":1,"children":[]},{"name":"vite","total_count":1,"children":[]},{"name":"vite@^6.1.0","total_count":1,"children":[]}]},{"name":"polimi_early_stage_bem_sustainability_studio.tsx","total_count":8,"children":[{"name":"CLIMATE_PRESETS","total_count":1,"children":[]},{"name":"ENVELOPE_SYSTEMS","total_count":1,"children":[]},{"name":"HVAC_SYSTEMS","total_count":1,"children":[]},{"name":"INSULATION_MATERIALS","total_count":1,"children":[]},{"name":"MONTHS","total_count":1,"children":[]},{"name":"PROGRAM_ARCHETYPES","total_count":1,"children":[]},{"name":"STRUCTURAL_SYSTEMS","total_count":1,"children":[]},{"name":"SustainabilityStudioApp()","total_count":1,"children":[]}]},{"name":"README.md","total_count":3,"children":[{"name":"100% Client-Side Browser Simulation Architecture","total_count":1,"children":[]},{"name":"GNU GPLv3 Copyleft & Academic Attribution","total_count":1,"children":[]},{"name":"PoliMI Early-Stage BEM & Sustainability Studio (README)","total_count":1,"children":[]}]},{"name":"src","total_count":315,"children":[{"name":"App.tsx","total_count":3,"children":[{"name":"App()","total_count":1,"children":[]},{"name":"SCALE_STAGES","total_count":1,"children":[]},{"name":"StudioWorkspace()","total_count":1,"children":[]}]},{"name":"components","total_count":79,"children":[{"name":"AdvancedHvacRenewableModal.tsx","total_count":2,"children":[{"name":"AdvancedHvacRenewableModal()","total_count":1,"children":[]},{"name":"AdvancedHvacRenewableModalProps","total_count":1,"children":[]}]},{"name":"ClimaAndAdvancedPanels.tsx","total_count":8,"children":[{"name":"CbeClimaExplorerTab()","total_count":1,"children":[]},{"name":"CeaParetoPortfolioPanel()","total_count":1,"children":[]},{"name":"ClimaTabProps","total_count":1,"children":[]},{"name":"EpwSearchAndUploadWidget()","total_count":1,"children":[]},{"name":"EpwWidgetProps","total_count":1,"children":[]},{"name":"MONTHS","total_count":1,"children":[]},{"name":"ParetoPanelProps","total_count":1,"children":[]},{"name":"SavedScenarioItem","total_count":1,"children":[]}]},{"name":"ClimaStudioSubTabs.tsx","total_count":30,"children":[{"name":"CarpetHeatmap24x365()","total_count":1,"children":[]},{"name":"CarpetHeatmapProps","total_count":1,"children":[]},{"name":"CBE_NATVENT_GRADIENT_CSS","total_count":1,"children":[]},{"name":"CBE_RDYLBU_R_GRADIENT_CSS","total_count":1,"children":[]},{"name":"CBE_UTCI_10BAND_GRADIENT_CSS","total_count":1,"children":[]},{"name":"CBE_WIND_DIR_GRADIENT_CSS","total_count":1,"children":[]},{"name":"CBE_WIND_SPEED_GRADIENT_CSS","total_count":1,"children":[]},{"name":"CBE_YLGNBU_GRADIENT_CSS","total_count":1,"children":[]},{"name":"ClimaChartCard()","total_count":1,"children":[]},{"name":"ClimaChartCardProps","total_count":1,"children":[]},{"name":"ClimaTooltipCtx","total_count":1,"children":[]},{"name":"ClimaTooltipData","total_count":1,"children":[]},{"name":"ClimaTooltipLine","total_count":1,"children":[]},{"name":"colorForRhPct()","total_count":1,"children":[]},{"name":"colorForTempC()","total_count":1,"children":[]},{"name":"colorForWindDir()","total_count":1,"children":[]},{"name":"colorForWindSpeed()","total_count":1,"children":[]},{"name":"ContinuousLegendConfig","total_count":1,"children":[]},{"name":"EXPLORER_VARS","total_count":1,"children":[]},{"name":"ExplorerVarId","total_count":1,"children":[]},{"name":"extractVar()","total_count":1,"children":[]},{"name":"interpolatePalette()","total_count":1,"children":[]},{"name":"RDYLBU_R_STOPS","total_count":1,"children":[]},{"name":"SubTab5Wind()","total_count":1,"children":[]},{"name":"SubTab6Psychrometric()","total_count":1,"children":[]},{"name":"SubTab7NatVent()","total_count":1,"children":[]},{"name":"SubTab8Utci()","total_count":1,"children":[]},{"name":"SubTab9DataExplorer()","total_count":1,"children":[]},{"name":"YLGNBU_STOPS","total_count":1,"children":[]},{"name":"YLORRD_WIND_STOPS","total_count":1,"children":[]}]},{"name":"CrossSection3DViewer.tsx","total_count":3,"children":[{"name":"CrossSection3DViewer()","total_count":1,"children":[]},{"name":"CrossSection3DViewerProps","total_count":1,"children":[]},{"name":"ViewMode","total_count":1,"children":[]}]},{"name":"EpwInteractiveMap.tsx","total_count":5,"children":[{"name":"calcCompassBearing()","total_count":1,"children":[]},{"name":"EpwInteractiveMap()","total_count":1,"children":[]},{"name":"EpwInteractiveMapProps","total_count":1,"children":[]},{"name":"TILE_LAYERS","total_count":1,"children":[]},{"name":"TileStyleId","total_count":1,"children":[]}]},{"name":"EurocodeGuideModal.tsx","total_count":2,"children":[{"name":"EurocodeGuideModal()","total_count":1,"children":[]},{"name":"EurocodeGuideModalProps","total_count":1,"children":[]}]},{"name":"HourlySimulationTab.tsx","total_count":2,"children":[{"name":"HourlySimResult","total_count":1,"children":[]},{"name":"HourlySimulationTab()","total_count":1,"children":[]}]},{"name":"ParetoExplorerModal.tsx","total_count":3,"children":[{"name":"DesignVariantCandidate","total_count":1,"children":[]},{"name":"ParetoExplorerModal()","total_count":1,"children":[]},{"name":"ParetoExplorerModalProps","total_count":1,"children":[]}]},{"name":"Stage1Climate.tsx","total_count":3,"children":[{"name":"CLIMA_SUB_TABS","total_count":1,"children":[]},{"name":"Stage1Climate()","total_count":1,"children":[]},{"name":"Stage1ClimateProps","total_count":1,"children":[]}]},{"name":"Stage2Urban.tsx","total_count":1,"children":[{"name":"Stage2Urban()","total_count":1,"children":[]}]},{"name":"Stage3FormZoning.tsx","total_count":1,"children":[{"name":"Stage3FormZoning()","total_count":1,"children":[]}]},{"name":"Stage4FacadeFabric.tsx","total_count":1,"children":[{"name":"Stage4FacadeFabric()","total_count":1,"children":[]}]},{"name":"Stage5EnergyComfort.tsx","total_count":1,"children":[{"name":"Stage5EnergyComfort()","total_count":1,"children":[]}]},{"name":"Stage6LCA.tsx","total_count":1,"children":[{"name":"Stage6LCA()","total_count":1,"children":[]}]},{"name":"StructuralBay3DViewer.tsx","total_count":5,"children":[{"name":"getAvailableMembersForSystem()","total_count":1,"children":[]},{"name":"getMemberDisplayName()","total_count":1,"children":[]},{"name":"SelectedMemberType","total_count":1,"children":[]},{"name":"StructuralBay3DViewer()","total_count":1,"children":[]},{"name":"StructuralBay3DViewerProps","total_count":1,"children":[]}]},{"name":"StructuralEurocodeStudio.tsx","total_count":3,"children":[{"name":"MEMBER_SCOPE_NOTES","total_count":1,"children":[]},{"name":"StructuralEurocodeStudio()","total_count":1,"children":[]},{"name":"StructuralEurocodeStudioProps","total_count":1,"children":[]}]},{"name":"StructuralReportModal.tsx","total_count":3,"children":[{"name":"ProjectMetadata","total_count":1,"children":[]},{"name":"StructuralReportModal()","total_count":1,"children":[]},{"name":"StructuralReportModalProps","total_count":1,"children":[]}]},{"name":"Urban3DViewer.tsx","total_count":5,"children":[{"name":"formatDecimalHour()","total_count":1,"children":[]},{"name":"getHeatmapColor()","total_count":1,"children":[]},{"name":"Urban3DViewer()","total_count":1,"children":[]},{"name":"Urban3DViewerProps","total_count":1,"children":[]},{"name":"ViewRenderMode","total_count":1,"children":[]}]}]},{"name":"context","total_count":23,"children":[{"name":"DesignProjectContext.tsx","total_count":23,"children":[{"name":"BuildingProgramType","total_count":1,"children":[]},{"name":"BuildingTypologyType","total_count":1,"children":[]},{"name":"cAdd()","total_count":1,"children":[]},{"name":"cMul()","total_count":1,"children":[]},{"name":"ComplexMatrix2x2","total_count":1,"children":[]},{"name":"ComplexNumber","total_count":1,"children":[]},{"name":"DesignProjectContext","total_count":1,"children":[]},{"name":"DesignProjectContextValue","total_count":1,"children":[]},{"name":"DesignProjectProvider()","total_count":1,"children":[]},{"name":"HvacSystemType","total_count":1,"children":[]},{"name":"Iso13786Result","total_count":1,"children":[]},{"name":"LegislativeTargetType","total_count":1,"children":[]},{"name":"mat2x2Mul()","total_count":1,"children":[]},{"name":"SavedScenario","total_count":1,"children":[]},{"name":"ScaleStageId","total_count":1,"children":[]},{"name":"SimulationKPIs","total_count":1,"children":[]},{"name":"solveIso13786Matrix()","total_count":1,"children":[]},{"name":"StructureSystemType","total_count":1,"children":[]},{"name":"ThermalZoneName","total_count":1,"children":[]},{"name":"ThermalZoneSummary","total_count":1,"children":[]},{"name":"UrbanMorphologyType","total_count":1,"children":[]},{"name":"useDesignProject()","total_count":1,"children":[]},{"name":"WallLayerItem","total_count":1,"children":[]}]}]},{"name":"data","total_count":34,"children":[{"name":"climateAndStrategies.ts","total_count":12,"children":[{"name":"CLIMATE_SCOUT_STRATEGIES","total_count":1,"children":[]},{"name":"ClimateScoutStrategy","total_count":1,"children":[]},{"name":"DEFAULT_CLIMATE_DATASET","total_count":1,"children":[]},{"name":"ENVELOPE_MATERIALS","total_count":1,"children":[]},{"name":"EnvelopeMaterialSpec","total_count":1,"children":[]},{"name":"formatKoppen()","total_count":1,"children":[]},{"name":"getKoppenDescription()","total_count":1,"children":[]},{"name":"INITIAL_CLIMATE_PRESETS","total_count":1,"children":[]},{"name":"KOPPEN_DESCRIPTIONS","total_count":1,"children":[]},{"name":"MONTHS","total_count":1,"children":[]},{"name":"RAW_CLIMATE_PRESETS","total_count":1,"children":[]},{"name":"scoreStrategyRelevance()","total_count":1,"children":[]}]},{"name":"componentLibraries.ts","total_count":4,"children":[{"name":"GLAZING_LIBRARY","total_count":1,"children":[]},{"name":"GlazingSystemPreset","total_count":1,"children":[]},{"name":"SHADING_LIBRARY","total_count":1,"children":[]},{"name":"ShadingSystemPreset","total_count":1,"children":[]}]},{"name":"eurocodeDataset.ts","total_count":18,"children":[{"name":"CONCRETE_CLASSES","total_count":1,"children":[]},{"name":"ConcreteClassData","total_count":1,"children":[]},{"name":"EMBODIED_CARBON_FACTORS","total_count":1,"children":[]},{"name":"MASONRY_GROUPS","total_count":1,"children":[]},{"name":"MasonryGroupData","total_count":1,"children":[]},{"name":"NATIONAL_ANNEX_PRESETS","total_count":1,"children":[]},{"name":"NationalAnnexData","total_count":1,"children":[]},{"name":"NationalAnnexId","total_count":1,"children":[]},{"name":"OCCUPANCY_LOAD_PRESETS","total_count":1,"children":[]},{"name":"OccupancyLoadPreset","total_count":1,"children":[]},{"name":"STEEL_PROFILES","total_count":1,"children":[]},{"name":"SteelProfileData","total_count":1,"children":[]},{"name":"SteelProfileFamily","total_count":1,"children":[]},{"name":"TIMBER_CLASSES","total_count":1,"children":[]},{"name":"TIMBER_KDEF","total_count":1,"children":[]},{"name":"TIMBER_KMOD","total_count":1,"children":[]},{"name":"TimberClassData","total_count":1,"children":[]},{"name":"TimberLoadDuration","total_count":1,"children":[]}]}]},{"name":"utils","total_count":175,"children":[{"name":"bldExportEngine.ts","total_count":7,"children":[{"name":"downloadTextFile()","total_count":1,"children":[]},{"name":"escapeXml()","total_count":1,"children":[]},{"name":"ExportProjectPayload","total_count":1,"children":[]},{"name":"generateEnergyPlusIdf()","total_count":1,"children":[]},{"name":"generateGbXml()","total_count":1,"children":[]},{"name":"generateProjectReportHtml()","total_count":1,"children":[]},{"name":"generateSimulationCsv()","total_count":1,"children":[]}]},{"name":"epwEngine.ts","total_count":32,"children":[{"name":"AVAILABLE_ONEBUILDING_PERIODS","total_count":1,"children":[]},{"name":"buildClimateFromHourly()","total_count":1,"children":[]},{"name":"calcApproxUtci()","total_count":1,"children":[]},{"name":"calcHumidityRatio()","total_count":1,"children":[]},{"name":"calcSolarPosition()","total_count":1,"children":[]},{"name":"classifyKoppen()","total_count":1,"children":[]},{"name":"ClimateDataset","total_count":1,"children":[]},{"name":"COMPASS_8","total_count":1,"children":[]},{"name":"CUM_DAYS_IN_MONTH","total_count":1,"children":[]},{"name":"DAYS_IN_MONTH","total_count":1,"children":[]},{"name":"EpwStationSearchResult","total_count":1,"children":[]},{"name":"exportDatasetToEpw()","total_count":1,"children":[]},{"name":"extractEpwFromZipBuffer()","total_count":1,"children":[]},{"name":"fetchOneBuildingZipBuffer()","total_count":1,"children":[]},{"name":"fetchPresetOfficialEpw()","total_count":1,"children":[]},{"name":"fetchStationClimateDataset()","total_count":1,"children":[]},{"name":"findNearestEpwStations()","total_count":1,"children":[]},{"name":"getOneBuildingDownloadUrl()","total_count":1,"children":[]},{"name":"getOneBuildingPeriodUrl()","total_count":1,"children":[]},{"name":"haversineKm()","total_count":1,"children":[]},{"name":"HourlyWeatherRecord","total_count":1,"children":[]},{"name":"loadEnergyPlusStationCatalog()","total_count":1,"children":[]},{"name":"OneBuildingPeriod","total_count":1,"children":[]},{"name":"OneBuildingPeriodOption","total_count":1,"children":[]},{"name":"parseEpwText()","total_count":1,"children":[]},{"name":"PRESET_OFFICIAL_EPW_URLS","total_count":1,"children":[]},{"name":"projectFacadeIrradiance()","total_count":1,"children":[]},{"name":"SEARCH_CITY_ALIASES","total_count":1,"children":[]},{"name":"searchGlobalEpwStations()","total_count":1,"children":[]},{"name":"synthesizeHourlyFromPreset()","total_count":1,"children":[]},{"name":"WindRoseSector","total_count":1,"children":[]},{"name":"WMO_TO_BUNDLED_TMYX","total_count":1,"children":[]}]},{"name":"epwParser.ts","total_count":46,"children":[{"name":"AnnualNocturnalCoolingSummary","total_count":1,"children":[]},{"name":"BioclimaticPolygonDef","total_count":1,"children":[]},{"name":"BioclimaticPolygonId","total_count":1,"children":[]},{"name":"calcAnnualNocturnalCoolingSummary()","total_count":1,"children":[]},{"name":"calcCustomDegreeDays()","total_count":1,"children":[]},{"name":"calcDailyTempAndRunningMean()","total_count":1,"children":[]},{"name":"calcDewPointC()","total_count":1,"children":[]},{"name":"calcDistributionHistogram()","total_count":1,"children":[]},{"name":"calcFacadeShadingRadiationBreakdown()","total_count":1,"children":[]},{"name":"calcFilteredWindRose()","total_count":1,"children":[]},{"name":"calcMonthlyClimateSummaryTable()","total_count":1,"children":[]},{"name":"calcMonthlyDiurnalProfiles()","total_count":1,"children":[]},{"name":"calcNaturalVentilationPotential()","total_count":1,"children":[]},{"name":"calcNocturnalRadiativeCooling()","total_count":1,"children":[]},{"name":"calcPerezDiffuseTilted()","total_count":1,"children":[]},{"name":"calcSolarBoxplotsAndFacadeRose()","total_count":1,"children":[]},{"name":"calcTotalTiltedIrradiance()","total_count":1,"children":[]},{"name":"ClimaSubTabId","total_count":1,"children":[]},{"name":"DailyRunningMeanRecord","total_count":1,"children":[]},{"name":"DetailedWindRoseSector","total_count":1,"children":[]},{"name":"DistributionStats","total_count":1,"children":[]},{"name":"EpwQualityReport","total_count":1,"children":[]},{"name":"evaluatePsychrometricPolygons()","total_count":1,"children":[]},{"name":"exportDataToCsvFile()","total_count":1,"children":[]},{"name":"exportSvgNodeToFile()","total_count":1,"children":[]},{"name":"FacadeRadiationRoseItem","total_count":1,"children":[]},{"name":"FacadeShadingAnalysisResult","total_count":1,"children":[]},{"name":"generateBoardReadyCommentary()","total_count":1,"children":[]},{"name":"getBioclimaticPolygons()","total_count":1,"children":[]},{"name":"GroundTempProfile","total_count":1,"children":[]},{"name":"MonthlyClimateSummaryRow","total_count":1,"children":[]},{"name":"MonthlyDiurnalProfile","total_count":1,"children":[]},{"name":"MonthlyRadiationBoxplot","total_count":1,"children":[]},{"name":"MonthlyShadingRadiationItem","total_count":1,"children":[]},{"name":"morphClimateDataset()","total_count":1,"children":[]},{"name":"NatVentHourState","total_count":1,"children":[]},{"name":"NocturnalCoolingResult","total_count":1,"children":[]},{"name":"parseEpwFileWithQuality()","total_count":1,"children":[]},{"name":"PEREZ_1990_TABLE","total_count":1,"children":[]},{"name":"PerezCoefficients","total_count":1,"children":[]},{"name":"pointInPolygon()","total_count":1,"children":[]},{"name":"synthesizeGroundTemperatures()","total_count":1,"children":[]},{"name":"UTCI_STRESS_BANDS","total_count":1,"children":[]},{"name":"UtciStressBand","total_count":1,"children":[]},{"name":"validateEpwDataset()","total_count":1,"children":[]},{"name":"WindFilterMode","total_count":1,"children":[]}]},{"name":"eurocodeCalculators.ts","total_count":68,"children":[{"name":"BisectionIterationResult","total_count":1,"children":[]},{"name":"BucklingCurvePoint","total_count":1,"children":[]},{"name":"BuildingImportanceClass","total_count":1,"children":[]},{"name":"calcCltSlab()","total_count":1,"children":[]},{"name":"calcCltWall()","total_count":1,"children":[]},{"name":"calcDesignSpectrumSd()","total_count":1,"children":[]},{"name":"calcElasticSpectrumSe()","total_count":1,"children":[]},{"name":"calcMasonryWall()","total_count":1,"children":[]},{"name":"calcRcBeam()","total_count":1,"children":[]},{"name":"calcRcColumn()","total_count":1,"children":[]},{"name":"calcRcSlab()","total_count":1,"children":[]},{"name":"calcRcWall()","total_count":1,"children":[]},{"name":"calcSteelBeam()","total_count":1,"children":[]},{"name":"calcSteelColumn()","total_count":1,"children":[]},{"name":"CalculationRow","total_count":1,"children":[]},{"name":"calcWoodBeam()","total_count":1,"children":[]},{"name":"calcWoodColumn()","total_count":1,"children":[]},{"name":"CltSlabInputs","total_count":1,"children":[]},{"name":"CltSlabResult","total_count":1,"children":[]},{"name":"CltWallInputs","total_count":1,"children":[]},{"name":"CltWallResult","total_count":1,"children":[]},{"name":"computeEurocode8SeismicActions()","total_count":1,"children":[]},{"name":"computeStructuralBoQ()","total_count":1,"children":[]},{"name":"computeTributaryLoadTakedown()","total_count":1,"children":[]},{"name":"DEFAULT_DESIGN_BASIS","total_count":1,"children":[]},{"name":"DerivedEnvironmentalLoads","total_count":1,"children":[]},{"name":"deriveEnvironmentalLoadsFromClimate()","total_count":1,"children":[]},{"name":"DuctilityClass","total_count":1,"children":[]},{"name":"Eurocode8SeismicParams","total_count":1,"children":[]},{"name":"Eurocode8SeismicResults","total_count":1,"children":[]},{"name":"EurocodeStatus","total_count":1,"children":[]},{"name":"generateBucklingCurves()","total_count":1,"children":[]},{"name":"generateOptioneeringMatrix()","total_count":1,"children":[]},{"name":"generateRcInteractionCurve()","total_count":1,"children":[]},{"name":"GROUND_TYPE_TABLE","total_count":1,"children":[]},{"name":"GroundTypeParameters","total_count":1,"children":[]},{"name":"IMPORTANCE_FACTORS","total_count":1,"children":[]},{"name":"MasonryWallInputs","total_count":1,"children":[]},{"name":"MasonryWallResult","total_count":1,"children":[]},{"name":"OptimizationResult","total_count":1,"children":[]},{"name":"optimizeMemberSection()","total_count":1,"children":[]},{"name":"RcBeamInputs","total_count":1,"children":[]},{"name":"RcBeamResult","total_count":1,"children":[]},{"name":"RcColumnInputs","total_count":1,"children":[]},{"name":"RcColumnResult","total_count":1,"children":[]},{"name":"RcInteractionCurve","total_count":1,"children":[]},{"name":"RcInteractionPoint","total_count":1,"children":[]},{"name":"RcSlabInputs","total_count":1,"children":[]},{"name":"RcSlabResult","total_count":1,"children":[]},{"name":"RcWallInputs","total_count":1,"children":[]},{"name":"RcWallResult","total_count":1,"children":[]},{"name":"SeismicGroundType","total_count":1,"children":[]},{"name":"SharedDesignBasis","total_count":1,"children":[]},{"name":"solveRcSectionEquilibrium()","total_count":1,"children":[]},{"name":"SteelBeamInputs","total_count":1,"children":[]},{"name":"SteelBeamResult","total_count":1,"children":[]},{"name":"SteelColumnInputs","total_count":1,"children":[]},{"name":"SteelColumnResult","total_count":1,"children":[]},{"name":"StoreySeismicForce","total_count":1,"children":[]},{"name":"StructuralBayConfig","total_count":1,"children":[]},{"name":"StructuralBoQParams","total_count":1,"children":[]},{"name":"StructuralBoQResult","total_count":1,"children":[]},{"name":"SystemOptionComparison","total_count":1,"children":[]},{"name":"TributaryTakedownResults","total_count":1,"children":[]},{"name":"WoodBeamInputs","total_count":1,"children":[]},{"name":"WoodBeamResult","total_count":1,"children":[]},{"name":"WoodColumnInputs","total_count":1,"children":[]},{"name":"WoodColumnResult","total_count":1,"children":[]}]},{"name":"utciEngine.ts","total_count":22,"children":[{"name":"AllUtciScenariosSummary","total_count":1,"children":[]},{"name":"ALT_RANGE","total_count":1,"children":[]},{"name":"AZ_RANGE","total_count":1,"children":[]},{"name":"calcAllUtciScenariosSummary()","total_count":1,"children":[]},{"name":"calcSolarGainMrtDelta()","total_count":1,"children":[]},{"name":"calcUtci()","total_count":1,"children":[]},{"name":"calcUtciForScenario()","total_count":1,"children":[]},{"name":"calcUtciPolynomial()","total_count":1,"children":[]},{"name":"calcUtciScenarioDataset()","total_count":1,"children":[]},{"name":"calcVaporPressureKpa()","total_count":1,"children":[]},{"name":"CBE_UTCI_BLUE_RED_YELLOW_GRADIENT_CSS","total_count":1,"children":[]},{"name":"colorForUtciContinuous()","total_count":1,"children":[]},{"name":"findSpan()","total_count":1,"children":[]},{"name":"FP_TABLE_STANDING","total_count":1,"children":[]},{"name":"getProjectedAreaFactorStanding()","total_count":1,"children":[]},{"name":"getUtciStressCategory()","total_count":1,"children":[]},{"name":"UTCI_SCENARIOS","total_count":1,"children":[]},{"name":"UTCI_STRESS_CATEGORIES","total_count":1,"children":[]},{"name":"UtciCategoryDef","total_count":1,"children":[]},{"name":"UtciScenarioId","total_count":1,"children":[]},{"name":"UtciScenarioMeta","total_count":1,"children":[]},{"name":"UtciScenarioResult","total_count":1,"children":[]}]}]},{"name":"main.tsx","total_count":1,"children":[]}]},{"name":"tsconfig.json","total_count":15,"children":[{"name":"allowJs","total_count":1,"children":[]},{"name":"compilerOptions","total_count":1,"children":[]},{"name":"esModuleInterop","total_count":1,"children":[]},{"name":"include","total_count":1,"children":[]},{"name":"isolatedModules","total_count":1,"children":[]},{"name":"jsx","total_count":1,"children":[]},{"name":"lib","total_count":1,"children":[]},{"name":"module","total_count":1,"children":[]},{"name":"moduleResolution","total_count":1,"children":[]},{"name":"noEmit","total_count":1,"children":[]},{"name":"resolveJsonModule","total_count":1,"children":[]},{"name":"skipLibCheck","total_count":1,"children":[]},{"name":"strict","total_count":1,"children":[]},{"name":"target","total_count":1,"children":[]},{"name":"useDefineForClassFields","total_count":1,"children":[]}]},{"name":"vercel.json","total_count":5,"children":[{"name":"buildCommand","total_count":1,"children":[]},{"name":"framework","total_count":1,"children":[]},{"name":"headers","total_count":1,"children":[]},{"name":"outputDirectory","total_count":1,"children":[]},{"name":"rewrites","total_count":1,"children":[]}]},{"name":"postcss.config.js","total_count":1,"children":[]},{"name":"tailwind.config.js","total_count":1,"children":[]},{"name":"tailwindcss","total_count":1,"children":[]},{"name":"vite.config.ts","total_count":1,"children":[]}]};
+
+    function transformData(jsonData) {
+        // Helper function to recursively build the children structure
+        function processNode(node, parentL1StageName) {
+            let displayName = node.name;
+            // Append total_count if it exists and is not already in the name
+            if (node.total_count !== undefined) {
+                if (!/\(Total Count: \d+\)$/.test(displayName)) {
+                    displayName += ` (Total Count: ${node.total_count})`;
+                }
+            }
+
+            const newNode = { name: displayName };
+
+            if (parentL1StageName === "Root") {
+                 newNode.originalStageName = node.name;
+            } else {
+                newNode.originalStageName = parentL1StageName;
+            }
+
+            if (node.children && node.children.length > 0) {
+                const stageNameToPass = (parentL1StageName === "Root") ? node.name : parentL1StageName;
+                newNode.children = node.children.map(child => processNode(child, stageNameToPass));
+            }
+
+            return newNode;
+        }
+
+        let rootDisplayName = jsonData.name;
+        if (jsonData.total_count !== undefined && !/\(Total Count: \d+\)$/.test(rootDisplayName)) {
+            rootDisplayName += ` (Total Count: ${jsonData.total_count})`;
+        }
+
+        return {
+            name: rootDisplayName,
+            originalStageName: "Root",
+            children: (jsonData.children || []).map(child => processNode(child, "Root"))
+        };
+    }
+
+    const treeData = transformData(initialJsonData);
+
+    // Auto-populated phaseColors: every depth-1 child of the root gets
+    // a stable colour from a bigger palette so all top-level dirs are
+    // distinguishable.
+    const PALETTE = [
+      ["#3498DB","#2980B9","#AED6F1"], ["#2ECC71","#27AE60","#A9DFBF"],
+      ["#E74C3C","#C0392B","#F5B7B1"], ["#9B59B6","#8E44AD","#D7BDE2"],
+      ["#F39C12","#D68910","#FAD7A0"], ["#1ABC9C","#117864","#A2D9CE"],
+      ["#34495E","#1B2631","#ABB2B9"], ["#E67E22","#BA4A00","#F5CBA7"],
+      ["#16A085","#0E6655","#A2D9CE"], ["#D35400","#A04000","#EDBB99"],
+      ["#7F8C8D","#566573","#D5DBDB"], ["#C0392B","#7B241C","#F5B7B1"],
+      ["#2E86C1","#1B4F72","#A9CCE3"], ["#28B463","#196F3D","#A9DFBF"],
+      ["#AF7AC5","#6C3483","#D2B4DE"],
+    ];
+    const phaseColors = { "Root": { fill: "#4A4A4A", stroke: "#333333", collapsedFill: "#6C757D" },
+                          "Default": { fill: "#BDC3C7", stroke: "#95A5A6", collapsedFill: "#ECF0F1" } };
+    (initialJsonData.children || []).forEach((c, i) => {
+      const pal = PALETTE[i % PALETTE.length];
+      phaseColors[c.name] = { fill: pal[0], stroke: pal[1], collapsedFill: pal[2] };
+    });
+
+    const levelSpecificPalettes = {
+      0: { fill: "#4A4A4A", stroke: "#333333", collapsedFill: "#6C757D" },
+      2: { fill: "#6ab04c", stroke: "#508a38", collapsedFill: "#a3d391" },
+      3: { fill: "#f0932b", stroke: "#d0730f", collapsedFill: "#f6c07e" },
+      4: { fill: "#be2edd", stroke: "#a01cb3", collapsedFill: "#e08bf2" },
+      5: { fill: "#00a8ff", stroke: "#007ac1", collapsedFill: "#74d2ff" },
+      6: { fill: "#e55039", stroke: "#c23620", collapsedFill: "#f09a8d" },
+      default: { fill: "#747d8c", stroke: "#57606f", collapsedFill: "#a4b0be" }
+    };
+
+    const svgElement = d3.select("#tree-svg");
+    const initialSvgWidth = +svgElement.attr("width");
+    const initialSvgHeight = +svgElement.attr("height");
+    const margin = { top: 40, right: 120, bottom: 80, left: 450 };
+    let width = initialSvgWidth - margin.left - margin.right;
+    let height = initialSvgHeight - margin.top - margin.bottom;
+    const duration = 500;
+    let nodeCounter = 0;
+    const g = svgElement.append("g").attr("transform", `translate(${margin.left},${margin.top})`);
+    const treemap = d3.tree().nodeSize([40, 0]);
+    let rootNode = d3.hierarchy(treeData, d => d.children);
+    rootNode.x0 = 0;
+    rootNode.y0 = 0;
+
+    if (rootNode.children) {
+      rootNode.children.forEach(d_child => {
+        if (d_child.children) { collapseBranch(d_child); }
+      });
+    }
+    updateTree(rootNode);
+
+    function collapseBranch(d) { if (d.children) { d._children = d.children; d._children.forEach(collapseBranch); d.children = null; } }
+    function expandBranch(d) { if (d._children) { d.children = d._children; d._children = null; } if (d.children) { d.children.forEach(expandBranch); } }
+    window.expandAll = () => { expandBranch(rootNode); updateTree(rootNode); };
+    window.collapseAll = () => { if (rootNode.children) { rootNode.children.forEach(collapseBranch); } updateTree(rootNode); };
+    window.resetView = () => { if (rootNode.children) { rootNode.children.forEach(d_child => { if (d_child.children || d_child._children) { collapseBranch(d_child); } }); } if (rootNode._children && !rootNode.children) { rootNode.children = rootNode._children; rootNode._children = null; } updateTree(rootNode); };
+
+    function updateTree(source) {
+      const treeLayoutData = treemap(rootNode);
+      let nodes = treeLayoutData.descendants();
+      let links = treeLayoutData.descendants().slice(1);
+
+      let minX = 0;
+      let maxX = 0;
+      if (nodes.length > 0) {
+        minX = d3.min(nodes, d => d.x);
+        maxX = d3.max(nodes, d => d.x);
+      }
+
+      let neededHeight = Math.max(initialSvgHeight, maxX - minX + margin.top + margin.bottom + 100);
+      svgElement.transition().duration(duration / 2).attr("height", neededHeight);
+      g.transition().duration(duration / 2).attr("transform", `translate(${margin.left},${margin.top - minX + 40})`);
+
+      nodes.forEach(d => { d.y = d.depth * 400; }); // Adjust horizontal separation if needed
+
+      const node = g.selectAll('g.node').data(nodes, d => d.id || (d.id = ++nodeCounter));
+      const nodeEnter = node.enter().append('g')
+        .attr('class', d => "node" + (d.children || d._children ? " node--internal" : " node--leaf") + (d._children ? " _children" : ""))
+        .attr('transform', d => `translate(${source.y0},${source.x0})`)
+        .on('click', (event, d) => { if (d.children) { d._children = d.children; d.children = null; } else if (d._children) { d.children = d._children; d._children = null; } updateTree(d); })
+        .style('cursor', d => (d.children || d._children) ? 'pointer' : 'default');
+
+      nodeEnter.append('circle').attr('r', 1e-6);
+
+      nodeEnter.append('text')
+        .attr('dy', '.35em')
+        .attr('x', d => d.children || d._children ? -14 : 14)
+        .attr('text-anchor', d => d.children || d._children ? 'end' : 'start')
+        .style("fill-opacity", 1e-6)
+        .call(wrapText, 380);
+
+      const nodeUpdate = nodeEnter.merge(node);
+      nodeUpdate.transition().duration(duration)
+        .attr('transform', d => `translate(${d.y},${d.x})`)
+        .attr('class', d => "node" + (d.children ? " node--internal" : " node--leaf") + (d._children ? " node--internal _children" : ""));
+
+      nodeUpdate.select('circle').attr('r', 8.5)
+        .style('fill', d => {
+            let palette;
+            if (d.depth === 0) {
+                palette = levelSpecificPalettes[0];
+            } else if (d.depth === 1) {
+                palette = phaseColors[d.data.originalStageName] || phaseColors.Default;
+            } else {
+                palette = levelSpecificPalettes[d.depth] || levelSpecificPalettes.default;
+            }
+            if (d._children) return palette.collapsedFill;
+            if (d.children) return palette.fill;
+            return "#fff";
+        })
+        .style('stroke', d => {
+            let palette;
+            if (d.depth === 0) {
+                palette = levelSpecificPalettes[0];
+            } else if (d.depth === 1) {
+                palette = phaseColors[d.data.originalStageName] || phaseColors.Default;
+            } else {
+                palette = levelSpecificPalettes[d.depth] || levelSpecificPalettes.default;
+            }
+            return palette.stroke;
+        });
+      nodeUpdate.select('text').style("fill-opacity", 1).call(wrapText, 380);
+
+      const nodeExit = node.exit().transition().duration(duration).attr('transform', d => `translate(${source.y},${source.x})`).remove();
+      nodeExit.select('circle').attr('r', 1e-6);
+      nodeExit.select('text').style('fill-opacity', 1e-6);
+
+      const link = g.selectAll('path.link').data(links, d => d.id);
+      const linkEnter = link.enter().insert('path', "g").attr('class', 'link').attr('d', d => { const o = { x: source.x0, y: source.y0 }; return diagonal(o, o); });
+
+      linkEnter.merge(link).transition().duration(duration).attr('d', d => diagonal(d, d.parent))
+        .style('stroke', d => {
+            const sourceNode = d.parent;
+            if (!sourceNode) return phaseColors.Default.stroke;
+            const l1AncestorName = sourceNode.data.originalStageName;
+            const colorPalette = phaseColors[l1AncestorName] || phaseColors.Default;
+            return colorPalette.stroke;
+        });
+      link.exit().transition().duration(duration).attr('d', d => { const o = { x: source.x, y: source.y }; return diagonal(o, o); }).remove();
+      nodes.forEach(d => { d.x0 = d.x; d.y0 = d.y; });
+    }
+
+    function diagonal(s, d) { return `M ${s.y} ${s.x} C ${(s.y + d.y) / 2} ${s.x}, ${(s.y + d.y) / 2} ${d.x}, ${d.y} ${d.x}`; }
+
+    function wrapText(textElements, maxWidth) {
+        const textPartColors = {
+            name: '#343a40',
+            count: '#0056b3'
+        };
+        const countRegex = /(\s\(Total Count: \d+\))$/;
+
+        textElements.each(function () {
+            const textD3 = d3.select(this);
+            const originalNodeText = textD3.datum().data.name;
+            const x = parseFloat(textD3.attr("x") || 0);
+            const initialDy = textD3.attr("dy");
+            const textAnchor = textD3.attr("text-anchor");
+            const lineHeight = 1.1;
+
+            textD3.text(null);
+
+            let namePart = originalNodeText;
+            let countPartText = "";
+
+            const countMatch = originalNodeText.match(countRegex);
+            if (countMatch && originalNodeText.endsWith(countMatch[0])) {
+                namePart = originalNodeText.substring(0, originalNodeText.length - countMatch[0].length).trim();
+                countPartText = countMatch[0].trim();
+            }
+
+            const tokens = [];
+            namePart.split(/\s+/).filter(Boolean).forEach(word => {
+                tokens.push({ text: word, type: 'name' });
+            });
+            if (countPartText) {
+                tokens.push({ text: countPartText, type: 'count' });
+            }
+
+            if (tokens.length === 0 && originalNodeText) {
+                tokens.push({ text: originalNodeText, type: 'name' });
+            }
+
+            let currentTspan = textD3.append("tspan").attr("x", x).attr("dy", initialDy);
+            if (textAnchor === "end") currentTspan.attr("text-anchor", "end");
+
+            let lineTokens = [];
+
+            for (let i = 0; i < tokens.length; i++) {
+                const tokenObj = tokens[i];
+
+                lineTokens.push(tokenObj);
+                currentTspan.text(lineTokens.map(t => t.text).join(" "));
+
+                if (currentTspan.node().getComputedTextLength() > maxWidth && lineTokens.length > 1) {
+                    lineTokens.pop();
+
+                    currentTspan.text(null);
+                    lineTokens.forEach((prevToken, idx) => {
+                        currentTspan.append("tspan")
+                            .text((idx > 0 ? " " : "") + prevToken.text)
+                            .style("fill", textPartColors[prevToken.type] || textPartColors.name)
+                            .style("font-weight", prevToken.type === 'count' ? "bold" : "normal");
+                    });
+
+                    lineTokens = [tokenObj];
+                    currentTspan = textD3.append("tspan").attr("x", x).attr("dy", lineHeight + "em");
+                    if (textAnchor === "end") currentTspan.attr("text-anchor", "end");
+                }
+            }
+
+            currentTspan.text(null);
+            lineTokens.forEach((token, idx) => {
+                currentTspan.append("tspan")
+                    .text((idx > 0 ? " " : "") + token.text)
+                    .style("fill", textPartColors[token.type] || textPartColors.name)
+                    .style("font-weight", token.type === 'count' ? "bold" : "normal");
+            });
+
+            if (textD3.selectAll("tspan > tspan").empty() && textD3.select("tspan").text().length === 0 && originalNodeText) {
+                let t = textD3.select("tspan");
+                let displayText = originalNodeText;
+                t.text(displayText).style("fill", textPartColors.name);
+                if (t.node() && t.node().getComputedTextLength() > maxWidth && displayText.length > 20) {
+                    let estimatedChars = Math.floor(maxWidth / (t.node().getComputedTextLength()/displayText.length) );
+                    displayText = displayText.substring(0, Math.max(0, estimatedChars - 3)) + "...";
+                    t.text(displayText);
+                }
+            }
+        });
+    }
+  </script>
+</body>
+</html>

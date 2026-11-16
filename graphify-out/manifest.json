@@ -1,0 +1,260 @@
+{
+  "package.json": {
+    "mtime": 1794435581.3443835,
+    "seen": 1794835445.5950127,
+    "ast_hash": "d1bd10aa3c75310a02befdbb880d5eae",
+    "semantic_hash": "d1bd10aa3c75310a02befdbb880d5eae"
+  },
+  "polimi_early_stage_bem_sustainability_studio.tsx": {
+    "mtime": 1794435315.607082,
+    "seen": 1794835445.5950127,
+    "ast_hash": "0320a26a2991500c562d75bf88b351e8",
+    "semantic_hash": "0320a26a2991500c562d75bf88b351e8"
+  },
+  "postcss.config.js": {
+    "mtime": 1794266699.9489834,
+    "seen": 1794835445.5950127,
+    "ast_hash": "367b3277a44737386c48d0bc728069fb",
+    "semantic_hash": "367b3277a44737386c48d0bc728069fb"
+  },
+  "src/App.tsx": {
+    "mtime": 1794435315.6080859,
+    "seen": 1794835445.5950127,
+    "ast_hash": "b7323e601197f74f9bba1814121ba4a4",
+    "semantic_hash": "b7323e601197f74f9bba1814121ba4a4"
+  },
+  "src/components/AdvancedHvacRenewableModal.tsx": {
+    "mtime": 1794266699.962409,
+    "seen": 1794835445.5950127,
+    "ast_hash": "0b912752c6724adf4b034ee72cd7be22",
+    "semantic_hash": "0b912752c6724adf4b034ee72cd7be22"
+  },
+  "src/components/ClimaAndAdvancedPanels.tsx": {
+    "mtime": 1794440584.253551,
+    "seen": 1794835445.5950127,
+    "ast_hash": "649567d20e86e0ec6c2815b5d8900291",
+    "semantic_hash": "649567d20e86e0ec6c2815b5d8900291"
+  },
+  "src/components/ClimaStudioSubTabs.tsx": {
+    "mtime": 1794435315.6105928,
+    "seen": 1794835445.5950127,
+    "ast_hash": "022e1890b86acbe2a9f327c36f55e76c",
+    "semantic_hash": "022e1890b86acbe2a9f327c36f55e76c"
+  },
+  "src/components/CrossSection3DViewer.tsx": {
+    "mtime": 1794435315.6105928,
+    "seen": 1794835445.5950127,
+    "ast_hash": "a9dae14f684d9015ae80f4eb59e26f13",
+    "semantic_hash": "a9dae14f684d9015ae80f4eb59e26f13"
+  },
+  "src/components/EpwInteractiveMap.tsx": {
+    "mtime": 1794435315.6165984,
+    "seen": 1794835445.5950127,
+    "ast_hash": "fd7ac922dfbcb6840d00c78210363e0e",
+    "semantic_hash": "fd7ac922dfbcb6840d00c78210363e0e"
+  },
+  "src/components/EurocodeGuideModal.tsx": {
+    "mtime": 1794320604.770339,
+    "seen": 1794835445.5950127,
+    "ast_hash": "3e00f89cb6e0cb7a5c5076549bc32e89",
+    "semantic_hash": "3e00f89cb6e0cb7a5c5076549bc32e89"
+  },
+  "src/components/HourlySimulationTab.tsx": {
+    "mtime": 1794435315.6175916,
+    "seen": 1794835445.5950127,
+    "ast_hash": "24262ae8c4ed114641fe00eff65c5b87",
+    "semantic_hash": "24262ae8c4ed114641fe00eff65c5b87"
+  },
+  "src/components/ParetoExplorerModal.tsx": {
+    "mtime": 1794435315.624105,
+    "seen": 1794835445.5950127,
+    "ast_hash": "175e416465254a64447a6730742f6651",
+    "semantic_hash": "175e416465254a64447a6730742f6651"
+  },
+  "src/components/Stage1Climate.tsx": {
+    "mtime": 1794440584.254559,
+    "seen": 1794835445.5950127,
+    "ast_hash": "99cce98b291707a6cf9eef56fda02620",
+    "semantic_hash": "99cce98b291707a6cf9eef56fda02620"
+  },
+  "src/components/Stage2Urban.tsx": {
+    "mtime": 1794407368.7101107,
+    "seen": 1794835445.5950127,
+    "ast_hash": "e8aed4e0b750274984a6f8466d47a5ec",
+    "semantic_hash": "e8aed4e0b750274984a6f8466d47a5ec"
+  },
+  "src/components/Stage3FormZoning.tsx": {
+    "mtime": 1794347526.996904,
+    "seen": 1794835445.5950127,
+    "ast_hash": "966d4f2685f6c6d70321a0fa80084c90",
+    "semantic_hash": "966d4f2685f6c6d70321a0fa80084c90"
+  },
+  "src/components/Stage4FacadeFabric.tsx": {
+    "mtime": 1794408503.613459,
+    "seen": 1794835445.5950127,
+    "ast_hash": "4494d0484a3ed0ca5025c90615106ebe",
+    "semantic_hash": "4494d0484a3ed0ca5025c90615106ebe"
+  },
+  "src/components/Stage5EnergyComfort.tsx": {
+    "mtime": 1794408503.5895176,
+    "seen": 1794835445.5950127,
+    "ast_hash": "45ded5baa7565f5155637a680749eab4",
+    "semantic_hash": "45ded5baa7565f5155637a680749eab4"
+  },
+  "src/components/Stage6LCA.tsx": {
+    "mtime": 1794444336.2382236,
+    "seen": 1794835445.5950127,
+    "ast_hash": "edc52195106e9c1a83c45c6b7a991484",
+    "semantic_hash": "edc52195106e9c1a83c45c6b7a991484"
+  },
+  "src/components/StructuralBay3DViewer.tsx": {
+    "mtime": 1794440584.2560554,
+    "seen": 1794835445.5950127,
+    "ast_hash": "7e8585ed3378a7fb1299df0dccbd7311",
+    "semantic_hash": "7e8585ed3378a7fb1299df0dccbd7311"
+  },
+  "src/components/StructuralEurocodeStudio.tsx": {
+    "mtime": 1794444336.2392242,
+    "seen": 1794835445.5950127,
+    "ast_hash": "88c3c5f8ceb9d8c009e1ac75734be7e9",
+    "semantic_hash": "88c3c5f8ceb9d8c009e1ac75734be7e9"
+  },
+  "src/components/StructuralReportModal.tsx": {
+    "mtime": 1794320684.2486935,
+    "seen": 1794835445.5950127,
+    "ast_hash": "35ad2788155307908aa460d13841897e",
+    "semantic_hash": "35ad2788155307908aa460d13841897e"
+  },
+  "src/components/Urban3DViewer.tsx": {
+    "mtime": 1794266699.9671578,
+    "seen": 1794835445.5950127,
+    "ast_hash": "efd600aa7b652235aa4c4fc66200f77a",
+    "semantic_hash": "efd600aa7b652235aa4c4fc66200f77a"
+  },
+  "src/context/DesignProjectContext.tsx": {
+    "mtime": 1794444336.2402236,
+    "seen": 1794835445.5950127,
+    "ast_hash": "c71c1f412cbc9d0a498efb9b347d49e9",
+    "semantic_hash": "c71c1f412cbc9d0a498efb9b347d49e9"
+  },
+  "src/data/climateAndStrategies.ts": {
+    "mtime": 1794435315.6366253,
+    "seen": 1794835445.5950127,
+    "ast_hash": "e31e2c81cf5631621c229122c70295eb",
+    "semantic_hash": "e31e2c81cf5631621c229122c70295eb"
+  },
+  "src/data/componentLibraries.ts": {
+    "mtime": 1794266699.9684746,
+    "seen": 1794835445.5950127,
+    "ast_hash": "b27753c6b332da498d1ba01374017979",
+    "semantic_hash": "b27753c6b332da498d1ba01374017979"
+  },
+  "src/data/eurocodeDataset.ts": {
+    "mtime": 1794316657.1660025,
+    "seen": 1794835445.5950127,
+    "ast_hash": "34eac9f7b69223a7987e5d7cae2d0014",
+    "semantic_hash": "34eac9f7b69223a7987e5d7cae2d0014"
+  },
+  "src/main.tsx": {
+    "mtime": 1794339424.842506,
+    "seen": 1794835445.5950127,
+    "ast_hash": "c64cfb5655c7db34bf6f94cc7adc831a",
+    "semantic_hash": "c64cfb5655c7db34bf6f94cc7adc831a"
+  },
+  "src/utils/bldExportEngine.ts": {
+    "mtime": 1794266699.9697437,
+    "seen": 1794835445.5950127,
+    "ast_hash": "b43b999beca0d92a0a487cb501564a9c",
+    "semantic_hash": "b43b999beca0d92a0a487cb501564a9c"
+  },
+  "src/utils/epwEngine.ts": {
+    "mtime": 1794444336.241223,
+    "seen": 1794835445.5950127,
+    "ast_hash": "f0a0c23a1f21338b341ba85061aabf26",
+    "semantic_hash": "f0a0c23a1f21338b341ba85061aabf26"
+  },
+  "src/utils/epwParser.ts": {
+    "mtime": 1794444336.242224,
+    "seen": 1794835445.5950127,
+    "ast_hash": "777d8df35d799d6cc00ce031a482d0f8",
+    "semantic_hash": "777d8df35d799d6cc00ce031a482d0f8"
+  },
+  "src/utils/eurocodeCalculators.ts": {
+    "mtime": 1794444336.2432702,
+    "seen": 1794835445.5950127,
+    "ast_hash": "6d2cd60757808ad0ba67e9c1eccc9451",
+    "semantic_hash": "6d2cd60757808ad0ba67e9c1eccc9451"
+  },
+  "src/utils/utciEngine.ts": {
+    "mtime": 1794435315.7449143,
+    "seen": 1794835445.5950127,
+    "ast_hash": "c963de4dbb52ecaffb24a555198f192b",
+    "semantic_hash": "c963de4dbb52ecaffb24a555198f192b"
+  },
+  "tailwind.config.js": {
+    "mtime": 1794266699.9707825,
+    "seen": 1794835445.5950127,
+    "ast_hash": "3e9621f5f03d896b109afaa23a92b18b",
+    "semantic_hash": "3e9621f5f03d896b109afaa23a92b18b"
+  },
+  "tsconfig.json": {
+    "mtime": 1794435315.749419,
+    "seen": 1794835445.5950127,
+    "ast_hash": "5c3326d4cdfa4ea30a60d62d193ca591",
+    "semantic_hash": "5c3326d4cdfa4ea30a60d62d193ca591"
+  },
+  "vercel.json": {
+    "mtime": 1794339424.842506,
+    "seen": 1794835445.5950127,
+    "ast_hash": "b4605cecb7847c2897567d168f713ac3",
+    "semantic_hash": "b4605cecb7847c2897567d168f713ac3"
+  },
+  "vite.config.ts": {
+    "mtime": 1794407591.1547189,
+    "seen": 1794835445.5950127,
+    "ast_hash": "899502460e021bad4ee3e214270d5751",
+    "semantic_hash": "899502460e021bad4ee3e214270d5751"
+  },
+  "README.md": {
+    "mtime": 1794435581.3443835,
+    "seen": 1794835445.5950127,
+    "ast_hash": "c00a22f718b1a4293e0d4c957a9762b5",
+    "semantic_hash": "c00a22f718b1a4293e0d4c957a9762b5"
+  },
+  "docs/README.md": {
+    "mtime": 1794835285.4572153,
+    "seen": 1794835445.5950127,
+    "ast_hash": "a7abdb2d05750d8bd80128226e4430fb",
+    "semantic_hash": "a7abdb2d05750d8bd80128226e4430fb"
+  },
+  "docs/architecture-overview.md": {
+    "mtime": 1794835286.537696,
+    "seen": 1794835445.5950127,
+    "ast_hash": "aaa876387b12032bf53b54d419cde27e",
+    "semantic_hash": "aaa876387b12032bf53b54d419cde27e"
+  },
+  "docs/references/README.md": {
+    "mtime": 1794835288.7049422,
+    "seen": 1794835445.5950127,
+    "ast_hash": "1749e931eadeaac4b3e76a47a7ff37b1",
+    "semantic_hash": "1749e931eadeaac4b3e76a47a7ff37b1"
+  },
+  "docs/standards-traceability.md": {
+    "mtime": 1794835353.1773064,
+    "seen": 1794835445.5950127,
+    "ast_hash": "a83bf219bd7cfdb07088ce27c1536713",
+    "semantic_hash": "a83bf219bd7cfdb07088ce27c1536713"
+  },
+  "index.html": {
+    "mtime": 1794266699.947649,
+    "seen": 1794835445.5950127,
+    "ast_hash": "de3f288a1094af1eeddae45cbea1ece1",
+    "semantic_hash": "de3f288a1094af1eeddae45cbea1ece1"
+  },
+  "package-lock.json": {
+    "mtime": 1794339413.6102097,
+    "seen": 1794835498.1012132,
+    "ast_hash": "76bebc36574214c9b44b9db28fd19506",
+    "semantic_hash": ""
+  }
+}
